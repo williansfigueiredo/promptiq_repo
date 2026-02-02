@@ -1,0 +1,666 @@
+/* ==========================================================================
+   OPERATOR.CSS - ESTILOS DA ABA OPERATOR (TELEPROMPTER)
+   ========================================================================== 
+   
+   Este arquivo contém todos os estilos relacionados à aba OPERATOR:
+   - Toolbar do Operador (botões de controle do teleprompter)
+   - Container do Teleprompter
+   - Controles de Voz (Voice Tracking)
+   - Animações de Broadcast
+   - Overlay de Mensagens
+   - Modal de Mensagens Rápidas
+
+   ESTRUTURA:
+   1. UNIVERSAL (Light e Dark Mode)
+   2. LIGHT MODE APENAS
+   3. DARK MODE APENAS
+   
+   ========================================================================== */
+
+
+/* ==========================================================================
+   1. ESTILOS UNIVERSAIS (Funcionam em Light e Dark Mode)
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   1.1 TOOLBAR DO OPERADOR - Container Principal
+   -------------------------------------------------------------------------- */
+
+#operator-toolbar {
+  background-color: var(--background-primary);
+  border-bottom: 1px solid var(--border-light);
+  min-height: var(--toolbar-height, 48px);
+  padding: var(--spacing-sm, 12px) var(--spacing-md, 15px) !important;
+  flex-shrink: 0;
+  gap: 0 !important;
+  flex-wrap: wrap;
+}
+
+
+/* --------------------------------------------------------------------------
+   1.2 BOTÕES DE FERRAMENTA (.btn-tool)
+   -------------------------------------------------------------------------- */
+
+.btn-tool {
+  background: transparent !important;
+  border: none !important;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 0 12px !important;
+  margin: 0 !important;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-tool:hover:not(.disabled) {
+  background-color: var(--background-secondary);
+  color: var(--primary-color);
+}
+
+.btn-tool.active {
+  background-color: var(--primary-light);
+  color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+}
+
+/* Tamanho dos ícones na toolbar */
+#operator-toolbar .btn-tool i,
+#operator-toolbar .btn-tool svg {
+  font-size: var(--icon-size-lg, 22px) !important;
+}
+
+#operator-toolbar .btn-tool:hover {
+  color: #000000 !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   1.3 SEPARADORES DA TOOLBAR (.tool-separator)
+   -------------------------------------------------------------------------- */
+
+#operator-toolbar .tool-separator {
+  width: 1px;
+  height: 24px;
+  background-color: #dee2e6;
+  margin: 0 12px;
+  display: block;
+  opacity: 1;
+}
+
+
+/* --------------------------------------------------------------------------
+   1.4 CONTAINER DO TELEPROMPTER
+   -------------------------------------------------------------------------- */
+
+.prompter-in-control {
+  background-color: black;
+  color: white;
+  height: 100%;
+  overflow-y: scroll;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#prompterText-control {
+  font-size: 20px;
+  line-height: 1.7;
+  color: white;
+  max-width: none;
+  width: 97%;
+  margin-bottom: 200px;
+}
+
+/* Esconde a barra de rolagem */
+#operator-tab-pane ::-webkit-scrollbar {
+  display: none !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   1.5 MODO FULLSCREEN
+   -------------------------------------------------------------------------- */
+
+body.operator-fullscreen-mode #custom-title-bar,
+body.operator-fullscreen-mode #main-tab-container,
+body.operator-fullscreen-mode #operator-toolbar {
+  display: none !important;
+}
+
+body.operator-fullscreen-mode #operator-tab-pane {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+}
+
+
+/* --------------------------------------------------------------------------
+   1.6 VOICE TRACKING (Controle de Voz)
+   -------------------------------------------------------------------------- */
+
+/* Destaque para a linha que está sendo falada */
+.lendo-agora {
+  border-left: 6px solid #ff0000 !important;
+  padding-left: 10px !important;
+  transition: all 0.3s ease-in-out;
+  border-radius: 4px;
+}
+
+/* Botão de Voice Tracking - Estado Desligado (Vermelho) */
+#btn-voice-tracking {
+  background-color: #dc3545 !important;
+  color: white !important;
+  border-color: #dc3545 !important;
+  transition: all 0.3s;
+  margin-left: 10px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+}
+
+/* Botão de Voice Tracking - Estado Ligado (Verde) */
+#btn-voice-tracking.gravando {
+  background-color: #198754 !important;
+  border-color: #198754 !important;
+  box-shadow: 0 0 10px #198754;
+}
+
+#btn-voice-tracking.gravando i {
+  animation: pulsar 1.5s infinite;
+}
+
+@keyframes pulsar {
+  0% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.2);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+
+/* --------------------------------------------------------------------------
+   1.7 ANIMAÇÕES DE BROADCAST
+   -------------------------------------------------------------------------- */
+
+.broadcast-live {
+  color: #089408 !important;
+  animation: broadcast-green-pulse 1.5s infinite;
+}
+
+.broadcast-offline {
+  color: #ff3333 !important;
+}
+
+@keyframes broadcast-green-pulse {
+  0% {
+    transform: scale(1);
+    text-shadow: 0 0 0px rgba(0, 255, 0, 0.5);
+  }
+
+  50% {
+    transform: scale(1.15);
+    text-shadow: 0 0 10px rgb(10, 121, 10);
+  }
+
+  100% {
+    transform: scale(1);
+    text-shadow: 0 0 0px rgba(0, 255, 0, 0.5);
+  }
+}
+
+/* Botão Broadcast - Estados */
+#btn-open-broadcast {
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+#btn-open-broadcast.btn-success {
+  animation: pulse-green 2s infinite;
+}
+
+@keyframes pulse-green {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
+  }
+
+  50% {
+    box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
+  }
+}
+
+/* Badge de Status (Bolinha) */
+#btn-open-broadcast::after {
+  content: '●';
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  font-size: 20px;
+  color: #dc3545;
+  /* Vermelho = Desligado */
+}
+
+#btn-open-broadcast.btn-success::after {
+  color: #28a745;
+  /* Verde = Ligado */
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+
+  0%,
+  49% {
+    opacity: 1;
+  }
+
+  50%,
+  100% {
+    opacity: 0.3;
+  }
+}
+
+
+/* --------------------------------------------------------------------------
+   1.8 OVERLAY DE MENSAGEM NA TELA
+   -------------------------------------------------------------------------- */
+
+#prompter-message-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+#prompter-message-box {
+  padding: 30px 60px;
+  border-radius: 15px;
+  background-color: #FFC107;
+  color: #fff;
+  font-family: Arial, sans-serif;
+  font-size: 4rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes popIn {
+  from {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+
+/* --------------------------------------------------------------------------
+   1.9 MODAL DE MENSAGENS RÁPIDAS
+   -------------------------------------------------------------------------- */
+
+#quick-message-modal {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  width: 400px;
+  height: 380px;
+  background-color: #2b2d31;
+  border: 1px solid #444;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.quick-msg-header {
+  background-color: #1e1f22;
+  padding: 8px 15px;
+  color: #eee;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #444;
+}
+
+.quick-msg-body {
+  display: flex;
+  flex: 1;
+  height: 100%;
+}
+
+.quick-msg-categories {
+  width: 35%;
+  background-color: #232428;
+  border-right: 1px solid #444;
+  padding: 5px;
+}
+
+.quick-msg-actions {
+  width: 65%;
+  background-color: #2b2d31;
+  padding: 10px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Botões do Menu de Mensagens Rápidas */
+.cat-btn,
+.action-btn {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 8px 10px;
+  color: #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  transition: 0.2s;
+}
+
+.cat-btn:hover,
+.cat-btn.active {
+  background-color: #404249;
+  color: #fff;
+}
+
+.action-btn {
+  background-color: #383a40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.action-btn:hover {
+  background-color: #4752c4;
+  color: white;
+}
+
+.action-btn i {
+  font-size: 1.1rem;
+}
+
+/* Input de Mensagem Customizada */
+#custom-msg-input {
+  background-color: #1e1f22 !important;
+  border-color: #444 !important;
+  color: #fff !important;
+}
+
+#custom-msg-input:focus {
+  box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.5);
+  border-color: #0d6efd !important;
+}
+
+
+/* ==========================================================================
+   2. ESTILOS LIGHT MODE APENAS
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   2.1 TOOLBAR DO OPERADOR - Light Mode
+   -------------------------------------------------------------------------- */
+
+/* (Os estilos padrão já funcionam no light mode) */
+
+
+/* ==========================================================================
+   3. ESTILOS DARK MODE APENAS
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   3.1 TOOLBAR DO OPERADOR - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] #operator-toolbar,
+body.dark-mode #operator-toolbar {
+  background-color: #191D24 !important;
+  border-bottom-color: #2D323E !important;
+}
+
+[data-theme="dark"] #operator-toolbar .btn-tool,
+body.dark-mode #operator-toolbar .btn-tool {
+  color: #e0e0e0 !important;
+}
+
+[data-theme="dark"] #operator-toolbar .btn-tool:hover,
+body.dark-mode #operator-toolbar .btn-tool:hover {
+  color: #ffffff !important;
+  background-color: #252A35 !important;
+}
+
+[data-theme="dark"] #operator-toolbar .tool-separator,
+body.dark-mode #operator-toolbar .tool-separator {
+  background-color: #2D323E !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.2 BOTÃO DE VOZ - Dark Mode (Força cor branca)
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] #operator-toolbar #btn-voice-tracking,
+[data-theme="dark"] #operator-toolbar #btn-voice-tracking i,
+[data-theme="dark"] #operator-toolbar #btn-voice-tracking span,
+body.dark-mode #operator-toolbar #btn-voice-tracking,
+body.dark-mode #operator-toolbar #btn-voice-tracking i,
+body.dark-mode #operator-toolbar #btn-voice-tracking span {
+  color: #ffffff !important;
+  fill: #ffffff !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.3 BOTÃO BROADCAST (Amarelo) - Dark Mode (Força cor preta)
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] #operator-toolbar .btn-warning,
+[data-theme="dark"] #operator-toolbar .btn-warning i,
+[data-theme="dark"] #operator-toolbar .btn-warning span,
+body.dark-mode #operator-toolbar .btn-warning,
+body.dark-mode #operator-toolbar .btn-warning i,
+body.dark-mode #operator-toolbar .btn-warning span {
+  color: #000000 !important;
+  fill: #000000 !important;
+}
+
+html[data-theme="dark"] #operator-toolbar button.btn-warning,
+body.dark-mode #operator-toolbar button.btn-warning {
+  color: #000000 !important;
+  opacity: 1 !important;
+}
+
+html[data-theme="dark"] #operator-toolbar button.btn-warning i,
+body.dark-mode #operator-toolbar button.btn-warning i {
+  color: #000000 !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   LINHA GUIA TEMPORÁRIA - Drag do Cue Marker (Modo Seta)
+   -------------------------------------------------------------------------- */
+
+#cue-drag-guide-line {
+  position: absolute;
+  left: 45px;
+  width: calc(100% - 45px);
+  height: 2px;
+  background: linear-gradient(90deg,
+      currentColor 0%,
+      currentColor 90%,
+      transparent 100%);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1999;
+  transition: opacity 0.15s ease-out;
+  box-shadow: 0 0 8px currentColor;
+}
+
+#cue-drag-guide-line.visible {
+  opacity: 0.6;
+}
+
+
+/* --------------------------------------------------------------------------
+   NAVEGAÇÃO CONTEXTUAL - Destaque Sutil (Apenas Bordas Pulsantes)
+   -------------------------------------------------------------------------- */
+
+/* O container da palavra: sem borda, sem fundo, apenas a âncora */
+.nav-word-highlight {
+  position: relative;
+  /* Necessário para posicionar as bordas */
+  display: inline-block;
+  /* Garante que os anéis não invadam o texto vizinho */
+  /* Removemos qualquer estilo visível do elemento pai */
+  border: none !important;
+  background: transparent !important;
+  padding: 0 2px;
+  /* Um leve respiro lateral */
+}
+
+/* Estilo base compartilhado para as duas bordas finas (before e after) */
+.nav-word-highlight::before,
+.nav-word-highlight::after {
+  content: '';
+  position: absolute;
+  /* Borda muito fina (1px) e dourada semitransparente */
+  border: 1px solid rgba(255, 215, 0, 0.7);
+  border-radius: 4px;
+  opacity: 0;
+  /* Começam invisíveis */
+  pointer-events: none;
+  /* Não interfere no clique */
+}
+
+/* --- Borda Interna (Menor, começa primeiro) --- */
+.nav-word-highlight::before {
+  /* Posicionada bem rente ao texto */
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  /* Animação: nome | duração | curva | iterações */
+  animation: subtle-ring-pulse 2s ease-out infinite;
+}
+
+/* --- Borda Externa (Maior, começa depois) --- */
+.nav-word-highlight::after {
+  /* Começa um pouco mais afastada */
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  bottom: -3px;
+  /* Atraso de 0.5s cria a dessincronia */
+  animation: subtle-ring-pulse 2s ease-out 0.5s infinite;
+}
+
+/* --- A Animação de Pulso --- */
+@keyframes subtle-ring-pulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.8;
+    border-color: rgba(255, 215, 0, 0.8);
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+
+  100% {
+    /* Expande e desaparece */
+    transform: scale(1.4);
+    opacity: 0;
+    border-color: rgba(255, 215, 0, 0);
+  }
+}
+
+
+/* ==========================================================================
+   MEDIA QUERIES - RESPONSIVIDADE DO OPERADOR
+   ========================================================================== */
+
+/* Monitores pequenos / Laptops (1024px - 1440px) */
+@media screen and (max-width: 1440px) {
+  #operator-toolbar {
+    min-height: 42px;
+    padding: 8px 12px !important;
+  }
+
+  #operator-toolbar .btn-tool i,
+  #operator-toolbar .btn-tool svg {
+    font-size: 18px !important;
+  }
+
+  .btn-tool {
+    padding: 0 8px !important;
+  }
+
+  #operator-toolbar .tool-separator {
+    margin: 0 8px;
+    height: 20px;
+  }
+}
+
+/* TVs e Monitores 4K+ (2561px+) */
+@media screen and (min-width: 2561px) {
+  #operator-toolbar {
+    min-height: 64px;
+    padding: 16px 24px !important;
+  }
+
+  #operator-toolbar .btn-tool i,
+  #operator-toolbar .btn-tool svg {
+    font-size: 32px !important;
+  }
+
+  .btn-tool {
+    padding: 0 18px !important;
+  }
+
+  #operator-toolbar .tool-separator {
+    margin: 0 18px;
+    height: 32px;
+  }
+
+  #prompterText-control {
+    font-size: 28px;
+    line-height: 1.8;
+  }
+
+  .lendo-agora {
+    border-left-width: 10px !important;
+    padding-left: 16px !important;
+  }
+}

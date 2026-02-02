@@ -1,0 +1,19 @@
+{
+  "total": 49,
+  "generatedAt": "2025-11-02T03:08:23.733Z",
+  "basePath": "C:\\VsCode.Dev\\TeleprompterPro\\assets\\dictionaries",
+  "languages": [
+   {
+      "code": "pt-BR",
+      "name": "Português (Brasil)",
+      "aff": "pt-BR/index.aff",
+      "dic": "pt-BR/index.dic"
+    },
+    {
+      "code": "en",
+      "name": "Inglês (EUA)",
+      "aff": "en/index.aff",
+      "dic": "en/index.dic"
+    },
+      ]
+}

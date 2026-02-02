@@ -1,0 +1,121 @@
+/* ==========================================================================
+   1. VARIÁVEIS GLOBAIS (SISTEMA DE TEMAS)
+   ========================================================================== */
+
+/* --- TEMA CLARO (Padrão - Light) --- */
+:root {
+  /* --- Cores Primárias --- */
+  --primary-color: #007AFF;
+  --primary-hover: #0051D5;
+  --primary-light: #E5F1FF;
+
+  /* --- Backgrounds (Claros) --- */
+  --background-primary: #FFFFFF;
+  /* Área de texto / Paineis */
+  --background-secondary: #F8F9FA;
+  /* Fundo da Janela / Sidebar */
+  --background-tertiary: #E8E8ED;
+  /* Hovers e elementos inativos */
+  --background-toolbar: #f8f9fa;
+  /* Barra de ferramentas */
+  --sidebar-background: 220 15% 95%;
+  --background-surface: 220 15% 95%;
+
+  /* --- Bordas --- */
+  --border-color: #D1D1D6;
+  --border-light: #E5E5EA;
+
+  /* --- Tipografia (Escura para ler no branco) --- */
+  --text-primary: #1C1C1E;
+  --text-secondary: #6E6E73;
+  --text-tertiary: #8E8E93;
+  --text-tertiary-light: #cacace;
+  --text-inverse: #FFFFFF;
+  /* Texto dentro de botões azuis/escuros */
+
+  /* --- Status --- */
+  --success: #34C759;
+  --warning: #FF9500;
+  --danger: #FF3B30;
+
+  /* --- Dimensões --- */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --toolbar-btn-size: 26px;
+  --modal-height-xl: 80vh;
+
+  /* --- Responsividade (Desktop/Monitor/TV) --- */
+  --sidebar-width: clamp(200px, 18vw, 320px);
+  --toolbar-height: clamp(40px, 4vh, 56px);
+  --spacing-xs: clamp(4px, 0.5vw, 8px);
+  --spacing-sm: clamp(8px, 1vw, 16px);
+  --spacing-md: clamp(12px, 1.5vw, 24px);
+  --spacing-lg: clamp(16px, 2vw, 32px);
+  --spacing-xl: clamp(24px, 3vw, 48px);
+  --font-size-xs: clamp(10px, 0.7rem, 12px);
+  --font-size-sm: clamp(12px, 0.8rem, 14px);
+  --font-size-base: clamp(14px, 0.9rem, 16px);
+  --font-size-lg: clamp(16px, 1rem, 18px);
+  --font-size-xl: clamp(18px, 1.2rem, 22px);
+  --font-size-2xl: clamp(20px, 1.4rem, 28px);
+  --icon-size-sm: clamp(14px, 1rem, 18px);
+  --icon-size-md: clamp(18px, 1.2rem, 24px);
+  --icon-size-lg: clamp(22px, 1.5rem, 32px);
+}
+
+/* --- TEMA ESCURO (Baseado na interface CognitoPrompt da foto) --- */
+[data-theme="dark"] {
+  /* --- Cores Primárias (Aquele Azul Ciano Vibrante) --- */
+  --primary-color: #007AFF;
+  --primary-hover: #0051D5;
+  /* Um pouco mais escuro ao passar o mouse */
+  --primary-light: rgba(0, 178, 255, 0.15);
+  /* Fundo sutil azulado */
+
+  /* --- Backgrounds (Tons de Preto e Cinza Azulado) --- */
+  --background-primary: #191D24;
+  /* Cor dos CARDS (Welcome, Create New Script) */
+  --background-secondary: #0F1116;
+  /* Cor da SIDEBAR e fundo da janela (Bem escuro) */
+  --background-tertiary: #252A35;
+  /* Cor de hover nos itens da lista */
+  --background-toolbar: #14161C;
+  /* Barra de cima */
+
+  /* Variáveis auxiliares (se seu sistema usar HSL) */
+  --sidebar-background: 222 20% 7%;
+  --background-surface: 220 18% 12%;
+
+  /* --- Bordas (Muito sutis, quase invisíveis) --- */
+  --border-color: #2D323E;
+  /* Linhas divisórias finas */
+  --border-light: #383E4B;
+
+  /* --- Tipografia --- */
+  --text-primary: #FFFFFF;
+  /* Título "Welcome" (Branco puro) */
+  --text-secondary: #9CA3AF;
+  /* Descrições (Cinza claro) */
+  --text-tertiary: #6B7280;
+  /* Ícones desativados */
+  --text-tertiary-light: #4B5563;
+
+  /* IMPORTANTE: O texto dentro do botão azul da foto é ESCURO, não branco */
+  --text-inverse: #0F1116;
+
+  /* --- Status (Ajustados para brilhar no escuro) --- */
+  --success: #4ADE80;
+  /* Verde neon suave */
+  --warning: #FBBF24;
+  /* Laranja brilhante */
+  --danger: #F87171;
+  /* Vermelho suave */
+
+  /* --- Sombras --- */
+  /* No dark mode, as sombras são pretas mais fortes para dar profundidade */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+}

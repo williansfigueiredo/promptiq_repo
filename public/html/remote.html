@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Promptiq - Editor Colaborativo</title>
+    
+    <!-- Fontes (Fallback para CJK) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;700&family=Noto+Sans+TC:wght@400;700&family=Noto+Sans+JP:wght@400;700&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    
+    <style>
+        /* ==========================================================================
+           REMOTE.HTML - ESTILOS PIXEL-PERFECT (ESPELHO DO EDITOR PRINCIPAL)
+           ========================================================================== */
+
+        /* --------------------------------------------------------------------------
+           CSS VARIABLES (Igual ao variables.css do app principal)
+           -------------------------------------------------------------------------- */
+        :root {
+            --primary-color: #0d6efd;
+            --primary-hover: #0b5ed7;
+            --primary-light: #e7f1ff;
+            --background-primary: #ffffff;
+            --background-secondary: #f8f9fa;
+            --background-tertiary: #e9ecef;
+            --text-primary: #1a1a1a;
+            --text-secondary: #495057;
+            --text-tertiary: #6c757d;
+            --text-inverse: #ffffff;
+            --border-color: #dee2e6;
+            --border-light: #e9ecef;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.07);
+            --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
+            --radius-sm: 4px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+            --radius-xl: 16px;
+        }
+
+        [data-theme="dark"] {
+            --background-primary: #1a1a2e;
+            --background-secondary: #16213e;
+            --background-tertiary: #0f3460;
+            --text-primary: #e4e4e4;
+            --text-secondary: #b4b4b4;
+            --text-tertiary: #888888;
+            --border-color: #2d3748;
+            --border-light: #374151;
+        }
+
+        /* --------------------------------------------------------------------------
+           RESET E BASE
+           -------------------------------------------------------------------------- */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body { 
+            font-family: 'Inter', 'Noto Sans SC', 'Noto Sans TC', 'Noto Sans JP', 'Noto Sans KR', sans-serif;
+            background-color: var(--background-secondary);
+            color: var(--text-primary);
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* --------------------------------------------------------------------------
+           TELA DE LOADING
+           -------------------------------------------------------------------------- */
+        #loading-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--background-primary); z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        
+        .spinner {
+            width: 48px; height: 48px;
+            border: 4px solid var(--border-color);
+            border-top: 4px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .loading-text { font-size: 0.95rem; color: var(--text-secondary); font-weight: 600; }
+
+        /* --------------------------------------------------------------------------
+           TELA DE LOGIN
+           -------------------------------------------------------------------------- */
+        #login-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--background-secondary);
+            background-image: radial-gradient(var(--border-color) 1px, transparent 1px);
+            background-size: 20px 20px;
+            z-index: 2000;
+            display: none;
+            align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        
+        .login-card {
+            width: 100%; max-width: 420px; text-align: center;
+            background: var(--background-primary);
+            padding: 48px 40px;
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border-light);
+        }
+        
+        .brand-icon {
+            width: 64px; height: 64px;
+            background: linear-gradient(135deg, var(--primary-color) 0%, #0056b3 100%);
+            color: white; border-radius: var(--radius-lg);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 28px; margin: 0 auto 24px auto;
+            box-shadow: 0 10px 25px rgba(13, 110, 253, 0.25);
+        }
+        
+        .login-title { font-size: 1.75rem; font-weight: 800; margin-bottom: 8px; color: var(--text-primary); }
+        .login-subtitle { font-size: 0.9rem; color: var(--text-tertiary); margin-bottom: 32px; }
+        .input-group { margin-bottom: 20px; text-align: left; }
+        .label { font-size: 0.75rem; font-weight: 700; color: var(--text-tertiary); margin-bottom: 8px; display: block; text-transform: uppercase; letter-spacing: 0.5px; }
+        
+        .input-field {
+            width: 100%; padding: 14px 16px; font-size: 1rem;
+            border: 2px solid var(--border-color);
+            border-radius: var(--radius-md);
+            outline: none; transition: all 0.2s;
+            font-family: inherit;
+            background: var(--background-secondary);
+            color: var(--text-primary);
+        }
+        
+        .input-field:focus { 
+            border-color: var(--primary-color);
+            background: var(--background-primary);
+            box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.1);
+        }
+        
+        .btn-enter {
+            width: 100%; padding: 16px;
+            background: linear-gradient(135deg, var(--primary-color) 0%, #0056b3 100%);
+            color: white; border: none;
+            border-radius: var(--radius-md);
+            font-size: 1rem; font-weight: 700;
+            cursor: pointer; margin-top: 16px;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(13, 110, 253, 0.25);
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        
+        .btn-enter:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(13, 110, 253, 0.35); }
+        
+        .error-msg { 
+            color: #dc3545; font-size: 0.9rem; margin-top: 16px;
+            display: none; font-weight: 600;
+            padding: 12px; background: #fff5f5;
+            border-radius: var(--radius-sm); border: 1px solid #fed7d7;
+        }
+
+        /* --------------------------------------------------------------------------
+           TELA PRINCIPAL DO APP
+           -------------------------------------------------------------------------- */
+        #app-screen { display: none; flex-direction: column; height: 100vh; opacity: 0; transition: opacity 0.4s ease; }
+        #app-screen.visible { opacity: 1; }
+
+        /* --------------------------------------------------------------------------
+           HEADER
+           -------------------------------------------------------------------------- */
+        header { 
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 20px; background: var(--background-primary);
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm); z-index: 100; flex-shrink: 0;
+        }
+        
+        .user-group { display: flex; align-items: center; gap: 16px; }
+        .user-info { font-weight: 600; font-size: 0.95rem; color: var(--text-primary); display: flex; align-items: center; gap: 10px; }
+        
+        .user-icon { 
+            width: 36px; height: 36px;
+            background: var(--primary-light); color: var(--primary-color);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-size: 14px; font-weight: 700; border: 2px solid var(--primary-color);
+        }
+        
+        .btn-logout {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+            border: none;
+            padding: 8px 16px; border-radius: 6px;
+            font-size: 0.8rem; font-weight: 700; color: white;
+            cursor: pointer; transition: all 0.25s;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 2px 8px rgba(238, 90, 90, 0.3);
+            text-transform: uppercase; letter-spacing: 0.5px;
+            height: 34px;
+        }
+        
+        .btn-logout:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(238, 90, 90, 0.45);
+            background: linear-gradient(135deg, #ff5252 0%, #e04040 100%);
+        }
+        
+        .status-badge {
+            font-size: 0.75rem; font-weight: 700; padding: 8px 14px;
+            border-radius: 30px; background: var(--background-tertiary);
+            color: var(--text-tertiary); text-transform: uppercase;
+            letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px;
+        }
+        
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-tertiary); }
+        .status-badge.connected { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
+        .status-badge.connected .status-dot { background: #059669; box-shadow: 0 0 8px #059669; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        /* --------------------------------------------------------------------------
+           TOOLBAR (PIXEL-PERFECT COM O EDITOR PRINCIPAL)
+           -------------------------------------------------------------------------- */
+        #remote-toolbar {
+            display: flex; align-items: center; gap: 8px;
+            padding: 10px 16px; background: var(--background-secondary);
+            border-bottom: 1px solid var(--border-color);
+            flex-wrap: wrap; flex-shrink: 0;
+        }
+        
+        .toolbar-group { display: flex; align-items: center; gap: 4px; }
+        .toolbar-separator { width: 1px; height: 24px; background: var(--border-color); margin: 0 8px; }
+        
+        .toolbar-select {
+            padding: 6px 10px; font-size: 0.85rem;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            background: var(--background-primary);
+            color: var(--text-primary);
+            cursor: pointer; font-family: inherit;
+            outline: none; transition: all 0.15s;
+        }
+        
+        .toolbar-select:hover { border-color: var(--primary-color); }
+        .toolbar-select:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1); }
+        
+        #remote-font-select { width: 140px; }
+        #remote-size-select { width: 70px; }
+        #remote-size-custom { width: 60px; padding: 6px 8px; font-size: 0.85rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--background-primary); color: var(--text-primary); }
+        
+        .toolbar-btn {
+            width: 34px; height: 34px;
+            display: flex; align-items: center; justify-content: center;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            background: var(--background-primary);
+            color: var(--text-secondary);
+            cursor: pointer; transition: all 0.15s; font-size: 1rem;
+        }
+        
+        .toolbar-btn:hover { background: var(--background-tertiary); border-color: var(--text-tertiary); }
+        .toolbar-btn.active { background: var(--primary-color); border-color: var(--primary-color); color: white; }
+        
+        .color-btn {
+            width: 28px; height: 28px;
+            border-radius: var(--radius-sm);
+            border: 2px solid var(--border-color);
+            cursor: pointer; transition: all 0.15s;
+        }
+        
+        .color-btn:hover { transform: scale(1.1); border-color: var(--text-tertiary); }
+        .color-btn.active { border-color: var(--primary-color); box-shadow: 0 0 0 2px var(--primary-light); }
+        
+        .swatch-black { background-color: #000000; }
+        .swatch-yellow { background-color: #FFFF00; }
+        .swatch-green { background-color: #00FF00; }
+        .swatch-pink { background-color: #FF69B4; }
+        .swatch-cyan { background-color: #00FFFF; }
+        .swatch-red { background-color: #FF0000; }
+        .swatch-white { background-color: #FFFFFF; }
+
+        .mode-switch-group {
+            display: flex;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+            background: var(--background-primary);
+        }
+        .mode-switch-group .toolbar-btn {
+            border: none;
+            border-radius: 0;
+            width: 34px;
+            height: 34px;
+            background: transparent;
+            transition: all 0.15s;
+            font-size: 0.9rem;
+        }
+        .mode-switch-group .toolbar-btn:not(:last-child) { border-right: 1px solid var(--border-color); }
+        .mode-switch-group .toolbar-btn:hover { background: var(--background-tertiary); }
+        .mode-switch-group .toolbar-btn.active {
+            background: var(--primary-color);
+            color: white;
+        }
+        .mode-switch-group .toolbar-btn[data-mode="background"].active {
+            background: #ffc107;
+            color: #000;
+        }
+        .mode-switch-group .btn-reset-color {
+            color: #dc3545;
+        }
+        .mode-switch-group .btn-reset-color:hover {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        /* Align Group */
+        .align-group { display: flex; align-items: center; gap: 2px; }
+        .align-group .toolbar-btn { border-radius: 0; }
+        .align-group .toolbar-btn:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+        .align-group .toolbar-btn:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+        .align-group .toolbar-btn:not(:first-child) { margin-left: -1px; }
+
+        /* --------------------------------------------------------------------------
+           PALETA DE CORES COMPLETA (60+ CORES)
+           -------------------------------------------------------------------------- */
+        .color-palette-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .btn-more-colors {
+            width: 28px; height: 28px;
+            border-radius: var(--radius-sm);
+            border: 2px dashed var(--border-color);
+            background: var(--background-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            color: var(--text-tertiary);
+            transition: all 0.15s;
+        }
+        
+        .btn-more-colors:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+            transform: scale(1.1);
+        }
+        
+        #color-palette-popup {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 8px;
+            background: var(--background-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 12px;
+            box-shadow: var(--shadow-lg);
+            z-index: 1000;
+            width: 220px;
+        }
+        
+        #color-palette-popup.show {
+            display: block;
+        }
+        
+        .palette-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--text-tertiary);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .palette-grid {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 3px;
+        }
+        
+        .palette-swatch {
+            width: 18px;
+            height: 18px;
+            border-radius: 3px;
+            cursor: pointer;
+            border: 1px solid rgba(0,0,0,0.1);
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        
+        .palette-swatch:hover {
+            transform: scale(1.3);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 10;
+            position: relative;
+        }
+        
+        .palette-section {
+            margin-bottom: 12px;
+        }
+        
+        .palette-section:last-of-type {
+            margin-bottom: 8px;
+        }
+        
+        .btn-custom-color {
+            width: 100%;
+            padding: 10px;
+            margin-top: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            background: var(--background-tertiary);
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.15s;
+        }
+        
+        .btn-custom-color:hover {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        /* --------------------------------------------------------------------------
+           ÁREA DO EDITOR (PIXEL-PERFECT)
+           -------------------------------------------------------------------------- */
+        main { flex: 1; display: flex; flex-direction: column; background: var(--background-primary); overflow: hidden; }
+        .editor-container { flex: 1; display: flex; flex-direction: column; background: var(--background-primary); overflow: hidden; }
+        
+        #remote-editor {
+            flex: 1; padding: 40px 20px;
+            font-family: 'Arial', sans-serif;
+            font-size: 24pt; line-height: 1.5;
+            color: var(--text-primary);
+            background: var(--background-primary);
+            outline: none; overflow-y: auto; border: none; min-height: 200px;
+        }
+        
+        #remote-editor:empty:before { content: attr(placeholder); color: var(--text-tertiary); pointer-events: none; font-style: italic; }
+        #remote-editor p { margin: 0 0 0.5em 0; }
+        #remote-editor div { margin: 0; }
+
+        /* --------------------------------------------------------------------------
+           BARRA DE STATUS
+           -------------------------------------------------------------------------- */
+        #status-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 16px; background: var(--background-secondary);
+            border-top: 1px solid var(--border-color);
+            font-size: 0.75rem; color: var(--text-tertiary); flex-shrink: 0;
+        }
+        
+        .sync-indicator { display: flex; align-items: center; gap: 6px; }
+        .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary); }
+        .sync-dot.synced { background: #059669; }
+        .sync-dot.syncing { background: #f59e0b; animation: blink 0.5s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        .hidden { display: none !important; }
+        
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: var(--background-secondary); }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 5px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+
+        .sync-flash { animation: syncFlash 0.3s ease; }
+        @keyframes syncFlash { 0%, 100% { box-shadow: none; } 50% { box-shadow: inset 0 0 0 3px var(--primary-color); } }
+        .toolbar-btn {
+    display: inline-flex;
+    align-items: center;     /* Centraliza verticalmente */
+    justify-content: center; /* Centraliza horizontalmente */
+    padding: 4px 8px;        /* Espaço interno */
+    /* Outros estilos que você já tem... */
+}
+
+/* Espaçamento extra se necessário */
+.toolbar-btn svg {
+    pointer-events: none; /* Garante que o clique vá para o botão, não pro ícone */
+}
+
+        .mode-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: white;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 20px;
+            text-transform: uppercase;
+            margin-bottom: 16px;
+        }
+
+</style>
+</head>
+<body>
+    <!-- LOADING -->
+    <div id="loading-screen">
+        <div class="spinner"></div>
+        <p class="loading-text">Connecting to the room...</p>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="login-screen">
+        <div class="login-card">
+            <div class="brand-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
+                    <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
+                    <path d="M2 2l7.586 7.586"></path>
+                    <circle cx="11" cy="11" r="2"></circle>
+                </svg>
+            </div>
+
+            <div class="mode-badge">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>
+                LOCAL NETWWORK 
+            </div>
+
+            <div class="login-title">PromptIQ Remote</div>
+            <p class="login-subtitle">Real-Time Collaborative Editor</p>
+            
+            <div class="input-group">
+                <label class="label">Your Name / Role</label>
+                <input type="text" id="inp-name" class="input-field" placeholder="Willian - Screenwriter" autofocus>
+            </div>
+            
+            <div class="input-group">
+                <label class="label">Room ID (6 digits)</label>
+                <input type="tel" id="inp-pin" class="input-field" placeholder="000000" maxlength="6" 
+                       style="letter-spacing: 4px; font-weight: 700; text-align: center; font-size: 1.25rem;">
+            </div>
+            
+            <button class="btn-enter" onclick="tryLogin()">ENTER ROOM</button>
+        </div>
+    </div>
+
+    <!-- APP PRINCIPAL -->
+    <div id="app-screen">
+        <header>
+            <div class="user-group">
+                <div class="user-info">
+                    <div class="user-icon" id="u-icon">U</div>
+                    <span id="u-name">User</span>
+                </div>
+                <button class="btn-logout" onclick="doLogout()">LOGOUT</button>
+            </div>
+            <div id="status" class="status-badge">
+                <div class="status-dot"></div>
+                <span>Connecting...</span>
+            </div>
+        </header>
+
+        <!-- TOOLBAR SIMPLIFICADA (Cores + Alinhamento) -->
+        <div id="remote-toolbar">
+            <!-- Grupo: Modo de Cor (Texto/Fundo/Limpar) -->
+            <div class="toolbar-group">
+                <div class="mode-switch-group" id="remote-color-mode">
+                    <button type="button" class="toolbar-btn active" data-mode="foreground" title="Cor do Texto">
+                        <i class="bi bi-type" style="font-size: 14px;"></i>
+                    </button>
+                    <button type="button" class="toolbar-btn" data-mode="background" title="Cor de Fundo (Destaque)">
+                        <i class="bi bi-paint-bucket" style="font-size: 14px;"></i>
+                    </button>
+                    <button type="button" class="toolbar-btn btn-reset-color" id="remote-reset-color" title="Remover Cores">
+                        <i class="bi bi-eraser-fill" style="font-size: 14px;"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Grupo: Paleta de Cores com popup 60+ cores -->
+            <div class="toolbar-group color-palette-wrapper" id="remote-color-palette">
+                <button class="color-btn swatch-black" data-color="#000000" title="Preto"></button>
+                <button class="color-btn swatch-yellow" data-color="#FFFF00" title="Amarelo"></button>
+                <button class="color-btn swatch-green" data-color="#00FF00" title="Verde"></button>
+                <button class="color-btn swatch-pink" data-color="#FF69B4" title="Rosa"></button>
+                <button class="color-btn swatch-cyan" data-color="#00FFFF" title="Ciano"></button>
+                <button class="btn-more-colors" id="btn-more-colors" title="Mais Cores (Clique direito)">⋯</button>
+                
+                <!-- Popup de 60+ cores -->
+                <div id="color-palette-popup">
+                    <div class="palette-section">
+                        <div class="palette-title">Cores Básicas</div>
+                        <div class="palette-grid" id="basic-colors"></div>
+                    </div>
+                    <div class="palette-section">
+                        <div class="palette-title">Tons Pastéis</div>
+                        <div class="palette-grid" id="pastel-colors"></div>
+                    </div>
+                    <div class="palette-section">
+                        <div class="palette-title">Cores Vibrantes</div>
+                        <div class="palette-grid" id="vibrant-colors"></div>
+                    </div>
+                    <button class="btn-custom-color" id="btn-custom-color">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
+                        </svg>
+                        Mais Cores...
+                    </button>
+                    <input type="color" id="custom-color-picker" style="display: none;">
+                </div>
+            </div>
+
+            <div class="toolbar-separator"></div>
+
+            <!-- Grupo: Alinhamento -->
+            <div class="toolbar-group align-group">
+                <button id="remote-align-left" class="toolbar-btn active" title="Alinhar à Esquerda">
+                    <i class="bi bi-text-left" style="font-size: 14px;"></i>
+                </button>
+                <button id="remote-align-center" class="toolbar-btn" title="Centralizar">
+                    <i class="bi bi-text-center" style="font-size: 14px;"></i>
+                </button>
+                <button id="remote-align-right" class="toolbar-btn" title="Alinhar à Direita">
+                    <i class="bi bi-text-right" style="font-size: 14px;"></i>
+                </button>
+            </div>
+        </div>
+
+        <main>
+            <div class="editor-container">
+                <div id="remote-editor" contenteditable="true" placeholder="Type or paste text here..."></div>
+            </div>
+        </main>
+
+        <div id="status-bar">
+            <div class="sync-indicator">
+                <div class="sync-dot synced" id="sync-dot"></div>
+                <span id="sync-status">Synced</span>
+            </div>
+            <div id="last-sync">Last sync: now</div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // ============================================================
+        // REMOTE EDITOR - SINCRONIZAÇÃO PIXEL-PERFECT
+        // ============================================================
+        
+        const socket = io();
+        const loginScreen = document.getElementById('login-screen');
+        const loadingScreen = document.getElementById('loading-screen');
+        const appScreen = document.getElementById('app-screen');
+        const errorMsg = document.getElementById('error-msg');
+        const statusDiv = document.getElementById('status');
+        const statusText = statusDiv.querySelector('span');
+        const loadingText = loadingScreen.querySelector('.loading-text');
+        const editor = document.getElementById('remote-editor');
+        const syncDot = document.getElementById('sync-dot');
+        const syncStatus = document.getElementById('sync-status');
+        const lastSyncEl = document.getElementById('last-sync');
+        
+        let userName = "";
+        let isTyping = false;
+        let typeTimeout;
+        let paintingMode = "foreground";
+        let lastReceivedContent = "";
+        let ignoreNextInput = false;
+        let rightClickedColorBtn = null; // Para trocar cor via right-click
+        
+        // ============================================================
+        // INICIALIZAÇÃO
+        // ============================================================
+        window.onload = function() {
+            const savedName = localStorage.getItem('prompt_user');
+            const savedPin = localStorage.getItem('prompt_pin');
+            
+            if (!savedName || !savedPin) {
+                showLoginScreen();
+                return;
+            }
+            
+            showLoadingScreen("Reconnecting to the room...");
+            document.getElementById('inp-name').value = savedName;
+            document.getElementById('inp-pin').value = savedPin;
+            setTimeout(() => tryLogin(true), 1500);
+        };
+        
+        function showLoginScreen() {
+            loadingScreen.style.display = 'none';
+            loginScreen.style.display = 'flex';
+            appScreen.style.display = 'none';
+        }
+        
+        function showLoadingScreen(msg = "Connecting to the room...") {
+            if (loadingText) loadingText.innerText = msg;
+            loadingScreen.style.display = 'flex';
+            loginScreen.style.display = 'none';
+            appScreen.style.display = 'none';
+        }
+        
+        function showAppScreen() {
+            loadingScreen.style.display = 'none';
+            loginScreen.style.display = 'none';
+            appScreen.style.display = 'flex';
+            setTimeout(() => appScreen.classList.add('visible'), 50);
+        }
+        
+        // ============================================================
+        // LOGIN / LOGOUT
+        // ============================================================
+        function tryLogin(isAuto = false) {
+            const name = document.getElementById('inp-name').value.trim();
+            const pin = document.getElementById('inp-pin').value.trim();
+            
+            if (!name || !pin) {
+                if (!isAuto) {
+                    errorMsg.innerText = "Please fill in all fields!";
+                    errorMsg.style.display = 'block';
+                }
+                showLoginScreen();
+                return;
+            }
+            
+            userName = name;
+            localStorage.setItem('prompt_user', name);
+            localStorage.setItem('prompt_pin', pin);
+            
+            if (!isAuto) showLoadingScreen("Entering the room...");
+            socket.emit('join-session', { name: name, pin: pin });
+        }
+        
+        function doLogout() {
+            localStorage.removeItem('prompt_user');
+            localStorage.removeItem('prompt_pin');
+            showLoadingScreen("Leaving the room...");
+            setTimeout(() => location.reload(), 1000);
+        }
+        
+        // ============================================================
+        // EVENTOS DO SOCKET
+        // ============================================================
+        socket.on('connect', () => {
+            updateConnectionStatus(true);
+            const savedName = localStorage.getItem('prompt_user');
+            const savedPin = localStorage.getItem('prompt_pin');
+            if (savedName && savedPin) {
+                userName = savedName;
+                socket.emit('join-session', { name: savedName, pin: savedPin });
+            }
+        });
+        
+        socket.on('disconnect', () => updateConnectionStatus(false));
+        
+        socket.on('login-success', () => {
+            document.getElementById('u-name').innerText = userName;
+            document.getElementById('u-icon').innerText = userName.charAt(0).toUpperCase();
+            showAppScreen();
+            updateConnectionStatus(true);
+        });
+        
+        // ============================================================
+        // RECEBE ESTADO INICIAL COMPLETO (Cold Start Fix)
+        // ============================================================
+        // Quando conecta, recebe HTML + fontSize + fontFamily do host
+        socket.on('server-initial-state', (state) => {
+            if (!state) return;
+            
+            console.log('📥 Recebido estado inicial:', state.fontSize + 'pt');
+            
+            // 1. Aplica o HTML
+            if (state.htmlContent && !isTyping) {
+                lastReceivedContent = state.htmlContent;
+                ignoreNextInput = true;
+                editor.innerHTML = state.htmlContent;
+                setTimeout(() => { ignoreNextInput = false; }, 100);
+            }
+            
+            // 2. Aplica o fontSize
+            if (state.fontSize) {
+                const size = parseInt(state.fontSize);
+                if (size >= 8 && size <= 200) {
+                    editor.style.fontSize = size + 'pt';
+                    updateSizeUI(size);
+                }
+            }
+            
+            // 3. Aplica a fontFamily
+            if (state.fontFamily) {
+                editor.style.fontFamily = state.fontFamily;
+                updateFontUI(state.fontFamily);
+            }
+            
+            // 4. Aplica o alinhamento
+            if (state.textAlign) {
+                editor.style.textAlign = state.textAlign;
+                updateAlignmentUI(state.textAlign);
+            }
+            
+            flashSyncIndicator();
+            updateLastSync();
+        });
+        
+        socket.on('login-error', (msg) => {
+            localStorage.removeItem('prompt_pin');
+            errorMsg.innerText = msg || "Incorrect ID.";
+            errorMsg.style.display = 'block';
+            showLoginScreen();
+        });
+        
+        // === RECEBE TEXTO DO HOST ===
+        socket.on('server-text-update', (content) => {
+            if (!isTyping && editor && content !== lastReceivedContent) {
+                lastReceivedContent = content;
+                ignoreNextInput = true;
+                const hadFocus = document.activeElement === editor;
+                editor.innerHTML = content;
+                flashSyncIndicator();
+                updateLastSync();
+                if (hadFocus) editor.focus();
+                setTimeout(() => { ignoreNextInput = false; }, 100);
+            }
+        });
+        
+        // === RECEBE FULL-SYNC (HTML + ESTILOS + TOOLBAR) ===
+        socket.on('server-full-sync', (data) => {
+            if (!data) return;
+            
+            if (data.content && data.content.html && !isTyping) {
+                lastReceivedContent = data.content.html;
+                ignoreNextInput = true;
+                editor.innerHTML = data.content.html;
+                setTimeout(() => { ignoreNextInput = false; }, 100);
+            }
+            
+            if (data.editorStyles) applyEditorStyles(data.editorStyles);
+            if (data.toolbarState) updateToolbarState(data.toolbarState);
+            if (data.globalPrefs) applyGlobalPrefs(data.globalPrefs);
+            
+            flashSyncIndicator();
+            updateLastSync();
+        });
+        
+        // === RECEBE ESTILO ===
+        socket.on('server-style-update', (data) => {
+            if (!data) return;
+            
+            if (data.type === 'fontSize') {
+                const size = parseInt(data.value);
+                if (size >= 8 && size <= 200) {
+                    editor.style.fontSize = size + 'pt';
+                    updateSizeUI(size);
+                }
+            } else if (data.type === 'fontFamily') {
+                editor.style.fontFamily = data.value;
+                updateFontUI(data.value);
+            } else if (data.type === 'alignment') {
+                editor.style.textAlign = data.value;
+                updateAlignmentUI(data.value);
+            }
+            flashSyncIndicator();
+        });
+        
+        // ============================================================
+        // ENVIO PARA O HOST
+        // ============================================================
+        editor.addEventListener('input', () => {
+            if (ignoreNextInput) return;
+            
+            isTyping = true;
+            syncDot.classList.remove('synced');
+            syncDot.classList.add('syncing');
+            syncStatus.textContent = "Synchronizing...";
+            
+            socket.emit('text-update', {
+                content: editor.innerHTML,
+                name: localStorage.getItem('prompt_user') || userName || "Anonymous"
+            });
+            
+            clearTimeout(typeTimeout);
+            typeTimeout = setTimeout(() => {
+                isTyping = false;
+                syncDot.classList.remove('syncing');
+                syncDot.classList.add('synced');
+                syncStatus.textContent = "Synced";
+            }, 800);
+        });
+        
+        // ============================================================
+        // TOOLBAR
+        // ============================================================
+        document.getElementById('remote-align-left').addEventListener('click', () => {
+            document.execCommand('justifyLeft', false, null);
+            setActiveAlignment('remote-align-left');
+            sendStyleUpdate('alignment', 'left');
+        });
+        
+        document.getElementById('remote-align-center').addEventListener('click', () => {
+            document.execCommand('justifyCenter', false, null);
+            setActiveAlignment('remote-align-center');
+            sendStyleUpdate('alignment', 'center');
+        });
+        
+        document.getElementById('remote-align-right').addEventListener('click', () => {
+            document.execCommand('justifyRight', false, null);
+            setActiveAlignment('remote-align-right');
+            sendStyleUpdate('alignment', 'right');
+        });
+        
+        // ============================================================
+        // PALETA DE 60+ CORES
+        // ============================================================
+        const BASIC_COLORS = [
+            '#000000', '#434343', '#666666', '#999999', '#b7b7b7', '#cccccc', '#d9d9d9', '#efefef', '#f3f3f3', '#ffffff',
+            '#980000', '#ff0000', '#ff9900', '#ffff00', '#00ff00', '#00ffff', '#4a86e8', '#0000ff', '#9900ff', '#ff00ff'
+        ];
+        
+        const PASTEL_COLORS = [
+            '#e6b8af', '#f4cccc', '#fce5cd', '#fff2cc', '#d9ead3', '#d0e0e3', '#c9daf8', '#cfe2f3', '#d9d2e9', '#ead1dc',
+            '#dd7e6b', '#ea9999', '#f9cb9c', '#ffe599', '#b6d7a8', '#a2c4c9', '#a4c2f4', '#9fc5e8', '#b4a7d6', '#d5a6bd',
+            '#cc4125', '#e06666', '#f6b26b', '#ffd966', '#93c47d', '#76a5af', '#6d9eeb', '#6fa8dc', '#8e7cc3', '#c27ba0'
+        ];
+        
+        const VIBRANT_COLORS = [
+            '#a61c00', '#cc0000', '#e69138', '#f1c232', '#6aa84f', '#45818e', '#3c78d8', '#3d85c6', '#674ea7', '#a64d79',
+            '#85200c', '#990000', '#b45f06', '#bf9000', '#38761d', '#134f5c', '#1155cc', '#0b5394', '#351c75', '#741b47',
+            '#5b0f00', '#660000', '#783f04', '#7f6000', '#274e13', '#0c343d', '#1c4587', '#073763', '#20124d', '#4c1130'
+        ];
+        
+        function initColorPalette() {
+            const basicGrid = document.getElementById('basic-colors');
+            const pastelGrid = document.getElementById('pastel-colors');
+            const vibrantGrid = document.getElementById('vibrant-colors');
+            
+            BASIC_COLORS.forEach(color => {
+                const swatch = document.createElement('div');
+                swatch.className = 'palette-swatch';
+                swatch.style.backgroundColor = color;
+                swatch.dataset.color = color;
+                swatch.addEventListener('click', () => applyColorFromPalette(color));
+                basicGrid.appendChild(swatch);
+            });
+            
+            PASTEL_COLORS.forEach(color => {
+                const swatch = document.createElement('div');
+                swatch.className = 'palette-swatch';
+                swatch.style.backgroundColor = color;
+                swatch.dataset.color = color;
+                swatch.addEventListener('click', () => applyColorFromPalette(color));
+                pastelGrid.appendChild(swatch);
+            });
+            
+            VIBRANT_COLORS.forEach(color => {
+                const swatch = document.createElement('div');
+                swatch.className = 'palette-swatch';
+                swatch.style.backgroundColor = color;
+                swatch.dataset.color = color;
+                swatch.addEventListener('click', () => applyColorFromPalette(color));
+                vibrantGrid.appendChild(swatch);
+            });
+        }
+        
+        function applyColorFromPalette(color) {
+            // Se clicou com botão direito em uma cor, trocar a cor do botão
+            if (rightClickedColorBtn) {
+                rightClickedColorBtn.style.backgroundColor = color;
+                rightClickedColorBtn.dataset.color = color;
+                rightClickedColorBtn = null;
+                document.getElementById('color-palette-popup').classList.remove('show');
+                return;
+            }
+            
+            // Caso contrário, aplicar a cor normalmente
+            document.execCommand('styleWithCSS', false, true);
+            if (paintingMode === 'background') {
+                document.execCommand('hiliteColor', false, color);
+            } else {
+                document.execCommand('foreColor', false, color);
+            }
+            sendContentUpdate();
+            document.getElementById('color-palette-popup').classList.remove('show');
+        }
+        
+        // Botão Mais Cores - abre popup
+        document.getElementById('btn-more-colors').addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.getElementById('color-palette-popup').classList.toggle('show');
+        });
+        
+        // Clique direito na paleta também abre popup
+        document.getElementById('remote-color-palette').addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('color-palette-popup').classList.toggle('show');
+        });
+        
+        // Fechar popup ao clicar fora
+        document.addEventListener('click', (e) => {
+            const popup = document.getElementById('color-palette-popup');
+            const wrapper = document.getElementById('remote-color-palette');
+            if (!wrapper.contains(e.target)) {
+                popup.classList.remove('show');
+                rightClickedColorBtn = null; // Reset ao fechar sem selecionar
+            }
+        });
+        
+        // Botão cor personalizada
+        document.getElementById('btn-custom-color').addEventListener('click', () => {
+            document.getElementById('custom-color-picker').click();
+        });
+        
+        document.getElementById('custom-color-picker').addEventListener('input', (e) => {
+            applyColorFromPalette(e.target.value);
+        });
+        
+        // Inicializar paleta
+        initColorPalette();
+        
+        document.querySelectorAll('#remote-color-mode .toolbar-btn[data-mode]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#remote-color-mode .toolbar-btn[data-mode]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                paintingMode = btn.dataset.mode;
+            });
+        });
+        
+        document.getElementById('remote-reset-color').addEventListener('click', () => {
+            document.execCommand('styleWithCSS', false, true);
+            document.execCommand('hiliteColor', false, 'transparent');
+            document.execCommand('foreColor', false, '#000000');
+            sendContentUpdate();
+        });
+        
+        document.querySelectorAll('#remote-color-palette .color-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const color = btn.dataset.color;
+                document.execCommand('styleWithCSS', false, true);
+                if (paintingMode === 'background') {
+                    document.execCommand('hiliteColor', false, color);
+                } else {
+                    document.execCommand('foreColor', false, color);
+                }
+                sendContentUpdate();
+            });
+            
+            // Clique direito em uma cor para trocar por outra
+            btn.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                rightClickedColorBtn = btn;
+                document.getElementById('color-palette-popup').classList.add('show');
+            });
+        });
+        
+        document.getElementById('inp-pin').addEventListener('keypress', (e) => { if (e.key === 'Enter') tryLogin(); });
+        document.getElementById('inp-name').addEventListener('keypress', (e) => { if (e.key === 'Enter') document.getElementById('inp-pin').focus(); });
+        
+        // ============================================================
+        // FUNÇÕES AUXILIARES
+        // ============================================================
+        function sendContentUpdate() {
+            socket.emit('text-update', {
+                content: editor.innerHTML,
+                name: localStorage.getItem('prompt_user') || userName || "Anonymous"
+            });
+            flashSyncIndicator();
+        }
+        
+        function sendStyleUpdate(type, value) {
+            socket.emit('style-update', {
+                type: type,
+                value: value,
+                name: localStorage.getItem('prompt_user') || userName || "Anonymous"
+            });
+        }
+        
+        function updateConnectionStatus(connected) {
+            statusText.innerText = connected ? "ONLINE" : "OFFLINE";
+            statusDiv.classList.toggle('connected', connected);
+        }
+        
+        function flashSyncIndicator() {
+            editor.classList.add('sync-flash');
+            setTimeout(() => editor.classList.remove('sync-flash'), 300);
+        }
+        
+        function updateLastSync() {
+            const now = new Date();
+            lastSyncEl.textContent = `Última sincronização: ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+        }
+        
+        function toggleButtonActive(btnId) { document.getElementById(btnId).classList.toggle('active'); }
+        
+        function setActiveAlignment(activeId) {
+            ['remote-align-left', 'remote-align-center', 'remote-align-right'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove('active');
+            });
+            const activeEl = document.getElementById(activeId);
+            if (activeEl) activeEl.classList.add('active');
+        }
+        
+        function applyEditorStyles(styles) {
+            if (!styles || !editor) return;
+            if (styles.fontFamily) editor.style.fontFamily = styles.fontFamily;
+            if (styles.fontSize) editor.style.fontSize = styles.fontSize + 'pt';
+            if (styles.fontColor) editor.style.color = styles.fontColor;
+            if (styles.lineHeight) editor.style.lineHeight = styles.lineHeight;
+            if (styles.textAlign) editor.style.textAlign = styles.textAlign;
+        }
+        
+        function updateToolbarState(state) {
+            if (!state) return;
+            if (state.alignment) updateAlignmentUI(state.alignment);
+        }
+        
+        function updateAlignmentUI(alignment) {
+            const map = { 'left': 'remote-align-left', 'center': 'remote-align-center', 'right': 'remote-align-right' };
+            if (map[alignment]) setActiveAlignment(map[alignment]);
+        }
+        
+        function applyGlobalPrefs(prefs) {
+            if (!prefs) return;
+            if (prefs.theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+            else document.documentElement.removeAttribute('data-theme');
+        }
+        
+        // Inicialização do editor
+        document.execCommand('styleWithCSS', false, true);
+        document.execCommand('defaultParagraphSeparator', false, 'p');
+    </script>
+</body>
+</html>

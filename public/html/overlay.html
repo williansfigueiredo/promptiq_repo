@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Lupa Overlay</title>
+    <style>
+      body {
+        /* Fundo principal da Janela do Overlay: completamente transparente (sem o fundo escuro aqui) */
+        background-color: transparent !important;
+        margin: 0;
+        padding: 0;
+        height: 100vh;
+        width: 100vw;
+        display: block;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      #lupa-circulo {
+        width: 300px;
+        height: 300px;
+        border-radius: 50%;
+        background: transparent;
+
+        position: absolute;
+        transform: translate(-50%, -50%); /* Centraliza o elemento */
+
+        pointer-events: none;
+
+        /* ✅ CORREÇÃO 1: EFEITO DE FURO E ESCURECIMENTO EXTERNO */
+        /* A chave é usar um box-shadow gigante que não tem blur (0)
+               e o primeiro valor de spread (9999px) para cobrir toda a tela,
+               escurecendo tudo FORA do círculo.
+               O "white" é a cor dentro do círculo, mas aqui é transparente.
+               Vamos usar uma cor neutra para a borda.
+            */
+
+        border: 0px solid transparent; /* Remove a borda física, se houver */
+
+        /* Shadow: X offset, Y offset, Blur, Spread (cobre a tela), Cor do Overlay */
+        /* A sombra é o escurecimento do restante da tela */
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.8);
+
+        /* Usamos um z-index alto para a sombra garantir que a transparência funcione */
+        z-index: 10;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="lupa-circulo"></div>
+    <script src="../../src/renderer/modules/overlay-module.js"></script>
+  </body>
+</html>

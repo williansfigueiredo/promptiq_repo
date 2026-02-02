@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Preferences</title>
+
+    <link href="../css/bootstrap.min.css" rel="stylesheet">
+    <link href="../css/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="../css/styles.css">
+  </head>
+  <body class="preferences-window">
+    
+    <div id="custom-title-bar" class="d-flex align-items-center justify-content-between p-1 app-drag">
+        <div class="d-flex align-items-center">
+             <span id="window-title-display" class="ms-2 me-4 app-no-drag fw-bold" style="font-size: 0.95rem; color: #a0a0a0;">Preferences</span>
+        </div>
+
+        <div id="window-controls" class="app-no-drag">
+            <button id="close-pref-btn" class="btn btn-sm btn-link text-white window-control-btn close-window-btn" onclick="window.close()">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+    </div>
+    <div id="preferences-container" class="d-flex flex-column h-100">
+      <ul class="nav nav-tabs" id="pref-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button
+            class="nav-link active"
+            id="style-tab-btn"
+            data-bs-toggle="tab"
+            data-bs-target="#pref-style"
+            type="button"
+            role="tab"
+          >
+            Style Settings
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button
+            class="nav-link"
+            id="playback-tab-btn"
+            data-bs-toggle="tab"
+            data-bs-target="#pref-playback"
+            type="button"
+            role="tab"
+          >
+            Playback Settings
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button
+            class="nav-link"
+            id="controls-tab-btn"
+            data-bs-toggle="tab"
+            data-bs-target="#pref-controls"
+            type="button"
+            role="tab"
+          >
+            Controls
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button
+            class="nav-link"
+            id="standby-tab-btn"
+            data-bs-toggle="tab"
+            data-bs-target="#pref-standby"
+            type="button"
+            role="tab"
+          >
+            Standby
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button
+            class="nav-link"
+            id="auto-update-tab-btn"
+            data-bs-toggle="tab"
+            data-bs-target="#pref-auto-update"
+            type="button"
+            role="tab"
+          >
+            Auto Update
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button
+            class="nav-link"
+            id="activate-tab-btn"
+            data-bs-toggle="tab"
+            data-bs-target="#pref-activate"
+            type="button"
+            role="tab"
+          >
+            Activate
+          </button>
+        </li>
+      </ul>
+
+      <div class="tab-content flex-grow-1" id="pref-content">
+        <div class="tab-pane fade show active" id="pref-style" role="tabpanel">
+
+          <div class="row align-items-center mb-2 px-5">
+            <label for="default-font-color" class="col-sm-4 col-form-label"
+              >Default Font Color:</label
+            >
+            <div class="col-sm-8">
+              <input
+                type="color"
+                class="form-control form-control-color"
+                id="default-font-color"
+                value="#FFFFFF"
+                title="Cor padrão do texto"
+              />
+            </div>
+          </div>
+
+                    <div class="row align-items-center mb-2 px-5">
+            <label for="line-spacing" class="col-sm-4 col-form-label"
+              >Line Spacing:</label
+            >
+            <div class="col-sm-8">
+              <input
+                type="number"
+                class="form-control form-control-sm"
+                id="line-spacing"
+                min="1"
+                max="3"
+                step="0.1"
+                value="1.5"
+              />
+            </div>
+          </div>
+
+
+          <hr />
+          
+
+          <div class="row align-items-center mb-2 px-5">
+            <label for="background-color" class="col-sm-4 col-form-label"
+              >Background Color:</label
+            >
+            <div class="col-sm-8">
+              <input
+                type="color"
+                class="form-control form-control-color"
+                id="background-color"
+                value="#000000"
+                title="Cor de fundo do Prompter"
+              />
+            </div>
+          </div>
+
+          <div class="row align-items-center mb-2 px-5">
+
+
+            <label for="cue-color" class="col-sm-4 col-form-label"
+              >Cue Color:</label
+            >
+            <div class="col-sm-8 d-flex align-items-center">
+              <input
+                type="color"
+                class="form-control form-control-color me-3"
+                id="cue-color"
+                value="#00FF00"
+                title="Cor do marcador"
+              />
+              <select id="cue-type" class="form-select form-select-sm">
+                <option value="arrow">Arrow</option>
+                <option value="bar">Bar</option>
+              </select>
+            </div>
+          </div>
+
+          
+
+        </div>
+
+        <div class="tab-pane fade" id="pref-playback" role="tabpanel">
+
+          <div class="mb-2 px-5 align-content-center form-check">
+            <input
+              class="form-check-input"
+              type="checkbox"
+              value=""
+              id="progress-indicator-check"
+            />
+            <label class="form-check-label" for="progress-indicator-check">
+              Show Progress Indicator
+            </label>
+          </div>
+          <div class="mb-2 px-5 align-content-center form-check">
+            <input
+              class="form-check-input"
+              type="checkbox"
+              value=""
+              id="continuous-loop-check"
+            />
+            <label class="form-check-label" for="continuous-loop-check">
+              Continuous Loop
+            </label>
+          </div>
+
+          <hr />
+
+        </div>
+
+
+        <div class="tab-pane fade" id="pref-controls" role="tabpanel">
+          <div class="row mb-1 mt-3 align-items-center">
+            <div class="col-6">
+              <h5 class="text-uppercase text-center text-muted fw-bold" style="font-size: 1.1rem;">
+                Keystroke Commands
+              </h5>
+            </div>
+            <div class="col-6">
+              <h5 class="text-uppercase text-center text-muted fw-bold" style="font-size: 1.1rem;">
+                Mouse Commands
+              </h5>
+            </div>
+          </div>
+
+          <hr class="mt-0" />
+
+          <div class="row align-items-center mb-2 px-5">
+            <label for="key-stop-exit" class="col-sm-4 col-form-label"
+              >Stop/Exit Prompt Mode:</label
+            >
+            <div class="col-sm-4">
+              <input
+                type="text"
+                class="form-control form-control-sm"
+                id="key-stop-exit"
+                value="Esc"
+              />
+            </div>
+            <div
+              class="col-sm-4 d-flex justify-content-between align-items-center"
+            >
+              <select
+                id="mouse-stop-exit"
+                class="form-select form-select-sm me-2"
+              >
+                <option value="none">None</option>
+                <option value="left-click">Left-Click</option>
+              </select>
+              <button
+                class="btn btn-sm btn-outline-secondary"
+                id="default-key-stop"
+              >
+                Defaults
+              </button>
+            </div>
+          </div>
+
+          <div class="row align-items-center mb-2 px-5">
+            <label for="key-pause-resume" class="col-sm-4 col-form-label"
+              >Pause/Resume:</label
+            >
+            <div class="col-sm-4">
+              <input
+                type="text"
+                class="form-control form-control-sm"
+                id="key-pause-resume"
+                value="Space"
+              />
+            </div>
+            <div class="col-sm-4">
+              <select
+                id="mouse-pause-resume"
+                class="form-select form-select-sm"
+              >
+                <option value="none">None</option>
+                <option value="left-click">Left-Click</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row align-items-center mb-2 px-5">
+            <label for="key-scroll-forward" class="col-sm-4 col-form-label"
+              >Scroll Forward:</label
+            >
+            <div class="col-sm-4">
+              <input
+                type="text"
+                class="form-control form-control-sm"
+                id="key-scroll-forward"
+                value="Down"
+              />
+            </div>
+            <div class="col-sm-4">
+              <select
+                id="mouse-scroll-forward"
+                class="form-select form-select-sm"
+              >
+                <option value="none">None</option>
+                <option value="scroll-wheel-down">Scroll-Wheel Down</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row align-items-center mb-2 px-5">
+            <label for="key-scroll-backward" class="col-sm-4 col-form-label"
+              >Scroll Backward:</label
+            >
+            <div class="col-sm-4">
+              <input
+                type="text"
+                class="form-control form-control-sm"
+                id="key-scroll-backward"
+                value="Up"
+              />
+            </div>
+            <div class="col-sm-4">
+              <select
+                id="mouse-scroll-backward"
+                class="form-select form-select-sm"
+              >
+                <option value="none">None</option>
+                <option value="scroll-wheel-up">Scroll-Wheel Up</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row align-items-center mb-2 px-5">
+            <label for="key-reverse-scroll" class="col-sm-4 col-form-label"
+              >Reverse Scroll:</label
+            >
+            <div class="col-sm-4">
+              <input
+                type="text"
+                class="form-control form-control-sm"
+                id="key-reverse-scroll"
+                value="Backspace"
+              />
+            </div>
+            <div class="col-sm-4">
+              <select
+                id="mouse-reverse-scroll"
+                class="form-select form-select-sm"
+              >
+                <option value="none">None</option>
+                <option value="right-click">Right-Click</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row align-items-center mb-2 px-5">
+            <label for="key-previous-line" class="col-sm-4 col-form-label"
+              >Previous Line:</label
+            >
+            <div class="col-sm-4">
+              <input
+                type="text"
+                class="form-control form-control-sm"
+                id="key-previous-line"
+                value="["
+              />
+            </div>
+            <div class="col-sm-4">
+              <select
+                id="mouse-previous-line"
+                class="form-select form-select-sm"
+              >
+                <option value="none">None</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row align-items-center mb-2 px-5">
+            <label for="key-next-line" class="col-sm-4 col-form-label"
+              >Next Line:</label
+            >
+            <div class="col-sm-4">
+              <input
+                type="text"
+                class="form-control form-control-sm"
+                id="key-next-line"
+                value="]"
+              />
+            </div>
+            <div class="col-sm-4">
+              <select id="mouse-next-line" class="form-select form-select-sm">
+                <option value="none">None</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row align-items-center mb-2 px-5">
+            <label for="key-previous-cue" class="col-sm-4 col-form-label"
+              >Previous Cue-Point:</label
+            >
+            <div class="col-sm-4">
+              <input
+                type="text"
+                class="form-control form-control-sm"
+                id="key-previous-cue"
+                value="Left"
+              />
+            </div>
+            <div class="col-sm-4">
+              <select
+                id="mouse-previous-cue"
+                class="form-select form-select-sm"
+              >
+                <option value="none">None</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row align-items-center mb-2 px-5">
+            <label for="key-next-cue" class="col-sm-4 col-form-label"
+              >Next Cue-Point:</label
+            >
+            <div class="col-sm-4">
+              <input
+                type="text"
+                class="form-control form-control-sm"
+                id="key-next-cue"
+                value="Right"
+              />
+            </div>
+            <div class="col-sm-4">
+              <select id="mouse-next-cue" class="form-select form-select-sm">
+                <option value="none">None</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row align-items-center mb-2 px-5">
+            <label for="key-jump-start" class="col-sm-4 col-form-label"
+              >Jump to Start:</label
+            >
+            <div class="col-sm-4">
+              <input
+                type="text"
+                class="form-control form-control-sm"
+                id="key-jump-start"
+                value="Home"
+              />
+            </div>
+            <div class="col-sm-4">
+              <select id="mouse-jump-start" class="form-select form-select-sm">
+                <option value="none">None</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row align-items-center mb-2 px-5">
+            <label for="key-show-hide-cue" class="col-sm-4 col-form-label"
+              >Show/Hide Cue-Point:</label
+            >
+            <div class="col-sm-4">
+              <input
+                type="text"
+                class="form-control form-control-sm"
+                id="key-show-hide-cue"
+                value="[None]"
+              />
+            </div>
+            <div class="col-sm-4">
+              <select
+                id="mouse-show-hide-cue"
+                class="form-select form-select-sm"
+              >
+                <option value="none">None</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-pane fade" id="pref-standby" role="tabpanel">
+          <div class="mb-2 px-5 mt-5 form-check">
+            <input
+              class="form-check-input"
+              type="checkbox"
+              value=""
+              id="custom-standby-image-check"
+            />
+            <label class="form-check-label" for="custom-standby-image-check">
+              Use Custom Standby Image
+            </label>
+          </div>
+
+          <!-- Timeout de Inatividade -->
+          <div class="row mb-3 px-5 align-items-center">
+            <label class="col-4 col-form-label" for="standby-timeout">
+              Inactivity Timeout
+            </label>
+            <div class="col-4">
+              <select class="form-select form-select-sm" id="standby-timeout">
+                <option value="1">1 minute</option>
+                <option value="2">2 minutes</option>
+                <option value="3">3 minutes</option>
+                <option value="5" selected>5 minutes</option>
+                <option value="10">10 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="30">30 minutes</option>
+              </select>
+            </div>
+            <div class="col-4">
+              <small class="text-muted">Time before standby activates</small>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-center my-4">
+            <div class="standby-preview-box" id="standby-preview-box">
+              <span class="p-3">PLEASE STANDBY</span>
+            </div>
+          </div>
+
+          <!-- Input hidden para guardar o caminho da imagem -->
+          <input type="hidden" id="standby-image-path" value="" />
+
+          <div class="mb-2 px-5 text-center">
+            <button class="btn btn-secondary" id="select-standby-image-btn">
+              Select
+            </button>
+            <p class="text-muted mt-2 small">
+              For best results select an image the same size or aspect ratio as
+              your second screen.
+            </p>
+          </div>
+        </div>
+
+        <div class="tab-pane fade" id="pref-auto-update" role="tabpanel">
+          <div class="mb-2 px-5 mt-5">
+            <input
+              class="form-check-input"
+              type="checkbox"
+              value=""
+              id="auto-update-check"
+              checked
+            />
+            <label class="form-check-label" for="auto-update-check">
+              Automatically check for product updates
+            </label>
+            <p class="text-muted small ms-4 mt-1">
+              Uses the active internet connection, if available, to contact our
+              web site to inform you if a new version is available.
+            </p>
+          </div>
+
+          <div class="mb-2 px-5 d-flex align-items-center">
+            <p class="mb-0 me-3 text-muted">
+              Last check:
+              <span id="last-check-span">14 de out. de 2025 09:03:20</span>
+            </p>
+            <button class="btn btn-sm btn-outline-secondary" id="check-now-btn">
+              Check Now
+            </button>
+          </div>
+        </div>
+
+        <!-- Aba Activate -->
+        <div class="tab-pane fade" id="pref-activate" role="tabpanel">
+          <div class="mb-3 px-5 mt-5">
+            <h5 class="text-muted mb-3">Product Activation</h5>
+            <p class="text-muted small mb-4">
+              Enter your activation code below to unlock all features.
+            </p>
+            
+            <div class="d-flex justify-content-center align-items-center gap-2 mb-4">
+              <input type="text" class="form-control form-control-sm text-center activation-code-input" id="activation-code-1" maxlength="5" style="width: 70px; font-size: 1.1rem; letter-spacing: 2px; font-weight: bold;" />
+              <span class="text-muted fw-bold">-</span>
+              <input type="text" class="form-control form-control-sm text-center activation-code-input" id="activation-code-2" maxlength="5" style="width: 70px; font-size: 1.1rem; letter-spacing: 2px; font-weight: bold;" />
+              <span class="text-muted fw-bold">-</span>
+              <input type="text" class="form-control form-control-sm text-center activation-code-input" id="activation-code-3" maxlength="5" style="width: 70px; font-size: 1.1rem; letter-spacing: 2px; font-weight: bold;" />
+              <span class="text-muted fw-bold">-</span>
+              <input type="text" class="form-control form-control-sm text-center activation-code-input" id="activation-code-4" maxlength="5" style="width: 70px; font-size: 1.1rem; letter-spacing: 2px; font-weight: bold;" />
+              <span class="text-muted fw-bold">-</span>
+              <input type="text" class="form-control form-control-sm text-center activation-code-input" id="activation-code-5" maxlength="5" style="width: 70px; font-size: 1.1rem; letter-spacing: 2px; font-weight: bold;" />
+              <span class="text-muted fw-bold">-</span>
+              <input type="text" class="form-control form-control-sm text-center activation-code-input" id="activation-code-6" maxlength="5" style="width: 70px; font-size: 1.1rem; letter-spacing: 2px; font-weight: bold;" />
+            </div>
+
+            <div class="text-center">
+              <button class="btn btn-primary" id="activate-btn">Activate</button>
+            </div>
+
+            <div id="activation-status" class="mt-4 text-center" style="display: none;">
+              <p class="mb-0"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div
+        id="pref-actions"
+        class="p-6 bg-light border-bottom text-end d-flex justify-content-between mb-5"
+      >
+        <button id="default-values-btn" class="btn btn-secondary me-4">
+          Default Values
+        </button>
+        <div>
+          <button id="cancel-btn" class="btn btn-secondary me-4">Cancelar</button>
+          <button id="ok-btn" class="btn btn-primary me-4">OK</button>
+        </div>
+      </div>
+    </div>
+
+<script src="../../src/renderer/lib/bootstrap.bundle.min.js"></script>
+
+<script type="module" src="../../src/renderer/modules/preferences-module.js"></script>
+
+  </body>
+</html>

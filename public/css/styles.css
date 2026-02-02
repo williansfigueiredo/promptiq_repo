@@ -1,0 +1,2807 @@
+/* ==========================================================================
+   STYLES.CSS - ARQUIVO MESTRE DE ESTILOS - PROMPTIQ
+   ==========================================================================
+   
+   Este arquivo contém os estilos GLOBAIS do aplicativo:
+   - Imports de todos os CSS
+   - Reset e estrutura base
+   - Barra de título e menus
+   - Sistema de abas
+   - Tela inicial (Home/Sidebar/Recentes)
+   - Modais e popups
+   - Janela de preferências
+   - Scrollbars e utilitários
+
+   ESTRUTURA:
+   1. IMPORTS E FONTES
+   2. ESTILOS UNIVERSAIS (Light e Dark Mode)
+   3. ESTILOS DARK MODE APENAS
+   
+   ========================================================================== */
+
+
+/* ==========================================================================
+   1. IMPORTS E FONTES
+   ========================================================================== */
+
+@import url('./variables.css');
+/* Variáveis primeiro */
+@import url('./edit.css');
+/* Estilos do Editor */
+@import url('./operator.css');
+/* Estilos do Operador/Prompter */
+@import url('./bootstrap.min.css');
+@import url('./bootstrap-icons.css');
+@import url('./fonts/universal-fonts.css');
+
+
+/* --------------------------------------------------------------------------
+   1.1 FONTES CUSTOMIZADAS
+   -------------------------------------------------------------------------- */
+
+/* DM Sans (Para Textos, Menus e Interface) */
+@font-face {
+  font-family: 'DM Sans';
+  src: url('./fonts/DMSans-VariableFont_opsz,wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+}
+
+/* JetBrains Mono (Para áreas de código ou logs) */
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./fonts/JetBrainsMono-VariableFont_wght.ttf') format('truetype');
+  font-weight: 100 800;
+}
+
+
+/* ==========================================================================
+   2. ESTILOS UNIVERSAIS (Funcionam em Light e Dark Mode)
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   2.1 RESET E ESTRUTURA BASE
+   -------------------------------------------------------------------------- */
+
+body {
+  font-family: 'DM Sans', sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+  font-weight: 500;
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--background-secondary);
+  color: var(--text-primary);
+  transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  -moz-osx-font-smoothing: grayscale;
+}
+
+
+/* --------------------------------------------------------------------------
+   2.2 UTILITÁRIOS GERAIS
+   -------------------------------------------------------------------------- */
+
+.hidden {
+  display: none !important;
+}
+
+.cursor-move {
+  cursor: move;
+}
+
+.cursor-move:active {
+  cursor: grabbing;
+}
+
+.text-small-rem {
+  font-size: 0.75rem;
+}
+
+.icon-xs {
+  font-size: 0.75em;
+}
+
+.scroll-y-auto {
+  overflow-y: auto;
+}
+
+.overflow-hidden {
+  overflow: hidden;
+}
+
+.w-100 {
+  width: 100% !important;
+}
+
+/* Electron Drag Regions (Arrastar Janela) */
+.app-drag {
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Sobrescrita do Bootstrap para garantir padrão de cor */
+.bg-light {
+  background-color: var(--background-secondary) !important;
+}
+
+/* Títulos na área principal (Home/Recentes) */
+#home-content-default h3,
+#home-content-recent h3,
+.home-content .sidebar-heading {
+  color: var(--primary-color) !important;
+  font-weight: bold;
+}
+
+
+/* --------------------------------------------------------------------------
+   2.3 BARRA DE TÍTULO E MENUS SUPERIORES
+   -------------------------------------------------------------------------- */
+
+#custom-title-bar {
+  height: auto;
+  background: var(--background-secondary) !important;
+  color: var(--text-secondary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 13px;
+  user-select: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+#window-title-display {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+/* Espaçamento entre os botões do menu */
+#custom-menu-container {
+  gap: 6px;
+}
+
+.menu-item-wrapper {
+  position: relative;
+  height: 36px;
+}
+
+/* Botões do Menu (File, Edit...) */
+.custom-menu-btn {
+  color: var(--text-secondary) !important;
+  font-size: 13px !important;
+  padding: 0 14px !important;
+  height: 36px;
+  line-height: 36px;
+  border: none !important;
+  background: transparent !important;
+  border-radius: var(--radius-sm) !important;
+  transition: all 0.15s;
+  font-weight: 500;
+}
+
+.custom-menu-btn:hover,
+.custom-menu-btn.active {
+  background-color: hsl(var(--sidebar-background)) !important;
+  color: var(--text-secondary)
+}
+
+/* Dropdowns e Submenus */
+.custom-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: 36px;
+  left: 0;
+  min-width: 240px;
+  z-index: 2000;
+  background-color: hsl(var(--sidebar-background)) !important;
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 6px;
+  border-radius: var(--radius-md);
+}
+
+.custom-dropdown-menu.show {
+  display: block;
+}
+
+.custom-dropdown-menu.submenu {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: 0;
+  margin-left: 4px;
+  min-width: 200px;
+  background-color: hsl(var(--sidebar-background)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+}
+
+.custom-dropdown-menu.submenu.show {
+  display: block;
+}
+
+/* Scrolls dos menus */
+.menu-scroll-lg {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.menu-scroll-md {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.custom-dropdown-menu.submenu::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-dropdown-menu.submenu::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+/* Itens de Menu */
+.menu-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s;
+}
+
+.menu-item:hover:not(.disabled) {
+  background-color: var(--primary-color);
+  color: var(--text-inverse);
+}
+
+.menu-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.menu-item-separator {
+  height: 1px;
+  background-color: var(--text-tertiary-light);
+  margin: 6px 0;
+}
+
+.menu-shortcut {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  margin-left: 24px;
+  min-width: 15px;
+  text-align: right;
+  font-weight: 500;
+}
+
+.menu-item:hover .menu-shortcut {
+  color: var(--text-primary);
+}
+
+/* Controles da Janela */
+#window-controls .window-control-btn {
+  color: var(--text-secondary) !important;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s;
+}
+
+/* --------------------------------------------------------------------------
+   2.4 SISTEMA DE ABAS (Home, Edit, Operator)
+   -------------------------------------------------------------------------- */
+
+#main-tab-container {
+  background-color: var(--background-primary);
+  border-bottom: 1px solid var(--border-light);
+  padding: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.nav-tabs .nav-link {
+  display: flex !important;
+  align-items: center !important;
+  gap: var(--spacing-xs, 8px);
+  border: none;
+  padding: var(--spacing-sm, 12px) var(--spacing-md, 20px);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: var(--font-size-sm, 14px);
+  position: relative;
+}
+
+.nav-tabs .nav-link:hover:not(.active) {
+  background-color: var(--background-secondary);
+  color: var(--text-primary);
+}
+
+.nav-tabs .nav-link.active {
+  background-color: var(--background-primary);
+  color: var(--text-primary);
+  font-weight: 700;
+  border-color: var(--border-light);
+  border-bottom-color: var(--background-primary);
+  box-shadow: none;
+}
+
+/* Ajuste fino para o ícone não ficar gigante ou torto */
+.nav-tabs .nav-link i {
+  font-size: var(--icon-size-sm, 16px);
+  line-height: 1;
+}
+
+/* Mantém a linha azul embaixo */
+.nav-tabs .nav-link::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--primary-color);
+  transform: scaleX(0);
+  transition: transform 0.2s;
+}
+
+.nav-tabs .nav-link.active::after {
+  transform: scaleX(1);
+}
+
+.tab-content,
+.tab-pane {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  height: 100%;
+  position: relative;
+}
+
+/* --------------------------------------------------------------------------
+   2.5 TELA INICIAL (SIDEBAR E RECENTES)
+   -------------------------------------------------------------------------- */
+
+#home-sidebar {
+  background-color: hsl(var(--sidebar-background)) !important;
+  border-right: 1px solid var(--border-color);
+  width: var(--sidebar-width, 260px);
+  min-width: 180px;
+  max-width: 320px;
+  padding: var(--spacing-lg, 24px) var(--spacing-md, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+#home-sidebar .btn {
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: var(--font-size-base, 16px);
+  border: none;
+  padding: var(--spacing-sm, 12px) var(--spacing-md, 16px);
+  transition: all 0.2s;
+}
+
+#new-script-btn {
+  background: linear-gradient(135deg, var(--primary-color) 0%, #0051D5 100%);
+  color: white;
+  box-shadow: none;
+  border: 1px solid rgba(0, 0, 0, 0.02) !important;
+}
+
+#new-script-btn:hover {
+  transform: translateY(-1px);
+}
+
+/* Light mode - Create New Script card background */
+#new-script-btn {
+  background: linear-gradient(135deg, #0d6efd 0%, #0051D5 100%) !important;
+}
+
+[data-theme="dark"] #new-script-btn,
+body.dark-mode #new-script-btn {
+  background: linear-gradient(135deg, #0d6efd 0%, #0051D5 100%) !important;
+}
+
+/* Estilo para botão secundário */
+.btn-secondary {
+  background-color: var(--background-tertiary) !important;
+  border-color: transparent !important;
+  color: var(--text-primary) !important;
+}
+
+.btn-secondary:hover {
+  background-color: var(--border-color) !important;
+  transform: translateY(-1px);
+}
+
+#home-main-area.bg-white {
+  background-color: hsl(var(--sidebar-background)) !important;
+}
+
+#home-main-area {
+  padding: var(--spacing-lg, 24px);
+  background-color: var(--background-secondary);
+  flex-grow: 1;
+  overflow: auto;
+}
+
+.home-content {
+  background-color: var(--background-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl, 32px);
+  box-shadow: var(--shadow-md);
+  height: 100%;
+  width: 100%;
+  overflow: auto;
+}
+
+/* --------------------------------------------------------------------------
+   2.6 LISTA DE RECENTES (Recent Files)
+   -------------------------------------------------------------------------- */
+
+.recent-file-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  background-color: transparent;
+  transition: background 0.2s, transform 0.2s;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 2px;
+}
+
+.recent-file-item:hover {
+  background-color: var(--background-secondary);
+  transform: translateX(5px);
+}
+
+.recent-icon {
+  font-size: 24px;
+  color: var(--primary-color);
+  margin-right: 16px;
+  display: flex;
+  align-items: center;
+}
+
+.recent-info {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  overflow: hidden;
+}
+
+.recent-name {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.recent-path {
+  color: var(--text-secondary);
+  font-size: 12px;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent-date {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  margin-left: 16px;
+  white-space: nowrap;
+}
+
+.text-primary {
+  color: var(--primary-color) !important;
+}
+
+.welcome-subtitle {
+  margin-bottom: 20px !important;
+  display: block;
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+
+#home-content-recent h3 {
+  margin-bottom: 3px !important;
+  padding-bottom: 0 !important;
+}
+
+#home-content-recent p {
+  margin-top: 0 !important;
+  margin-bottom: 35px !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   2.7 WELCOME CARDS (Create New, Open Existing, etc)
+   -------------------------------------------------------------------------- */
+
+.welcome-card {
+  background-color: #F5F7FA;
+  border: 1px solid rgba(0, 0, 0, 0.02);
+  border-radius: 12px;
+  padding: 24px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.welcome-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--primary-color);
+}
+
+.welcome-card.active-card {
+  border-color: var(--border-color);
+  background-color: transparent;
+  box-shadow: none;
+}
+
+
+.welcome-card:hover .card-arrow {
+  transform: translateX(4px);
+}
+
+.welcome-card:hover .card-title {
+  color: var(--primary-color);
+}
+
+
+
+.card-icon-box {
+  width: 45px;
+  height: 45px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.box-blue {
+  background-color: rgba(51, 170, 221, 0.15);
+  color: #33aadd;
+}
+
+.box-green {
+  background-color: rgba(52, 199, 89, 0.15);
+  color: #34C759;
+}
+
+.box-orange {
+  background-color: rgba(255, 150, 0, 0.15);
+  color: #FF9500;
+}
+
+.card-title {
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 16px;
+}
+
+.card-desc {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.card-arrow {
+  color: var(--text-tertiary);
+  font-size: 18px;
+}
+
+/* Quick Tips Section - Box/Card Style */
+.quick-tips-box {
+  background: #F5F7FA;
+  border: 1px solid rgba(0, 0, 0, 0.02);
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: all 0.3s ease;
+}
+
+[data-theme="dark"] .quick-tips-box,
+body.dark-mode .quick-tips-box {
+  background: #252A35;
+  border-color: rgba(255, 255, 255, 0.02);
+}
+
+.quick-tips-box h5 {
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  letter-spacing: -0.3px;
+}
+
+.quick-tips-box ul li {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+
+.quick-tips-box ul li strong {
+  color: var(--text-secondary);
+  font-weight: 900;
+}
+
+mark {
+  background-color: var(--text-tertiary-light);
+  color: var(--text-primary);
+  padding: 0 4px;
+  /* Um pequeno espaço nas laterais */
+  border-radius: 4px;
+  /* Bordas levemente arredondadas */
+}
+
+.quick-tips-box i.bi-check-circle-fill {
+  color: var(--primary-color);
+  opacity: 0.7;
+}
+
+
+
+
+/* ==========================================================================
+   8. MODAIS E POPUPS (Timeline, Find, Remote, Cores)
+   ========================================================================== */
+
+.timeline-modal-body {
+  height: var(--modal-height-xl);
+}
+
+#timeline-list {
+  overflow-x: hidden !important;
+  width: 100%;
+}
+
+.diff-panel {
+  font-family: 'Courier New', monospace;
+  overflow-x: hidden;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  overflow-y: auto;
+}
+
+.diff-removed-highlight {
+  background-color: rgba(255, 59, 48, 0.2);
+  text-decoration: line-through;
+}
+
+.diff-added-highlight {
+  background-color: rgba(52, 199, 89, 0.2);
+  font-weight: 600;
+}
+
+.find-match {
+  background-color: #FFD60A;
+  color: var(--text-primary);
+}
+
+.find-match.active {
+  background-color: var(--warning);
+  outline: 2px solid var(--primary-color);
+}
+
+.btn-outline-secondary {
+  background-color: white;
+  border-color: var(--border-light);
+  color: var(--text-secondary);
+}
+
+.btn-outline-secondary:hover {
+  background-color: var(--background-secondary);
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+
+.btn-check:checked+.btn-outline-secondary {
+  background-color: var(--background-secondary);
+  color: var(--text-secondary);
+  border-color: var(--border-color);
+  box-shadow: none;
+}
+
+/* ==========================================================================
+   9. JANELA DE PREFERÊNCIAS
+   ========================================================================== */
+
+.preferences-window {
+  background-color: var(--background-secondary);
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+#preferences-container {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--background-secondary);
+}
+
+#pref-content {
+  background-color: var(--background-primary);
+  border: none;
+  overflow-y: auto;
+  overflow-x: hidden !important;
+  padding: 24px 0 32px 0;
+  flex-grow: 1;
+  width: 100%;
+}
+
+#pref-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+#pref-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#pref-content::-webkit-scrollbar-thumb {
+  background-color: var(--text-tertiary);
+  border-radius: 3px;
+}
+
+#pref-content .row {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 8px 0;
+  transition: background-color 0.15s ease;
+}
+
+#pref-content .row:hover {
+  background-color: var(--background-tertiary);
+}
+
+#pref-content label {
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+#pref-content .form-control,
+#pref-content .form-select {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  padding: 10px 14px;
+  transition: all 0.2s ease;
+  background-color: var(--background-primary);
+  color: var(--text-primary);
+}
+
+#pref-content .form-control:focus,
+#pref-content .form-select:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--primary-light);
+  outline: none;
+}
+
+#pref-content .form-control-color {
+  width: 48px;
+  height: 36px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 2px solid var(--border-color);
+  transition: all 0.2s ease;
+}
+
+#pref-content .form-control-color:hover {
+  border-color: var(--primary-color);
+  transform: scale(1.05);
+}
+
+#pref-content input[type="range"] {
+  -webkit-appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-color);
+  outline: none;
+}
+
+#pref-content input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  cursor: pointer;
+  border: 2px solid var(--background-primary);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.15s ease;
+}
+
+#pref-content input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+
+#pref-content hr {
+  border: none;
+  height: 1px;
+  background-color: var(--border-light);
+  margin: 20px 40px;
+}
+
+#pref-content .form-check-input {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+#pref-content .form-check-input:checked {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+#pref-content .form-check-label {
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-left: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+#pref-content .text-muted {
+  color: var(--text-secondary) !important;
+  font-size: 12px;
+}
+
+#pref-actions {
+  background-color: var(--background-secondary) !important;
+  border-top: 1px solid var(--border-light);
+  padding: 16px 32px !important;
+  margin-bottom: 0 !important;
+  flex-shrink: 0;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#pref-actions .btn {
+  padding: 10px 24px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+#pref-actions .btn-primary {
+  background-color: var(--primary-color);
+  border: none;
+  color: var(--text-inverse);
+}
+
+#pref-actions .btn-primary:hover {
+  background-color: var(--primary-hover);
+}
+
+#pref-actions .btn-secondary {
+  background-color: var(--background-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+#pref-actions .btn-secondary:hover {
+  background-color: var(--background-tertiary);
+}
+
+.standby-preview-box {
+  width: 80%;
+  height: 200px;
+  background-color: var(--background-secondary);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  text-align: center;
+  margin: auto;
+  border: 1px solid var(--border-color);
+}
+
+.pref-value-label {
+  width: 50px;
+  display: inline-block;
+  text-align: center;
+  font-weight: 600;
+  color: var(--primary-color);
+  background-color: var(--primary-light);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+/* Title Bar - Preferences */
+.preferences-window #custom-title-bar {
+  height: 48px !important;
+  background-color: var(--background-toolbar) !important;
+  padding: 0 16px !important;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border-light) !important;
+}
+
+.preferences-window #window-title-display {
+  color: var(--text-primary) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+}
+
+.preferences-window .close-window-btn {
+  color: var(--text-secondary) !important;
+  transition: all 0.2s ease;
+}
+
+.preferences-window .close-window-btn:hover {
+  color: #ffffff !important;
+  background-color: var(--danger) !important;
+  border-radius: var(--radius-sm);
+}
+
+/* Tabs - Preferences (Mesmo padrão das abas Home/Edit/Operator) */
+#pref-tabs {
+  background-color: var(--background-primary) !important;
+  margin-top: 0 !important;
+  padding: 0 !important;
+  border-bottom: 1px solid var(--border-light) !important;
+  display: flex;
+  gap: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+#pref-tabs .nav-item {
+  margin-bottom: 0;
+}
+
+#pref-tabs .nav-link {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px;
+  font-size: 14px !important;
+  font-weight: 600;
+  color: var(--text-secondary) !important;
+  padding: 12px 20px;
+  border: none !important;
+  border-radius: 0;
+  background-color: transparent;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+#pref-tabs .nav-link:hover:not(.active) {
+  color: var(--text-primary) !important;
+  background-color: var(--background-secondary);
+}
+
+#pref-tabs .nav-link::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--primary-color);
+  transform: scaleX(0);
+  transition: transform 0.2s;
+}
+
+#pref-tabs .nav-link.active {
+  color: var(--text-primary) !important;
+  background-color: var(--background-primary) !important;
+  font-weight: 700;
+  border: none !important;
+  box-shadow: none;
+}
+
+#pref-tabs .nav-link.active::after {
+  transform: scaleX(1);
+}
+
+#pref-style,
+#pref-playback,
+#pref-controls,
+#pref-standby,
+#pref-auto-update {
+  padding-top: 24px !important;
+}
+
+/* Dark Mode - Preferences - Botões e Checkboxes */
+body.dark-mode #pref-content .btn-secondary,
+body.dark-mode #pref-content .btn-outline-secondary,
+[data-theme="dark"] #pref-content .btn-secondary,
+[data-theme="dark"] #pref-content .btn-outline-secondary {
+  background-color: var(--background-tertiary) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode #pref-content .btn-secondary:hover,
+body.dark-mode #pref-content .btn-outline-secondary:hover,
+[data-theme="dark"] #pref-content .btn-secondary:hover,
+[data-theme="dark"] #pref-content .btn-outline-secondary:hover {
+  background-color: var(--border-color) !important;
+}
+
+body.dark-mode #pref-content .form-check-input,
+[data-theme="dark"] #pref-content .form-check-input {
+  background-color: var(--background-secondary) !important;
+  border-color: var(--border-color) !important;
+}
+
+body.dark-mode #pref-content .form-check-input:checked,
+[data-theme="dark"] #pref-content .form-check-input:checked {
+  background-color: var(--primary-color) !important;
+  border-color: var(--primary-color) !important;
+}
+
+body.dark-mode #pref-auto-update .btn,
+body.dark-mode #pref-standby .btn,
+body.dark-mode #pref-controls .btn,
+[data-theme="dark"] #pref-auto-update .btn,
+[data-theme="dark"] #pref-standby .btn,
+[data-theme="dark"] #pref-controls .btn {
+  background-color: var(--background-tertiary) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode #pref-auto-update .btn:hover,
+body.dark-mode #pref-standby .btn:hover,
+body.dark-mode #pref-controls .btn:hover,
+[data-theme="dark"] #pref-auto-update .btn:hover,
+[data-theme="dark"] #pref-standby .btn:hover,
+[data-theme="dark"] #pref-controls .btn:hover {
+  background-color: var(--border-color) !important;
+}
+
+.theme-btn {
+  background-color: var(--background-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 8px 16px;
+  border-radius: var(--radius-md) !important;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  justify-content: end;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-sm);
+}
+
+.theme-btn:hover {
+  background-color: var(--background-secondary);
+  transform: translateY(-1px);
+}
+
+.theme-btn:active {
+  transform: translateY(0);
+}
+
+
+/* ==========================================================================
+   3. ESTILOS DARK MODE APENAS
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   3.1 MODAIS E BACKGROUNDS - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] .modal-content,
+[data-theme="dark"] .bg-white,
+[data-theme="dark"] .bg-light,
+body.dark-mode .modal-content,
+body.dark-mode .bg-white,
+body.dark-mode .bg-light {
+  background-color: #191D24 !important;
+  color: #FFFFFF !important;
+}
+
+[data-theme="dark"] .modal-header,
+[data-theme="dark"] .modal-footer,
+body.dark-mode .modal-header,
+body.dark-mode .modal-footer {
+  border-color: #2D323E !important;
+  background-color: #191D24 !important;
+}
+
+.modal-header,
+.modal-header h5,
+.modal-header .modal-title,
+.modal-header i {
+  color: var(--primary-color) !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.2 ABAS E NAVEGAÇÃO - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] .nav-tabs,
+body.dark-mode .nav-tabs {
+  border-bottom: 1px solid #2D323E !important;
+}
+
+[data-theme="dark"] .nav-link,
+body.dark-mode .nav-link {
+  color: #9CA3AF !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.3 TOOLBAR DO OPERADOR - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] #operator-toolbar,
+body.dark-mode #operator-toolbar {
+  background-color: #14161C !important;
+  border-bottom: 1px solid #2D323E !important;
+}
+
+[data-theme="dark"] #operator-toolbar .btn,
+body.dark-mode #operator-toolbar .btn,
+[data-theme="dark"] #operator-toolbar i,
+body.dark-mode #operator-toolbar i {
+  color: #9CA3AF !important;
+}
+
+[data-theme="dark"],
+body.dark-mode {
+  --bs-primary-rgb: 0, 178, 255 !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.4 DROPDOWNS E MENUS - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] .dropdown-menu,
+body.dark-mode .dropdown-menu {
+  background-color: #191D24 !important;
+  border-color: #2D323E !important;
+}
+
+[data-theme="dark"] .dropdown-menu .dropdown-item,
+body.dark-mode .dropdown-menu .dropdown-item {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .dropdown-menu .dropdown-item:hover,
+body.dark-mode .dropdown-menu .dropdown-item:hover {
+  background-color: #252A35 !important;
+}
+
+.d-flex.align-items-center.gap-2.p-2.border-bottom {
+  background-color: var(--bg-toolbar) !important;
+  border-bottom-color: var(--border-color) !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.5 PALETTE DE CORES - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] .palette-popup,
+body.dark-mode .palette-popup {
+  background-color: #191D24 !important;
+  border-color: #2D323E !important;
+}
+
+[data-theme="dark"] .palette-more-btn,
+body.dark-mode .palette-more-btn {
+  background-color: #252A35 !important;
+  border-color: #2D323E !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .palette-more-btn:hover,
+body.dark-mode .palette-more-btn:hover {
+  color: #191D24 !important;
+}
+
+[data-theme="dark"] .palette-swatch,
+body.dark-mode .palette-swatch {
+  border-color: #2D323E !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.6 FORMULÁRIOS E INPUTS - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] .d-flex.align-items-center.gap-2.p-2.border-bottom select,
+[data-theme="dark"] .d-flex.align-items-center.gap-2.p-2.border-bottom input {
+  background-color: #191D24 !important;
+  color: #fff !important;
+  border: 1px solid #2D323E !important;
+}
+
+[data-theme="dark"] .border-end,
+[data-theme="dark"] .border-right,
+body.dark-mode .border-end,
+body.dark-mode .border-right {
+  border-right-color: #2D323E !important;
+}
+
+[data-theme="dark"] .btn-outline-secondary,
+[data-theme="dark"] .btn-outline-light,
+[data-theme="dark"] .sidebar .btn {
+  border-color: #2D323E !important;
+  color: #e0e0e0 !important;
+}
+
+[data-theme="dark"] .sidebar .btn:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  border-color: #00B2FF !important;
+}
+
+[data-theme="dark"] .form-select,
+[data-theme="dark"] .form-control,
+[data-theme="dark"] input[type="number"] {
+  background-color: #14161C !important;
+  border: 1px solid #2D323E !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .btn-group .btn,
+[data-theme="dark"] .btn-group-vertical .btn {
+  border-color: #2D323E !important;
+}
+
+[data-theme="dark"] .btn-check+.btn,
+[data-theme="dark"] .btn-group>.btn:not(:first-child) {
+  border-left-color: #2D323E !important;
+}
+
+[data-theme="dark"] .editor-toolbar .btn,
+[data-theme="dark"] .toolbar .btn {
+  color: #e0e0e0 !important;
+}
+
+[data-theme="dark"] select.form-select,
+[data-theme="dark"] input.form-control,
+[data-theme="dark"] input[type="number"] {
+  background-color: #14161C !important;
+  color: #ffffff !important;
+  border: 1px solid #2D323E !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] input[type="number"]::-webkit-inner-spin-button,
+[data-theme="dark"] input[type="number"]::-webkit-outer-spin-button {
+  filter: invert(1) grayscale(50%);
+  cursor: pointer;
+}
+
+[data-theme="dark"] option {
+  background-color: #191D24;
+  color: #ffffff;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.7 MODAL BODY - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] .modal-body .btn-light:hover,
+[data-theme="dark"] .modal-body .btn-light:focus,
+[data-theme="dark"] .modal-body .btn-light:active,
+[data-theme="dark"] .modal-body .btn-light.active {
+  background-color: #191D24 !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .modal-body .btn-light:hover {
+  background-color: #191D24 !important;
+}
+
+[data-theme="dark"] .modal-body .border,
+[data-theme="dark"] .modal-body .border-top,
+[data-theme="dark"] .modal-body .border-bottom {
+  border-color: #2D323E !important;
+}
+
+[data-theme="dark"] .modal-body input[type="text"],
+[data-theme="dark"] .modal-body .form-control {
+  background-color: #0F1116 !important;
+  border-color: #2D323E !important;
+  color: #ffffff !important;
+}
+
+/* ==========================================================================
+   LIGHT MODE - Estilos específicos para o tema claro
+   ========================================================================== */
+
+body:not([data-theme="dark"]):not(.dark-mode) .log-container {
+  background-color: #f8f9fa !important;
+}
+
+body:not([data-theme="dark"]):not(.dark-mode) .log-header {
+  color: #ffffff !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.8 WELCOME CARDS - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] .welcome-card,
+body.dark-mode .welcome-card {
+  background-color: #252A35;
+}
+
+[data-theme="dark"] .quick-tips-box,
+body.dark-mode .quick-tips-box {
+  background: #252A35;
+  border-color: rgba(255, 255, 255, 0.02);
+}
+
+
+/* --------------------------------------------------------------------------
+   3.9 HOME CONTENT - Dark Mode
+   -------------------------------------------------------------------------- */
+
+
+
+[data-theme="dark"] #home-content-recent p,
+body.dark-mode #home-content-recent p {
+  color: #ffffff !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.10 MODAL DE CONEXÃO REMOTA - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] .modal-body label.btn.btn-outline-secondary,
+body.dark-mode .modal-body label.btn.btn-outline-secondary {
+  background-color: transparent !important;
+  border-color: #2D323E !important;
+  color: #9CA3AF !important;
+}
+
+[data-theme="dark"] .modal-body label.btn.btn-outline-secondary:hover,
+body.dark-mode .modal-body label.btn.btn-outline-secondary:hover {
+  background-color: transparent !important;
+  color: #9CA3AF !important;
+}
+
+[data-theme="dark"] .modal-body .btn-check:checked+.btn-outline-secondary,
+body.dark-mode .modal-body .btn-check:checked+.btn-outline-secondary {
+  background-color: transparent !important;
+}
+
+/* Status Alert */
+[data-theme="dark"] .modal-body .alert,
+body.dark-mode .modal-body .alert {
+  background-color: #252A35 !important;
+  border-color: #2D323E !important;
+  color: #ffffff !important;
+}
+
+/* Texto muted global no dark mode */
+[data-theme="dark"] .text-muted,
+body.dark-mode .text-muted {
+  color: var(--text-tertiary) !important;
+}
+
+[data-theme="dark"] #server-status-alert .text-muted,
+body.dark-mode #server-status-alert .text-muted {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .alert .text-muted,
+body.dark-mode .alert .text-muted {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .modal-body .alert strong,
+body.dark-mode .modal-body .alert strong {
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
+/* Indicador de Status */
+[data-theme="dark"] #status-indicator.text-danger,
+body.dark-mode #status-indicator.text-danger {
+  color: #FF3B30 !important;
+}
+
+[data-theme="dark"] #status-indicator.text-success,
+body.dark-mode #status-indicator.text-success {
+  color: #34C759 !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.11 LOG BODY - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] .log-body,
+body.dark-mode .log-body {
+  background-color: #14161C !important;
+}
+
+[data-theme="dark"] .log-row,
+body.dark-mode .log-row {
+  background-color: #14161C !important;
+  color: #9CA3AF !important;
+  border-bottom-color: #2D323E !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.12 INPUTS - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] input[type="number"],
+body.dark-mode input[type="number"] {
+  background-color: #14161C !important;
+  color: #ffffff !important;
+  border: 1px solid #2D323E !important;
+}
+
+[data-theme="dark"] input[type="number"]::-webkit-inner-spin-button,
+[data-theme="dark"] input[type="number"]::-webkit-outer-spin-button,
+body.dark-mode input[type="number"]::-webkit-inner-spin-button,
+body.dark-mode input[type="number"]::-webkit-outer-spin-button {
+  filter: invert(1) brightness(1.2) !important;
+}
+
+/* 6. MODAL DE PREFERÊNCIAS - DARK MODE */
+[data-theme="dark"] .modal-content,
+body.dark-mode .modal-content {
+  background-color: #191D24 !important;
+  border-color: #2D323E !important;
+}
+
+[data-theme="dark"] .modal-header,
+body.dark-mode .modal-header {
+  background-color: #191D24 !important;
+  border-color: #2D323E !important;
+}
+
+[data-theme="dark"] .modal-body,
+body.dark-mode .modal-body {
+  background-color: #191D24 !important;
+}
+
+[data-theme="dark"] .modal-footer,
+body.dark-mode .modal-footer {
+  background-color: #252A35 !important;
+  border-color: #2D323E !important;
+}
+
+/* 7. ABAS - DARK MODE */
+[data-theme="dark"] .nav-tabs,
+body.dark-mode .nav-tabs {
+  background-color: #191D24 !important;
+  border-bottom-color: #2D323E !important;
+}
+
+[data-theme="dark"] .nav-tabs .nav-link,
+body.dark-mode .nav-tabs .nav-link {
+  color: #9CA3AF !important;
+}
+
+/* 8. LABELS NO MODAL - DARK MODE */
+[data-theme="dark"] .modal-body label,
+body.dark-mode .modal-body label {
+  color: #ffffff !important;
+}
+
+/* 9. INPUTS DO MODAL - DARK MODE */
+[data-theme="dark"] .modal-body input[type="number"],
+[data-theme="dark"] .modal-body input[type="text"],
+[data-theme="dark"] .modal-body select,
+[data-theme="dark"] .modal-body .form-control,
+body.dark-mode .modal-body input[type="number"],
+body.dark-mode .modal-body input[type="text"],
+body.dark-mode .modal-body select,
+body.dark-mode .modal-body .form-control {
+  background-color: #14161C !important;
+  border-color: #2D323E !important;
+  color: #ffffff !important;
+}
+
+/* 10. COLOR PICKER - DARK MODE */
+[data-theme="dark"] .modal-body input[type="color"],
+body.dark-mode .modal-body input[type="color"] {
+  background-color: #14161C !important;
+  border-color: #2D323E !important;
+}
+
+/* 11. CHECKBOXES - DARK MODE */
+[data-theme="dark"] .modal-body .form-check-input,
+body.dark-mode .modal-body .form-check-input {
+  background-color: #14161C !important;
+  border-color: #2D323E !important;
+}
+
+
+/* 12. HR (LINHA) - DARK MODE */
+[data-theme="dark"] .modal-body hr,
+body.dark-mode .modal-body hr {
+  border-color: #2D323E !important;
+}
+
+/* 13. BOTÕES SECUNDÁRIOS - DARK MODE */
+[data-theme="dark"] .modal-body .btn-secondary,
+[data-theme="dark"] .modal-footer .btn-secondary,
+body.dark-mode .modal-body .btn-secondary,
+body.dark-mode .modal-footer .btn-secondary {
+  background-color: #2D323E !important;
+  border-color: #2D323E !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .modal-body .btn-secondary:hover,
+[data-theme="dark"] .modal-footer .btn-secondary:hover,
+body.dark-mode .modal-body .btn-secondary:hover,
+body.dark-mode .modal-footer .btn-secondary:hover {
+  background-color: #383E4B !important;
+  border-color: #383E4B !important;
+}
+
+/* 14. BOTÃO PRIMÁRIO - DARK MODE */
+[data-theme="dark"] .modal-footer .btn-primary,
+body.dark-mode .modal-footer .btn-primary {
+  color: #191D24 !important;
+}
+
+/* 15. TEXTOS DESCRITIVOS - DARK MODE */
+[data-theme="dark"] .modal-body p,
+body.dark-mode .modal-body p {
+  color: #9CA3AF !important;
+}
+
+[data-theme="dark"] .modal-body small,
+body.dark-mode .modal-body small {
+  color: #9CA3AF !important;
+}
+
+/* 7. BOTÃO THEME TOGGLE - DARK MODE */
+[data-theme="dark"] #theme-toggle-btn,
+body.dark-mode #theme-toggle-btn {
+  background-color: #252A35 !important;
+  border: 1px solid #2D323E !important;
+}
+
+[data-theme="dark"] #theme-toggle-btn:hover,
+body.dark-mode #theme-toggle-btn:hover {
+  background-color: #2D323E !important;
+}
+
+[data-theme="dark"] .log-row span:first-of-type,
+body.dark-mode .log-row span:first-of-type {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+/* Força o nome ficar branco em qualquer modo */
+[data-theme="dark"] .log-row,
+body.dark-mode .log-row {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .log-row div,
+body.dark-mode .log-row div {
+  color: #ffffff !important;
+}
+
+
+/* ==========================================================================
+   PADRONIZAÇÃO: BOTÃO FECHAR DA JANELA (IGUAL AO MODAL)
+   ========================================================================== */
+
+/* Aplica ao botão de fechar da barra de título principal */
+#window-controls .close-window-btn {
+  transition: all 0.2s ease;
+  border-radius: 4px !important;
+  /* Garante o mesmo arredondamento */
+  font-size: large;
+}
+
+/* Estado Hover (Mouse em cima) */
+#window-controls .close-window-btn:hover {
+  /* 1. O MESMO Vermelho do Modal (#dc3545) */
+  background-color: #dc3545 !important;
+
+  /* 2. Ícone Branco Puro */
+  color: #ffffff !important;
+
+  /* 3. Remove transparência e adiciona a sombra igual */
+  opacity: 1 !important;
+  box-shadow: 0 2px 4px rgba(220, 53, 69, 0.2) !important;
+}
+
+/* Garante que o desenho do ícone (<i>) fique branco */
+#window-controls .close-window-btn:hover i {
+  color: #ffffff !important;
+
+}
+
+/* 1. ESTADO NORMAL (Sem mouse) - No Modo Dark */
+[data-theme="dark"] .btn-close,
+body.dark-mode .btn-close {
+  /* O Bootstrap usa um ícone preto por padrão. 
+       Este filtro INVERTE as cores: Preto vira BRANCO. */
+  filter: invert(1) grayscale(100%) brightness(200%) !important;
+  /* Ajuste de opacidade para ficar suave igual ao da janela (não branco estourado) */
+  opacity: 0.4 !important;
+}
+
+/* ===================================================================
+   MELHORIAS SUTIS DO MODAL - Compatível com Light e Dark Mode
+   =================================================================== */
+
+/* Botões de Radio - Hover sutil */
+#remoteConnectionModal .btn-outline-secondary {
+  transition: all 0.2s ease;
+}
+
+#remoteConnectionModal .btn-outline-secondary:hover {
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+
+#remoteConnectionModal .btn-check:checked+.btn-outline-secondary {
+  border-color: var(--border-color);
+  background-color: transparent;
+  color: var(--text-secondary);
+}
+
+/* Botão START SERVER - Hover elegante */
+#remoteConnectionModal #btn-toggle-server-modal {
+  transition: all 0.3s ease;
+}
+
+#remoteConnectionModal #btn-toggle-server-modal:hover {
+  transform: translateY(-1px);
+  box-shadow: none;
+}
+
+/* Connection Details Panel - Animação de entrada */
+#remoteConnectionModal #connection-details-panel:not(.d-none) {
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Input URL - Focus suave */
+#remoteConnectionModal #modal-url-display {
+  transition: all 0.2s ease;
+}
+
+#remoteConnectionModal #modal-url-display:focus {
+  box-shadow: none !important;
+}
+
+/* Botão Copiar - Transição suave */
+#remoteConnectionModal #btn-modal-copy {
+  transition: all 0.2s ease;
+}
+
+#remoteConnectionModal #btn-modal-copy:hover {
+  transform: scale(1.05);
+}
+
+/* ===================================================================
+   SUGESTÕES IMPLEMENTADAS - UX Melhorada
+   =================================================================== */
+
+/* 1. ANIMAR O STATUS INDICATOR (Bolinha vermelha/verde) */
+@keyframes blink-pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Ícone do botão CONNECTION com animação */
+#remoteConnectionModal #btn-toggle-server-modal i {
+  transition: all 0.3s ease;
+  animation: blink-pulse 2s infinite;
+  display: inline-block;
+}
+
+/* Ícone do botão CONNECTION na sidebar também com animação */
+#btn-open-remote-modal i {
+  transition: all 0.3s ease;
+  animation: blink-pulse 2s infinite;
+  display: inline-block;
+}
+
+#remoteConnectionModal #status-indicator {
+  transition: all 0.3s ease;
+  animation: blink-pulse 2s infinite;
+  border-radius: 50% !important;
+}
+
+/* 2. MELHORAR O VISUAL DA PANEL DE DETALHES */
+#remoteConnectionModal #connection-details-panel {
+  border-radius: 10px;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+/* Adiciona um glow sutil quando a panel está visível */
+#remoteConnectionModal #connection-details-panel:not(.d-none) {
+  box-shadow: none;
+}
+
+[data-theme="dark"] #remoteConnectionModal #connection-details-panel:not(.d-none),
+body.dark-mode #remoteConnectionModal #connection-details-panel:not(.d-none) {
+  box-shadow: none;
+}
+
+/* 3. MELHORAR HIERARQUIA VISUAL - Labels mais destacadas */
+#remoteConnectionModal .form-label {
+  font-weight: 700 !important;
+  font-size: 0.85rem;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  transition: color 0.2s ease;
+}
+
+#remoteConnectionModal .form-label:hover {
+  color: var(--primary-color) !important;
+}
+
+/* Melhorar espaçamento do texto */
+#remoteConnectionModal small {
+  line-height: 1.6;
+  letter-spacing: 0.2px;
+}
+
+/* 4. EFEITO NO INPUT DA URL - Feedback de Cópia */
+#remoteConnectionModal #modal-url-display {
+  position: relative;
+}
+
+/* Quando o input é focado, fica com destaque */
+#remoteConnectionModal #modal-url-display:focus {
+  border-color: var(--border-color) !important;
+  box-shadow: none !important;
+  background-color: transparent !important;
+}
+
+/* 5. MELHORAR STATUS ALERT - Transição suave */
+#remoteConnectionModal #server-status-alert {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 8px;
+  backdrop-filter: blur(5px);
+}
+
+
+
+/* O botão do servidor rodando terá um pulso sutil */
+#remoteConnectionModal #btn-toggle-server-modal.btn-danger {
+  animation: buttonPulse 2s infinite;
+  transition: all 0.3s ease;
+}
+
+#remoteConnectionModal #btn-toggle-server-modal.btn-danger:hover {
+  animation: none;
+}
+
+/* Melhorar aparência geral do botão */
+#remoteConnectionModal #btn-toggle-server-modal {
+  border-radius: 6px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#remoteConnectionModal #btn-toggle-server-modal:active {
+  transform: translateY(1px);
+}
+
+/* ===================================================================
+   MELHORIAS: MODAL FIND & REPLACE
+   =================================================================== */
+
+#findReplaceModal .modal-content {
+  background: var(--background-primary);
+  border: 1px solid var(--border-light);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+[data-theme="dark"] #findReplaceModal .modal-content,
+body.dark-mode #findReplaceModal .modal-content {
+  background: #191D24;
+  border-color: rgba(45, 50, 62, 0.5);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Modal Header */
+#findReplaceModal .modal-header {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
+  padding: 1rem !important;
+  border-radius: 10px 10px 0 0;
+  transition: all 0.2s ease;
+}
+
+[data-theme="dark"] #findReplaceModal .modal-header,
+body.dark-mode #findReplaceModal .modal-header {
+  background: transparent !important;
+  border-color: rgba(45, 50, 62, 0.3) !important;
+}
+
+#findReplaceModal .modal-title {
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 1rem !important;
+  letter-spacing: -0.3px;
+}
+
+/* Modal Body */
+#findReplaceModal .modal-body {
+  padding: 1.5rem !important;
+}
+
+/* Inputs - Find e Replace */
+#findReplaceModal .form-control {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  padding: 0.7rem 1rem;
+  transition: all 0.2s ease;
+}
+
+#findReplaceModal .form-control:focus {
+  border-color: rgba(0, 0, 0, 0.1);
+  background: var(--background-primary);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
+[data-theme="dark"] #findReplaceModal .form-control,
+body.dark-mode #findReplaceModal .form-control {
+  background: #252A35;
+  border-color: rgba(45, 50, 62, 0.5);
+  color: #ffffff;
+}
+
+[data-theme="dark"] #findReplaceModal .form-control:focus,
+body.dark-mode #findReplaceModal .form-control:focus {
+  background: #252A35;
+  border-color: rgba(45, 50, 62, 0.7);
+  box-shadow: none;
+}
+
+/* Counter (0 of 0) */
+#findReplaceModal #modal-find-count {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.3px;
+}
+
+/* Paleta de Cores no Modal Find */
+.find-color-palette {
+  padding: 8px;
+  background: var(--background-tertiary);
+  border-radius: 8px;
+}
+
+[data-theme="dark"] .find-color-palette,
+body.dark-mode .find-color-palette {
+  background: #252A35;
+}
+
+.find-color-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.find-color-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.find-color-btn.active {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3);
+}
+
+.find-color-btn[data-color=""] {
+  background: var(--background-primary);
+  border: 2px dashed var(--border-color);
+  color: var(--text-tertiary);
+}
+
+[data-theme="dark"] .find-color-btn[data-color=""],
+body.dark-mode .find-color-btn[data-color=""] {
+  background: #191D24;
+  border-color: #383E4B;
+  color: #6B7280;
+}
+
+.find-color-btn.swatch-black {
+  background-color: #000000;
+}
+
+.find-color-btn.swatch-yellow {
+  background-color: #FFFF00;
+}
+
+.find-color-btn.swatch-green {
+  background-color: #00FF00;
+}
+
+.find-color-btn.swatch-pink {
+  background-color: #FF69B4;
+}
+
+.find-color-btn.swatch-cyan {
+  background-color: #00FFFF;
+}
+
+/* Botão de mais cores */
+#find-more-colors-btn {
+  background: linear-gradient(135deg, #ff6b6b, #feca57, #48dbfb, #ff9ff3, #54a0ff);
+  color: #fff;
+  border: none;
+}
+
+/* Popup de cores expandido */
+.find-palette-popup {
+  position: absolute;
+  z-index: 9999;
+  background: var(--background-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 250px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+[data-theme="dark"] .find-palette-popup,
+body.dark-mode .find-palette-popup {
+  background: #1e2128;
+  border-color: #383E4B;
+}
+
+.find-palette-popup .find-popup-color {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.find-palette-popup .find-popup-color:hover {
+  transform: scale(1.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  z-index: 1;
+}
+
+.find-palette-popup .find-custom-color-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 12px;
+  background: var(--background-tertiary);
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.find-palette-popup .find-custom-color-btn:hover {
+  background: var(--primary-color);
+  color: #fff;
+  border-style: solid;
+}
+
+/* ===== BARRA MINIMIZADA DO FIND ===== */
+.find-minimized-bar {
+  position: fixed;
+  top: 110px;
+  right: 15px;
+  z-index: 1060;
+  background: var(--background-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 6px 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+}
+
+.find-minimized-bar:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="dark"] .find-minimized-bar,
+body.dark-mode .find-minimized-bar {
+  background: var(--background-secondary);
+  border-color: var(--border-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.find-minimized-bar .btn {
+  font-size: 0.75rem;
+  border-radius: 4px !important;
+}
+
+.find-minimized-bar .badge {
+  font-size: 0.7rem;
+}
+
+/* Botões da barra minimizada - estilo consistente */
+.find-minimized-bar .btn-outline-secondary {
+  background: var(--background-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.find-minimized-bar .btn-outline-secondary:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: #fff;
+}
+
+/* Botão expandir */
+.find-minimized-bar .btn-outline-primary {
+  background: var(--background-tertiary);
+  border: 1px solid var(--primary-color);
+  color: var(--primary-color);
+}
+
+.find-minimized-bar .btn-outline-primary:hover {
+  background: var(--primary-color);
+  color: #fff;
+}
+
+/* Botão fechar - vermelho quadrado */
+.find-close-btn,
+.find-minimized-bar .find-close-btn,
+#findMinimizedClose {
+  background: #dc3545 !important;
+  border: none !important;
+  color: #fff !important;
+  border-radius: 4px !important;
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px !important;
+  min-height: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  font-size: 14px !important;
+  padding: 0 !important;
+  line-height: 1 !important;
+}
+
+.find-close-btn:hover,
+.find-minimized-bar .find-close-btn:hover,
+#findMinimizedClose:hover {
+  background: #c82333 !important;
+}
+
+/* Dark mode - botões da barra minimizada */
+[data-theme="dark"] .find-minimized-bar .btn-outline-secondary,
+body.dark-mode .find-minimized-bar .btn-outline-secondary {
+  background: var(--background-primary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .find-minimized-bar .btn-outline-secondary:hover,
+body.dark-mode .find-minimized-bar .btn-outline-secondary:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: #fff;
+}
+
+[data-theme="dark"] .find-minimized-bar .btn-outline-primary,
+body.dark-mode .find-minimized-bar .btn-outline-primary {
+  background: var(--background-primary);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+/* Botões Navigation (Previous/Next) */
+#findReplaceModal .btn-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+#findReplaceModal .btn-outline-secondary {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+  border-radius: 6px;
+  padding: 0.5rem 0.8rem;
+  background: transparent;
+}
+
+#findReplaceModal .btn-outline-secondary:hover {
+  border-color: rgba(0, 0, 0, 0.12);
+  background-color: transparent;
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] #findReplaceModal .btn-outline-secondary,
+body.dark-mode #findReplaceModal .btn-outline-secondary {
+  border-color: rgba(45, 50, 62, 0.5);
+  color: #9CA3AF;
+}
+
+[data-theme="dark"] #findReplaceModal .btn-outline-secondary:hover,
+body.dark-mode #findReplaceModal .btn-outline-secondary:hover {
+  border-color: rgba(45, 50, 62, 0.7);
+  background-color: transparent;
+  color: #9CA3AF;
+}
+
+/* Modal Footer - Replace Actions */
+#findReplaceModal .modal-footer {
+  background: transparent !important;
+  border-top: 1px solid rgba(0, 0, 0, 0.05) !important;
+  padding: 1rem !important;
+  gap: 0.5rem;
+  border-radius: 0 0 10px 10px;
+}
+
+[data-theme="dark"] #findReplaceModal .modal-footer,
+body.dark-mode #findReplaceModal .modal-footer {
+  background: transparent !important;
+  border-color: rgba(45, 50, 62, 0.3) !important;
+}
+
+/* Botão "To replace" - Amarelo Sutil */
+#findReplaceModal #modal-replace-btn {
+  background: #FFD700;
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  color: #1a1a1a !important;
+  font-weight: 700;
+  transition: all 0.3s ease;
+  border-radius: 6px;
+  padding: 0.6rem 1.2rem;
+}
+
+#findReplaceModal #modal-replace-btn:hover {
+  background: #FFC700;
+  border-color: rgba(255, 199, 0, 0.5);
+  box-shadow: 0 2px 6px rgba(255, 215, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+#findReplaceModal #modal-replace-btn:active {
+  transform: translateY(0);
+}
+
+/* Botão "All" - Vermelho */
+#findReplaceModal #modal-replace-all-btn {
+  background: linear-gradient(135deg, #FF4444 0%, #DD3333 100%);
+  border: none;
+  color: #ffffff !important;
+  font-weight: 700;
+  transition: all 0.3s ease;
+  border-radius: 6px;
+  padding: 0.6rem 1.2rem;
+}
+
+#findReplaceModal #modal-replace-all-btn:hover {
+  background: linear-gradient(135deg, #FF6666 0%, #FF4444 100%);
+  box-shadow: 0 2px 6px rgba(255, 68, 68, 0.15);
+  transform: translateY(-1px);
+}
+
+#findReplaceModal #modal-replace-all-btn:active {
+  transform: translateY(0);
+}
+
+/* Input Group Styling */
+#findReplaceModal .input-group-text {
+  background: var(--background-tertiary);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-right: none;
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] #findReplaceModal .input-group-text,
+body.dark-mode #findReplaceModal .input-group-text {
+  background: #252A35;
+  border-color: rgba(45, 50, 62, 0.5);
+  color: #9CA3AF;
+}
+
+#findReplaceModal .input-group .form-control {
+  border-left: none;
+}
+
+#findReplaceModal .input-group .btn {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="dark"] #findReplaceModal .input-group .btn,
+body.dark-mode #findReplaceModal .input-group .btn {
+  border-color: rgba(45, 50, 62, 0.5);
+}
+
+/* Labels */
+#findReplaceModal .form-label {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] #findReplaceModal .form-label,
+body.dark-mode #findReplaceModal .form-label {
+  color: #ffffff;
+}
+
+/* Checkboxes */
+#findReplaceModal .form-check-label {
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] #findReplaceModal .form-check-label,
+body.dark-mode #findReplaceModal .form-check-label {
+  color: #9CA3AF;
+}
+
+#findReplaceModal .form-check-input {
+  background-color: var(--background-tertiary);
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] #findReplaceModal .form-check-input,
+body.dark-mode #findReplaceModal .form-check-input {
+  background-color: #252A35;
+  border-color: rgba(45, 50, 62, 0.7);
+}
+
+#findReplaceModal .form-check-input:checked {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+/* Botões Substituir */
+#findReplaceModal #modal-replace-btn {
+  background: var(--primary-color);
+  border: none;
+  color: #ffffff !important;
+  font-weight: 600;
+}
+
+#findReplaceModal #modal-replace-btn:hover {
+  background: var(--primary-hover);
+}
+
+/* Responsividade */
+@media (max-width: 576px) {
+  #findReplaceModal .modal-dialog {
+    margin: 1rem;
+  }
+
+  #findReplaceModal .btn {
+    font-size: 0.85rem;
+    padding: 0.5rem 0.8rem !important;
+  }
+}
+
+/* ===================================================================
+   SUGESTÕES DE MELHORIAS: Welcome Cards, Botões, Scrollbars, etc
+   =================================================================== */
+
+/* 1. WELCOME CARDS - Hover Elegante */
+.welcome-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+.welcome-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--primary-color);
+}
+
+
+.welcome-card.active-card {
+  box-shadow: none;
+}
+
+/* Card Arrow Animation */
+.welcome-card .card-arrow {
+  transition: all 0.3s ease;
+}
+
+.welcome-card:hover .card-arrow {
+  transform: translateX(4px);
+}
+
+/* 2. BOTÕES HOME SIDEBAR - Melhor Feedback */
+#home-sidebar .btn {
+
+  border-radius: 8px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  border: none;
+}
+
+#home-sidebar .btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 122, 255, 0.1);
+}
+
+#home-sidebar .btn-primary:hover {
+  background: linear-gradient(135deg, #0d6efd 0%, #0a5dd8 100%);
+}
+
+#home-sidebar .btn-secondary:hover {
+  background-color: rgba(108, 117, 125, 0.9);
+  color: #ffffff;
+}
+
+/* 3. CUSTOMIZAR SCROLLBARS - Elegante */
+/* Chrome e Edge */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-color);
+  box-shadow: 0 0 8px rgba(0, 122, 255, 0.3);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-track,
+body.dark-mode ::-webkit-scrollbar-track {
+  background: #0F1116;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb,
+body.dark-mode ::-webkit-scrollbar-thumb {
+  background: #2D323E;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover,
+body.dark-mode ::-webkit-scrollbar-thumb:hover {
+  background: #00b2ff;
+}
+
+/* 4. TOOLBAR DO EDITOR - Visual Melhorado */
+#toolbar-content .btn {
+  border-radius: 6px;
+  border: 1px solid var(--border-light) !important;
+}
+
+#toolbar-content .btn:hover {
+  background-color: rgba(0, 122, 255, 0.1);
+  border-color: var(--primary-color);
+}
+
+#toolbar-content .btn-light:hover {
+  background: rgba(0, 122, 255, 0.1) !important;
+  color: var(--primary-color) !important;
+}
+
+#toolbar-content select,
+#toolbar-content input[type="number"] {
+  transition: all 0.2s ease;
+  border: 1px solid var(--border-light) !important;
+  border-radius: 6px;
+}
+
+#toolbar-content select:hover,
+#toolbar-content input[type="number"]:hover {
+  border-color: var(--primary-color);
+}
+
+#toolbar-content select:focus,
+#toolbar-content input[type="number"]:focus {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15) !important;
+}
+
+/* 5. INPUTS EM GERAL - Melhor Focus State */
+.form-control,
+.form-select {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15);
+  background-color: var(--background-primary);
+}
+
+.form-control::placeholder {
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .form-select,
+body.dark-mode .form-control,
+body.dark-mode .form-select {
+  background: #252A35;
+  color: #ffffff;
+  border-color: #2D323E;
+}
+
+[data-theme="dark"] .form-control:focus,
+[data-theme="dark"] .form-select:focus,
+body.dark-mode .form-control:focus,
+body.dark-mode .form-select:focus {
+  background: #252A35;
+  border-color: #00b2ff;
+  box-shadow: 0 0 0 4px rgba(0, 178, 255, 0.15);
+}
+
+/* 6. TRANSIÇÕES GLOBAIS EM BOTÕES */
+.btn {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn:not(.btn-close):hover {
+  transform: translateY(-1px);
+}
+
+.btn:not(.btn-close):active {
+  transform: translateY(0);
+}
+
+.btn-primary:hover {
+  box-shadow: 0 2px 6px rgba(0, 122, 255, 0.12);
+}
+
+.btn-secondary:hover {
+  box-shadow: 0 2px 6px rgba(108, 117, 125, 0.12);
+}
+
+.btn-warning:hover {
+  box-shadow: 0 2px 6px rgba(255, 193, 7, 0.12);
+}
+
+.btn-danger:hover {
+  box-shadow: 0 2px 6px rgba(220, 53, 69, 0.12);
+}
+
+.btn-success:hover {
+  box-shadow: 0 2px 6px rgba(25, 135, 84, 0.12);
+}
+
+/* Ripple effect nas labels dos cards */
+.welcome-card .card-title {
+  transition: color 0.2s ease;
+}
+
+.welcome-card:hover .card-title {
+  color: var(--primary-color);
+}
+
+/* ==========================================================================
+   STANDBY MODE OVERLAY
+   ========================================================================== */
+
+#standby-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #000000;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: none;
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+#standby-overlay.fade-out {
+  animation: fadeOut 0.3s ease-in-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+#standby-content {
+  text-align: center;
+}
+
+#standby-text {
+  font-family: 'DM Sans', Arial, sans-serif;
+  font-size: 4rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+  letter-spacing: 0.3em;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Quando há imagem customizada, esconde o texto */
+#standby-overlay.has-image #standby-content {
+  display: none;
+}
+
+
+/* ==========================================================================
+   MEDIA QUERIES - RESPONSIVIDADE PARA MONITORES, TVS E ZOOM
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Monitores pequenos / Laptops (1024px - 1440px)
+   -------------------------------------------------------------------------- */
+@media screen and (min-width: 1024px) and (max-width: 1440px) {
+  :root {
+    --sidebar-width: 220px;
+    --toolbar-height: 44px;
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 12px;
+    --spacing-lg: 16px;
+    --spacing-xl: 24px;
+    --font-size-xs: 10px;
+    --font-size-sm: 12px;
+    --font-size-base: 13px;
+    --font-size-lg: 14px;
+    --font-size-xl: 16px;
+    --font-size-2xl: 18px;
+    --icon-size-sm: 14px;
+    --icon-size-md: 18px;
+    --icon-size-lg: 20px;
+  }
+
+  #custom-title-bar {
+    font-size: 12px;
+  }
+
+  .custom-menu-btn {
+    padding: 0 10px !important;
+    font-size: 12px !important;
+  }
+
+  .menu-item {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Monitores grandes / Desktops (1441px - 2560px)
+   -------------------------------------------------------------------------- */
+@media screen and (min-width: 1441px) and (max-width: 2560px) {
+  :root {
+    --sidebar-width: 280px;
+    --toolbar-height: 52px;
+    --spacing-xs: 6px;
+    --spacing-sm: 12px;
+    --spacing-md: 18px;
+    --spacing-lg: 24px;
+    --spacing-xl: 36px;
+    --font-size-xs: 11px;
+    --font-size-sm: 13px;
+    --font-size-base: 15px;
+    --font-size-lg: 17px;
+    --font-size-xl: 20px;
+    --font-size-2xl: 24px;
+    --icon-size-sm: 16px;
+    --icon-size-md: 22px;
+    --icon-size-lg: 26px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   TVs e Monitores 4K+ (2561px+)
+   -------------------------------------------------------------------------- */
+@media screen and (min-width: 2561px) {
+  :root {
+    --sidebar-width: 360px;
+    --toolbar-height: 64px;
+    --spacing-xs: 8px;
+    --spacing-sm: 16px;
+    --spacing-md: 24px;
+    --spacing-lg: 32px;
+    --spacing-xl: 48px;
+    --font-size-xs: 14px;
+    --font-size-sm: 16px;
+    --font-size-base: 18px;
+    --font-size-lg: 22px;
+    --font-size-xl: 26px;
+    --font-size-2xl: 32px;
+    --icon-size-sm: 20px;
+    --icon-size-md: 28px;
+    --icon-size-lg: 36px;
+    --radius-sm: 8px;
+    --radius-md: 14px;
+    --radius-lg: 20px;
+  }
+
+  #custom-title-bar {
+    font-size: 16px;
+  }
+
+  .custom-menu-btn {
+    padding: 0 18px !important;
+    font-size: 15px !important;
+    height: 44px;
+    line-height: 44px;
+  }
+
+  .menu-item {
+    padding: 12px 16px;
+    font-size: 15px;
+  }
+
+  #standby-text {
+    font-size: 6rem;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Suporte a Zoom do navegador/sistema (respeitando preferências do usuário)
+   -------------------------------------------------------------------------- */
+@media screen and (min-resolution: 1.25dppx) {
+
+  /* Ajustes para zoom de 125% */
+  :root {
+    --spacing-xs: clamp(3px, 0.4vw, 6px);
+    --spacing-sm: clamp(6px, 0.8vw, 12px);
+    --spacing-md: clamp(10px, 1.2vw, 20px);
+  }
+}
+
+@media screen and (min-resolution: 1.5dppx) {
+
+  /* Ajustes para zoom de 150% */
+  :root {
+    --spacing-xs: clamp(2px, 0.35vw, 5px);
+    --spacing-sm: clamp(5px, 0.7vw, 10px);
+    --spacing-md: clamp(8px, 1vw, 16px);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Flexbox responsivo para containers principais
+   -------------------------------------------------------------------------- */
+.flex-responsive {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm, 8px);
+}
+
+/* Garante que modais se ajustem corretamente */
+.modal-dialog {
+  max-width: min(90vw, 800px);
+  margin: var(--spacing-xl, 24px) auto;
+}
+
+.modal-lg {
+  max-width: min(90vw, 1000px);
+}
+
+.modal-xl {
+  max-width: min(95vw, 1200px);
+}
+
+/* Container de preferências responsivo */
+#preferencesModal .modal-body {
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+/* Scrollbars responsivas para telas grandes */
+@media screen and (min-width: 2561px) {
+  ::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border-radius: 7px;
+  }
+}

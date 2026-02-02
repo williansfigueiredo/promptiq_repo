@@ -1,0 +1,944 @@
+/* ==========================================================================
+   EDIT.CSS - ESTILOS DA ABA EDIT (EDITOR DE TEXTO)
+   ========================================================================== 
+   
+   Este arquivo contém todos os estilos relacionados à aba EDIT:
+   - Toolbar do Editor (botões de formatação, fontes, cores)
+   - Área de Texto do Editor
+   - Abas de Documentos
+   - Paleta de Cores
+   - Painel de Logs
+   - Timeline/Histórico
+
+   ESTRUTURA:
+   1. UNIVERSAL (Light e Dark Mode)
+   2. LIGHT MODE APENAS
+   3. DARK MODE APENAS
+   
+   ========================================================================== */
+
+
+/* ==========================================================================
+   1. ESTILOS UNIVERSAIS (Funcionam em Light e Dark Mode)
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   1.1 TOOLBAR DO EDITOR - Container Principal
+   -------------------------------------------------------------------------- */
+
+#toolbar-content {
+  background-color: var(--background-primary) !important;
+  border-bottom: 1px solid var(--border-light);
+  padding: var(--spacing-sm, 12px) var(--spacing-md, 16px);
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs, 4px);
+}
+
+#toolbar-content .btn {
+  border-radius: 6px;
+  border: 1px solid var(--border-light) !important;
+}
+
+#toolbar-content .btn:hover {
+  background-color: rgba(0, 122, 255, 0.1);
+  border-color: var(--primary-color);
+
+}
+
+#toolbar-content .btn-light:hover {
+  background: rgba(0, 122, 255, 0.1) !important;
+  color: var(--primary-color) !important;
+}
+
+#toolbar-content select,
+#toolbar-content input[type="number"] {
+  border: 1px solid var(--border-light) !important;
+  border-radius: 6px;
+}
+
+#toolbar-content select:hover,
+#toolbar-content input[type="number"]:hover {
+  border-color: var(--primary-color);
+}
+
+#toolbar-content select:focus,
+#toolbar-content input[type="number"]:focus {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15) !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   1.2 GRUPOS DE BOTÕES (B, I, U, Alinhamento)
+   -------------------------------------------------------------------------- */
+
+.btn-group .btn {
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  background-color: var(--background-primary);
+  position: relative;
+  margin-left: -1px;
+  transition: all 0.1s;
+}
+
+/* Hover (Passando o mouse) */
+.btn-group .btn:hover {
+  background-color: var(--background-secondary);
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+  z-index: 20;
+}
+
+/* Estado Selecionado/Ativo */
+.btn-group .btn:active,
+.btn-group .btn.show,
+.btn-check:checked+.btn {
+  background-color: var(--primary-light) !important;
+  color: var(--primary-color) !important;
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 1px var(--primary-color) !important;
+  z-index: 25 !important;
+  font-weight: 600;
+}
+
+
+/* --------------------------------------------------------------------------
+   1.3 SELECTS DE FONTE/TAMANHO
+   -------------------------------------------------------------------------- */
+
+.form-select-sm {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background-color: var(--background-primary);
+  color: var(--text-primary);
+}
+
+.form-select-sm:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
+}
+
+.font-select-width {
+  max-width: 150px;
+}
+
+#font-size-select,
+#font-size-preset,
+#font-size-custom,
+#font-size-toolbar-fix {
+  font-size: 14px !important;
+  font-weight: 400 !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   1.4 BOTÕES DE CORES (Swatches)
+   -------------------------------------------------------------------------- */
+
+.color-btn {
+  width: var(--toolbar-btn-size);
+  height: var(--toolbar-btn-size);
+  border: 2px solid var(--border-light);
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s;
+  box-sizing: border-box;
+}
+
+.color-btn:hover {
+  border-color: var(--primary-light);
+  z-index: 5;
+}
+
+.color-btn[style] {
+  background-color: var(--bg-override, initial);
+}
+
+/* Cores pré-definidas */
+.swatch-black {
+  background-color: #000000;
+}
+
+.swatch-yellow {
+  background-color: #FFFF00;
+}
+
+.swatch-green {
+  background-color: #00FF00;
+}
+
+.swatch-pink {
+  background-color: #FF69B4;
+}
+
+.swatch-cyan {
+  background-color: #00FFFF;
+}
+
+
+/* --------------------------------------------------------------------------
+   1.5 ABAS DE DOCUMENTOS ABERTOS
+   -------------------------------------------------------------------------- */
+
+#document-tabs-bar {
+  background-color: var(--background-secondary);
+  border-bottom: 1px solid var(--border-light);
+  padding: 8px 8px 0 8px;
+  gap: 4px;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+#document-tabs-bar:empty {
+  display: none !important;
+  border: none !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+}
+
+.document-tab {
+  padding: 10px 16px;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background-color: var(--background-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  border-bottom: none;
+  cursor: pointer;
+}
+
+.document-tab:hover {
+  background-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.document-tab.active {
+  background-color: var(--background-primary);
+  color: var(--text-primary);
+  border-color: var(--border-light);
+  border-bottom-color: var(--background-primary);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Botão X para fechar aba */
+.document-tab .close-tab {
+  font-size: 11px;
+  margin-left: 8px;
+  opacity: 0.6;
+  vertical-align: middle;
+}
+
+.document-tab .close-tab:hover {
+  color: var(--danger);
+  opacity: 1;
+  cursor: pointer;
+}
+
+
+/* --------------------------------------------------------------------------
+   1.6 CONTAINER E ÁREA DE TEXTO DO EDITOR
+   -------------------------------------------------------------------------- */
+
+#document-content-container {
+  background-color: var(--background-primary);
+  flex-grow: 1;
+  position: relative;
+}
+
+.editor-container {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  display: none;
+}
+
+.editor-container.active {
+  display: block;
+}
+
+.text-editor-area {
+  padding: 24px;
+  font-family: 'Inter', 'Noto Sans CJK', 'Microsoft YaHei', 'SimSun', 'PingFang SC', sans-serif;
+  color: var(--text-primary);
+  border: none;
+  outline: none;
+  width: 100%;
+  height: 100%;
+  overflow-y: scroll;
+}
+
+
+/* --------------------------------------------------------------------------
+   1.7 POPUP DE PALETA DE CORES
+   -------------------------------------------------------------------------- */
+
+.palette-popup {
+  position: fixed;
+  display: none;
+  /* JS muda para flex ao abrir */
+  background: var(--background-primary);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  z-index: 10000;
+  width: 220px;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.palette-separator,
+.palette-more-btn {
+  width: 100%;
+}
+
+.palette-swatch {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.palette-swatch:hover {
+  border-color: var(--primary-color);
+}
+
+
+/* --------------------------------------------------------------------------
+   1.8 INDICADOR DE ARQUIVO NÃO SALVO
+   -------------------------------------------------------------------------- */
+
+.unsaved-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  background-color: #FF9500;
+  /* Laranja vibrante */
+  border-radius: 50%;
+  margin-right: 6px;
+  box-shadow: 0 0 4px rgba(255, 149, 0, 0.4);
+}
+
+
+/* --------------------------------------------------------------------------
+   1.9 LISTA DE HISTÓRICO (TIMELINE)
+   -------------------------------------------------------------------------- */
+
+/* Remove fundo azul da seleção */
+#timeline-list .list-group-item.active {
+  background-color: transparent !important;
+  border-color: rgba(0, 0, 0, 0.125) !important;
+  color: inherit !important;
+}
+
+#timeline-list .list-group-item:hover {
+  background-color: #f8f9fa !important;
+}
+
+#timeline-list .list-group-item input[type="checkbox"]:checked {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+
+/* --------------------------------------------------------------------------
+   1.10 PAINEL DE LOGS (REMOTE ACTIVITY)
+   -------------------------------------------------------------------------- */
+
+.log-container {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 260px !important;
+  background-color: var(--secondary-color) !important;
+  color: hsl(var(--sidebar-background));
+  font-size: 12px;
+  z-index: 9900;
+  display: flex;
+  flex-direction: column;
+  transition: opacity 0.3s;
+}
+
+.log-hidden {
+  display: none !important;
+}
+
+.log-header {
+  width: 100% !important;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+  user-select: none;
+  background-color: var(--primary-hover, #0051D5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.log-chevron {
+  margin-right: 8px;
+  font-size: 10px;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+
+.log-chevron.open {
+  transform: rotate(90deg);
+}
+
+.log-badge {
+  margin-left: auto;
+  background: var(--danger, #FF3B30);
+  color: var(--primary-light, #E5F1FF);
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 9px;
+  display: none;
+}
+
+.log-body {
+  background-color: var(--secondary-color) !important;
+  height: 0px;
+  overflow-y: auto;
+  transition: height 0.2s ease-out;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.log-body::-webkit-scrollbar {
+  display: none;
+}
+
+.log-body.open {
+  height: 180px;
+}
+
+.log-row {
+  color: var(--text-primary) !important;
+  font-family: 'JetBrains Mono', monospace;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--text-tertiary-light);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.log-icon {
+  flex-shrink: 0;
+}
+
+
+/* --------------------------------------------------------------------------
+   1.11 MODAL DE BUSCA - Contador
+   -------------------------------------------------------------------------- */
+
+#modal-find-count {
+  color: var(--text-tertiary) !important;
+  font-size: 0.9rem;
+  margin-right: 10px;
+  font-weight: 500;
+}
+
+
+/* --------------------------------------------------------------------------
+   1.12 MODAL BOTÃO FECHAR (X) - Vermelho com X Branco
+   -------------------------------------------------------------------------- */
+
+.modal-header .btn-close {
+  color: var(--border-light) !important;
+  background-color: transparent !important;
+}
+
+.modal-header .btn-close:hover,
+.modal-header .btn-close:focus {
+  background-color: #dc3545 !important;
+  opacity: 1 !important;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23ffffff' stroke-width='0.9' stroke-linecap='round' stroke-linejoin='round'%3e%3cpath d='M3 3l10 10M13 3l-10 10'/%3e%3c/svg%3e") !important;
+  background-size: 24px 24px !important;
+  filter: none !important;
+  outline: none !important;
+  box-shadow: 0 2px 4px rgba(220, 53, 69, 0.4) !important;
+}
+
+.modal-header .btn-close:hover::before,
+.modal-header .btn-close:focus::before {
+  color: #ffffff !important;
+}
+
+
+/* ==========================================================================
+   2. ESTILOS LIGHT MODE APENAS
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   2.1 TOOLBAR GROUP (Fundo claro)
+   -------------------------------------------------------------------------- */
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  border: 1px solid #dee2e6;
+}
+
+.toolbar-label {
+  font-weight: 600;
+  font-size: 12px;
+  color: #495057;
+  margin: 0;
+}
+
+#font-size-preset,
+#font-size-custom {
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+}
+
+#font-size-preset:focus,
+#font-size-custom:focus {
+  outline: none;
+  border-color: #0d6efd;
+  box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.25);
+}
+
+
+/* --------------------------------------------------------------------------
+   2.2 BOTÕES DE FORMATAÇÃO ATIVOS (Azul Bootstrap)
+   -------------------------------------------------------------------------- */
+
+button[data-command].active,
+.btn-group .btn.active {
+  background-color: #0d6efd !important;
+  color: #ffffff !important;
+  border-color: #0d6efd !important;
+  box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
+}
+
+button[data-command].active i,
+button[data-command].active svg {
+  color: #ffffff !important;
+  fill: #ffffff !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   2.3 MODE SWITCH (Letra A / Balde)
+   -------------------------------------------------------------------------- */
+
+.mode-switch-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: 15px;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.btn-mode {
+  width: 29px;
+  height: 29px;
+  border-radius: 8px;
+  background-color: #ffffff !important;
+  border: 1px solid #e2e4e7 !important;
+  color: #5e6c79 !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: none !important;
+}
+
+.btn-mode:hover {
+  background-color: #f7f9fa !important;
+  border-color: #cdd2d6 !important;
+  transform: translateY(-1px);
+}
+
+.btn-mode.active,
+.btn-mode:active {
+  background-color: #eff6ff !important;
+  border: 2px solid #007aff !important;
+  color: #007aff !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   2.4 PALETTE MORE BUTTON (Mais Cores...)
+   -------------------------------------------------------------------------- */
+
+.palette-more-btn {
+  width: 100%;
+  margin-top: 10px;
+  display: block;
+  padding: 8px 0;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #495057;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+
+
+/* ==========================================================================
+   3. ESTILOS DARK MODE APENAS
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   3.1 PAINEL DE LOGS - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] .log-container,
+body.dark-mode .log-container {
+  background-color: #1e1f22 !important;
+  border: 1px solid #333 !important;
+}
+
+[data-theme="dark"] .log-header,
+body.dark-mode .log-header {
+  background-color: var(--primary-hover, #0051D5) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .log-body,
+body.dark-mode .log-body {
+  background-color: #1e1f22 !important;
+  color: #e0e0e0 !important;
+}
+
+[data-theme="dark"] .log-badge,
+body.dark-mode .log-badge {
+  background-color: #FF3B30 !important;
+  color: #ffffff !important;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+[data-theme="dark"] .log-row,
+body.dark-mode .log-row {
+  background-color: #1e1f22 !important;
+  border-bottom: 1px solid #2b2d30 !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .log-row span,
+body.dark-mode .log-row span {
+  color: #bcbec4 !important;
+}
+
+[data-theme="dark"] .log-row span:first-of-type,
+body.dark-mode .log-row span:first-of-type {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+[data-theme="dark"] .log-row div,
+body.dark-mode .log-row div {
+  color: #ffffff !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.2 TIMELINE MODAL - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] #timelineModal .modal-content,
+[data-theme="dark"] #timelineModal .modal-body,
+body.dark-mode #timelineModal .modal-content,
+body.dark-mode #timelineModal .modal-body {
+  background-color: #14161C !important;
+  color: #e0e0e0 !important;
+}
+
+[data-theme="dark"] #timeline-list,
+body.dark-mode #timeline-list {
+  background-color: #14161C !important;
+}
+
+[data-theme="dark"] #timeline-list .list-group-item,
+body.dark-mode #timeline-list .list-group-item {
+  background-color: #191D24 !important;
+  border-color: #2D323E !important;
+  color: #e0e0e0 !important;
+}
+
+[data-theme="dark"] #timeline-list .list-group-item:hover,
+body.dark-mode #timeline-list .list-group-item:hover {
+  background-color: #252A33 !important;
+}
+
+[data-theme="dark"] #timeline-list .text-dark,
+body.dark-mode #timeline-list .text-dark {
+  color: #e0e0e0 !important;
+}
+
+[data-theme="dark"] #timeline-list .text-muted,
+body.dark-mode #timeline-list .text-muted {
+  color: #aaaaaa !important;
+}
+
+[data-theme="dark"] #diff-left-panel,
+[data-theme="dark"] #diff-right-panel,
+body.dark-mode #diff-left-panel,
+body.dark-mode #diff-right-panel {
+  background-color: #191D24 !important;
+  border-color: #2D323E !important;
+  color: #cccccc !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.3 TIMELINE MODAL - Scrollbar Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] #timelineModal ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+[data-theme="dark"] #timelineModal ::-webkit-scrollbar-track {
+  background: #14161C;
+}
+
+[data-theme="dark"] #timelineModal ::-webkit-scrollbar-thumb {
+  background-color: #444;
+  border-radius: 4px;
+  border: 2px solid #14161C;
+}
+
+[data-theme="dark"] #timelineModal ::-webkit-scrollbar-thumb:hover {
+  background-color: #666;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.4 BTN-MODE (Letra A / Balde) - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] .btn-mode,
+body.dark-mode .btn-mode {
+  background-color: #252A35 !important;
+  border-color: #2D323E !important;
+  color: #e0e0e0 !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .btn-mode:hover,
+body.dark-mode .btn-mode:hover {
+  background-color: #383E4B !important;
+  border-color: #6B7280 !important;
+  transform: translateY(-1px);
+}
+
+[data-theme="dark"] .btn-mode.active,
+body.dark-mode .btn-mode.active {
+  background-color: rgba(0, 122, 255, 0.2) !important;
+  border: 2px solid #007AFF !important;
+  color: #66ccff !important;
+  box-shadow: 0 0 8px rgba(0, 122, 255, 0.4) !important;
+}
+
+/* Botão Borracha fica vermelho */
+[data-theme="dark"] #btn-reset-color,
+body.dark-mode #btn-reset-color {
+  color: #FF453A !important;
+}
+
+[data-theme="dark"] #btn-reset-color:hover,
+body.dark-mode #btn-reset-color:hover {
+  border-color: #FF453A !important;
+  background-color: rgba(255, 69, 58, 0.15) !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3.5 PALETTE POPUP - Dark Mode
+   -------------------------------------------------------------------------- */
+
+[data-theme="dark"] .palette-popup,
+body.dark-mode .palette-popup {
+  background-color: #191D24 !important;
+  border-color: #2D323E !important;
+}
+
+[data-theme="dark"] .palette-more-btn,
+body.dark-mode .palette-more-btn {
+  background-color: #252A35 !important;
+  border-color: #2D323E !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .palette-more-btn:hover,
+body.dark-mode .palette-more-btn:hover {
+  color: #191D24 !important;
+}
+
+[data-theme="dark"] .palette-swatch,
+body.dark-mode .palette-swatch {
+  border-color: #2D323E !important;
+}
+
+
+
+
+
+
+/* 1. Estado Normal: Maior e mais espaçado */
+#findCloseBtn {
+  /* Define um tamanho fixo maior para o botão (a caixa) */
+  width: 24px;
+  height: 24px;
+  /* Centraliza o ícone do X dentro desse espaço maior */
+  background-position: center;
+  background-size: 16px;
+  /* Tamanho do desenho do X (ajuste se quiser o X maior também) */
+  /* Cores e bordas */
+  background-color: #f8f9fa;
+  /* Fundo cinza bem suave */
+  opacity: 1;
+  border-radius: 2px;
+  /* Bordas um pouco mais arredondadas */
+  padding: 0;
+  /* Remove padding extra para respeitar o width/height fixo */
+}
+
+/* 2. Estado Hover: Fundo vermelho e X Branco */
+#findCloseBtn:hover {
+  background-color: #dc3545 !important;
+  opacity: 1 !important;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23ffffff' stroke-width='0.9' stroke-linecap='round' stroke-linejoin='round'%3e%3cpath d='M3 3l10 10M13 3l-10 10'/%3e%3c/svg%3e") !important;
+  background-size: 24px 24px !important;
+  filter: none !important;
+  outline: none !important;
+  box-shadow: 0 2px 4px rgba(220, 53, 69, 0.4) !important;
+}
+
+/* --- BOTÃO MINIMIZAR (O Traço) --- */
+#findMinimizeBtn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* AJUSTE 2: COR CINZA PADRÃO */
+  /* Define a cor do ícone (o traço) para um cinza escuro, tirando o azul */
+  color: #555555 !important;
+}
+
+/* Hover do MINIMIZAR (Fica mais escuro) */
+#findMinimizeBtn:hover {
+  color: #000000;
+  /* Fica preto ao passar o mouse */
+}
+
+/* CLASSE DO CONTAINER DOS BOTÕES */
+.botoes-topo {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 6px;
+  /* AJUSTE 1: SUBIR UM POUCO */
+  /* Uma margem negativa pequena puxa o elemento para cima */
+  margin-top: -4px;
+}
+
+/* Garante que os botões não tentem ocupar 100% da largura */
+.botoes-topo button {
+  flex-shrink: 0;
+}
+
+
+/* ==========================================================================
+   MEDIA QUERIES - RESPONSIVIDADE DO EDITOR
+   ========================================================================== */
+
+/* Monitores pequenos / Laptops (1024px - 1440px) */
+@media screen and (max-width: 1440px) {
+  #toolbar-content {
+    padding: 8px 12px;
+  }
+
+  .font-select-width {
+    max-width: 120px;
+  }
+
+  #font-size-select,
+  #font-size-preset,
+  #font-size-custom,
+  #font-size-toolbar-fix {
+    font-size: 12px !important;
+  }
+
+  .color-btn {
+    width: 22px;
+    height: 22px;
+  }
+
+  .btn-group .btn {
+    padding: 4px 8px;
+  }
+}
+
+/* TVs e Monitores 4K+ (2561px+) */
+@media screen and (min-width: 2561px) {
+  #toolbar-content {
+    padding: 16px 24px;
+  }
+
+  .font-select-width {
+    max-width: 200px;
+  }
+
+  #font-size-select,
+  #font-size-preset,
+  #font-size-custom,
+  #font-size-toolbar-fix {
+    font-size: 16px !important;
+  }
+
+  .color-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .btn-group .btn {
+    padding: 8px 14px;
+    font-size: 15px;
+  }
+
+  .form-select-sm {
+    font-size: 15px;
+    padding: 8px 12px;
+  }
+}
+
+flex-shrink: 0;
+}

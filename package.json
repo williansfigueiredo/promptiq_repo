@@ -1,0 +1,82 @@
+{
+  "name": "promptiq",
+  "version": "1.0.0",
+  "description": "Software Teleprompter PromptIQ",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:publish": "electron-builder --publish always",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dicts:fetch": "node scripts/fetch_dictionaries.js"
+  },
+  "keywords": [],
+  "author": "PromptIQ",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^38.3.0",
+    "electron-builder": "^26.4.0"
+  },
+  "dependencies": {
+    "@studio-freight/lenis": "^1.0.42",
+    "electron-log": "^5.4.3",
+    "electron-store": "^11.0.2",
+    "electron-updater": "^6.7.3",
+    "express": "^5.2.1",
+    "franc-min": "^6.2.0",
+    "fuse.js": "^7.1.0",
+    "mammoth": "^1.11.0",
+    "officeparser": "^5.2.1",
+    "pdf-parse": "^2.4.3",
+    "rtf-parser": "^1.3.3",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
+    "typo-js": "^1.3.1",
+    "vosk-browser": "^0.0.8",
+    "wavefile": "^11.0.0",
+    "word-extractor": "^1.0.4"
+  },
+  "build": {
+    "icon": "public/assets/icon.ico",
+    "appId": "com.promptiq.app",
+    "productName": "PromptIQ Teleprompter",
+    "directories": {
+      "output": "dist"
+    },
+    "fileAssociations": [
+      {
+        "ext": "ptq",
+        "name": "PromptIQ Script",
+        "description": "Arquivo de Roteiro do PromptIQ",
+        "icon": "public/assets/icon.ico",
+        "role": "Editor",
+        "isPackage": false
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "public/assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "runAfterFinish": true
+    },
+    "files": [
+      "**/*",
+      "!**/*.ts",
+      "!*.map",
+      "!src/tests/*"
+    ],
+    "asar": true,
+    "publish": {
+      "provider": "github",
+      "owner": "williansfigueiredo",
+      "repo": "promptiq_repo",
+      "releaseType": "release"
+    }
+  }
+}

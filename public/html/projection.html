@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Broadcast Live</title>
+    <link rel="stylesheet" href="../css/fonts/cjk-fonts.css">
+    <link rel="stylesheet" href="../css/fonts/opendyslexic.css">
+
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        background-color: black;
+        margin: 0;
+        overflow: hidden;
+        color: white;
+        font-family: Arial, 'Noto Sans CJK', 'Microsoft YaHei', 'SimSun', 'PingFang SC', Helvetica, sans-serif;
+        user-select: none;
+      }
+
+      #prompter-container {
+        position: relative;
+        width: 100%;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      /* === ÁREA DO TEXTO === */
+      #texto-limpo {
+        padding-top: 4.1vh;
+        padding-bottom: 30vh; /* Espaço extra no fim para subir tudo */
+
+        /* === MUDANÇA AQUI: Margens PEQUENAS e SIMÉTRICAS === */
+        /* Isso dá mais espaço para o texto não quebrar antes da hora */
+        padding-left: 3% !important;
+        padding-right: 0% !important;
+
+        width: 96.8%;
+        text-align: center;
+        line-height: 1.7;
+        font-weight: bold;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        white-space: pre-wrap;
+        will-change: transform;
+        transform: translate3d(0, 0, 0);
+      }
+
+      #texto-limpo p {
+        margin-bottom: 0.2em;
+        margin-top: 0;
+      }
+      #texto-limpo img {
+        max-width: 100%;
+        height: auto;
+        display: block;
+        margin: 0 auto;
+      }
+
+      /* === 1. MARCADOR (SETA VERDE) === */
+      #cue-marker {
+        position: absolute;
+        left: 0 !important;
+        top: 50%;
+        width: 100%;
+        height: 0;
+        z-index: 9000;
+        pointer-events: none;
+        display: flex;
+        align-items: center;
+        transition: top 0.05s linear;
+      }
+
+      /* Tamanho da seta ajustado para 30px */
+      .marker-arrow-icon {
+        width: 50px;
+        height: 50px;
+        margin-left: 0px;
+        filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.8));
+      }
+
+      .marker-bar-line {
+        width: 100%;
+        height: 4px;
+        background-color: currentColor;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+      }
+
+      /* === 2. BARRA DE PROGRESSO === */
+      #progress-container {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 8px;
+        background: rgb(0, 0, 0);
+        z-index: 9500;
+        display: none;
+      }
+
+      #progress-thumb {
+        position: absolute;
+        top: 0;
+        left: 0 !important;
+        width: 100%;
+        height: 40px;
+        background-color: white;
+        box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
+        transition: top 0.1s linear;
+      }
+
+      /* === 3. OVERLAY DE MENSAGENS (Mapeado com seus ícones) === */
+      #message-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.7);
+        z-index: 10000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+      }
+
+      #message-box {
+        background-color: #ffc107;
+        color: #000;
+        padding: 20px 40px;
+        border-radius: 15px;
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        min-width: 200px;
+        max-width: 80%;
+        transform: scale(0.9);
+        transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      }
+
+      #message-overlay.show {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      #message-overlay.show #message-box {
+        transform: scale(1);
+      }
+
+      /* Container do ícone SVG */
+      #msg-icon-svg {
+        display: block;
+        margin: 0 auto 10px auto;
+        width: 60px; /* Ícone visível */
+        height: 60px;
+      }
+
+      #msg-icon-svg svg {
+        width: 100%;
+        height: 100%;
+        fill: currentColor; /* Pega a cor do texto automaticamente */
+      }
+
+      #msg-text {
+        font-size: 2.5rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        line-height: 1.1;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="prompter-container">
+      <div id="message-overlay">
+        <div id="message-box">
+          <div id="msg-icon-svg"></div>
+          <div id="msg-text">MENSAGEM</div>
+        </div>
+      </div>
+
+      <div id="progress-container">
+        <div id="progress-thumb"></div>
+      </div>
+
+      <div id="cue-marker"></div>
+
+      <div id="texto-limpo">WAITING FOR SIGNAL...</div>
+    </div>
+
+    <script>
+      const { ipcRenderer } = require("electron");
+      const textoDiv = document.getElementById("texto-limpo");
+      const markerDiv = document.getElementById("cue-marker");
+      const progressContainer = document.getElementById("progress-container");
+      const progressThumb = document.getElementById("progress-thumb");
+
+      // Elementos da Mensagem
+      const msgOverlay = document.getElementById("message-overlay");
+      const msgBox = document.getElementById("message-box");
+      const msgIconContainer = document.getElementById("msg-icon-svg");
+      const msgText = document.getElementById("msg-text");
+      let msgTimeout = null;
+      let lastKnownY = 0;
+
+      // === MAPA DE ÍCONES OFFLINE ===
+      // Incluí TODOS os ícones da sua configuração do app.js
+      const ICON_MAP = {
+        default:
+          '<svg viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.359.179.238.655l-.709 3.479c-.081.38.048.572.329.572.494 0 1.211-.227 1.914-.663l.753.57c-.772.671-1.88 1.042-2.932 1.042C5.86 12.805 5.3 12.375 5.57 11.22l.718-3.39c.128-.594.048-.963-.329-.963-.24 0-.471.051-.668.102l-.123-.382 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>',
+
+        // --- RITMO / TEMPO ---
+        "bi-cone-striped":
+          '<svg viewBox="0 0 16 16"><path d="m9.97 4.88.953 3.811C10.159 8.878 9.14 9.022 8 9.022c-1.14 0-2.158-.144-2.923-.331l.953-3.812V4.88h3.94zm-8.258 8.797-.43.953a.5.5 0 0 0 .456.706h12.526a.5.5 0 0 0 .456-.706l-.43-.953c-2.26 1.114-6.66 1.114-12.578 0zM8.5 2.682v.975c1.134.192 1.956.366 2.373.408l.94-3.76A.5.5 0 0 0 11.416 0H4.584a.5.5 0 0 0-.397.305l.94 3.76c.417-.042 1.239-.216 2.373-.408V2.682zM6.929 4.88v.004l-.953 3.812c-.77.188-1.18.324-1.18.324l-.973-3.89c.85-.205 2.158-.25 3.106-.25zm4.142 0c.948 0 2.256.045 3.106.25l-.973 3.89s-.41-.136-1.18-.324l-.953-3.812V4.88z"/></svg>',
+        "bi-lightning-fill":
+          '<svg viewBox="0 0 16 16"><path d="M5.52.359A.5.5 0 0 1 6 0h4a.5.5 0 0 1 .474.658L8.694 6H12.5a.5.5 0 0 1 .395.807l-7 9a.5.5 0 0 1-.873-.454L6.823 9.5H3.5a.5.5 0 0 1-.48-.641l2.5-8.5z"/></svg>',
+        "bi-arrows-expand":
+          '<svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M1 8a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 0 1h-13A.5.5 0 0 1 1 8zM7.646.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 1.707V5.5a.5.5 0 0 1-1 0V1.707L6.354 2.854a.5.5 0 1 1-.708-.708l2-2zM8 10a.5.5 0 0 1 .5.5v3.793l1.146-1.147a.5.5 0 0 1 .708.708l-2 2a.5.5 0 0 1-.708 0l-2-2a.5.5 0 0 1 .708-.708L7.5 14.293V10.5A.5.5 0 0 1 8 10z"/></svg>',
+        "bi-hourglass-bottom":
+          '<svg viewBox="0 0 16 16"><path d="M2 1.5a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-1v1a4.5 4.5 0 0 1-2.557 4.06c-.29.139-.443.377-.443.59v.7c0 .213.154.451.443.59A4.5 4.5 0 0 1 12.5 13v1h1a.5.5 0 0 1 0 1h-11a.5.5 0 1 1 0-1h1v-1a4.5 4.5 0 0 1 2.557-4.06c.29-.139.443-.377.443-.59v-.7c0-.213-.154-.451-.443-.59A4.5 4.5 0 0 1 3.5 3V2h-1a.5.5 0 0 1-.5-.5zm2.5.5v1a3.5 3.5 0 0 0 1.989 3.158c.533.256 1.011.791 1.011 1.491v.702s.18.149.5.149.5-.15.5-.15v-.7c0-.701.478-1.236 1.011-1.492A3.5 3.5 0 0 0 11.5 3V2h-7z"/></svg>',
+        "bi-stop-circle-fill":
+          '<svg viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM6.5 5A1.5 1.5 0 0 0 5 6.5v3A1.5 1.5 0 0 0 6.5 11h3A1.5 1.5 0 0 0 11 9.5v-3A1.5 1.5 0 0 0 9.5 5h-3z"/></svg>',
+
+        // --- CÂMERA / OLHAR ---
+        "bi-1-square":
+          '<svg viewBox="0 0 16 16"><path d="M9.283 4.002V12H7.971V5.338h-.065L6.072 6.656V5.385l1.899-1.383h1.312z"/><path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm15 0a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2z"/></svg>',
+        "bi-2-square":
+          '<svg viewBox="0 0 16 16"><path d="M6.646 6.24v.07H5.375v-.064c0-1.213.879-2.402 2.637-2.402 1.582 0 2.613.949 2.613 2.215 0 1.002-.6 1.667-1.287 2.43l-.096.107-1.974 2.22v.077h3.498V12H5.422v-.832l2.97-3.293c.434-.475.903-1.008.903-1.705 0-.744-.557-1.236-1.313-1.236-.843 0-1.336.615-1.336 1.306z"/><path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm15 0a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2z"/></svg>',
+        "bi-3-square":
+          '<svg viewBox="0 0 16 16"><path d="M7.996 11.326c.665 0 1.155-.376 1.155-1.037 0-.756-.569-1.043-1.04-1.043H7.72v-1.168h.363c.451 0 .899-.27.899-.865 0-.54-.379-.818-.838-.818-.54 0-.85.344-.88.941h-1.31c.063-1.268 1.144-1.996 2.193-1.996 1.144 0 2.008.71 2.008 1.83 0 .736-.457 1.258-1.077 1.488.75.2 1.31.815 1.31 1.702 0 1.272-1.018 2.13-2.316 2.13-1.191 0-2.139-.74-2.214-1.957h1.31c.064.634.508.994 1.025.994z"/><path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm15 0a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2z"/></svg>',
+        "bi-arrow-up-circle":
+          '<svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M1 8a7 7 0 1 0 14 0A7 7 0 0 0 1 8zm15 0A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-7.5 3.5a.5.5 0 0 1-1 0V5.707L5.354 7.854a.5.5 0 1 1-.708-.708l3-3a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 5.707V11.5z"/></svg>',
+
+        // --- ÁUDIO / TÉCNICO ---
+        "bi-volume-up":
+          '<svg viewBox="0 0 16 16"><path d="M11.536 14.01A8.473 8.473 0 0 0 14.026 8a8.473 8.473 0 0 0-2.49-6.01l-.708.707A7.476 7.476 0 0 1 13.025 8c0 2.071-.84 3.946-2.197 5.303l.708.707z"/><path d="M10.121 12.596A6.48 6.48 0 0 0 12.025 8a6.48 6.48 0 0 0-1.904-4.596l-.707.707A5.483 5.483 0 0 1 11.025 8a5.483 5.483 0 0 1-1.61 3.89l.706.706z"/><path d="M10.025 8a4.486 4.486 0 0 1-1.318 3.182L8 10.475A3.489 3.489 0 0 1 9.025 8c0-.966-.392-1.841-1.025-2.475l.707-.707A4.486 4.486 0 0 1 10.025 8zM7 4a.5.5 0 0 0-.812-.39L3.825 5.5H1.5A.5.5 0 0 0 1 6v4a.5.5 0 0 0 .5.5h2.325l2.363 1.89A.5.5 0 0 1 7 12V4zM4.312 6.39 6 5.04v5.92L4.312 9.61A.5.5 0 0 0 4 9.5H2v-3h2a.5.5 0 0 0 .312-.11z"/></svg>',
+        "bi-pause-circle":
+          '<svg viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M5 6.25a1.25 1.25 0 1 1 2.5 0v3.5a1.25 1.25 0 1 1-2.5 0v-3.5zm3.5 0a1.25 1.25 0 1 1 2.5 0v3.5a1.25 1.25 0 1 1-2.5 0v-3.5z"/></svg>',
+        "bi-mic-mute":
+          '<svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M12.734 9.613A4.995 4.995 0 0 0 13 8V7a.5.5 0 0 0-1 0v1c0 .274-.027.54-.08.799l.814.814zm-2.522 1.72A4 4 0 0 1 4 8V7a.5.5 0 0 0-1 0v1a5 5 0 0 0 4.5 4.975V15h-3a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-3v-2.025a4.973 4.973 0 0 0 2.43-.923l-.718-.719zM11 7.88V3a3 3 0 0 0-5.842-.963l.845.845A2 2 0 0 1 10 3v3.879l1 1zM8.738 9.86l.748.748A3 3 0 0 1 5 8V6.121l1 1V8a2 2 0 0 0 2.738 1.86zm4.908 3.494l-12-12 .708-.708 12 12-.708.708z"/></svg>',
+
+        // --- ESCREVER MSG (CUSTOM) ---
+        "bi-chat-quote-fill":
+          '<svg viewBox="0 0 16 16"><path d="M16 8c0 3.866-3.582 7-8 7a9.06 9.06 0 0 1-2.347-.306c-.584.296-1.925.864-4.181 1.234-.2.032-.352-.176-.273-.362.354-.836.674-1.95.77-2.966C.744 11.37 0 9.76 0 8c0-3.866 3.582-7 8-7s8 3.134 8 7zM7.194 6.766a1.688 1.688 0 0 0-.227-.272 1.467 1.467 0 0 0-.469-.324l-.008-.004A1.785 1.785 0 0 0 5.734 6C4.776 6 4 6.746 4 7.667c0 .92.776 1.666 1.734 1.666.343 0 .662-.095.931-.26-.137.389-.39.804-.819 1.22a.405.405 0 0 0 .574.573c.543-.544 1.027-1.129 1.182-1.81a1.91 1.91 0 0 0 .044-.45V8.526a2.152 2.152 0 0 0-.452-1.76zM11.194 6.766a1.688 1.688 0 0 0-.227-.272 1.467 1.467 0 0 0-.469-.324l-.008-.004A1.785 1.785 0 0 0 9.734 6C8.776 6 8 6.746 8 7.667c0 .92.776 1.666 1.734 1.666.343 0 .662-.095.931-.26-.137.389-.39.804-.819 1.22a.405.405 0 0 0 .574.573c.543-.544 1.027-1.129 1.182-1.81a1.91 1.91 0 0 0 .044-.45V8.526a2.152 2.152 0 0 0-.452-1.76z"/></svg>',
+        "bi-volume-up-fill":
+          '<svg viewBox="0 0 16 16"><path d="M11.536 14.01A8.473 8.473 0 0 0 14.026 8a8.473 8.473 0 0 0-2.49-6.01l-.708.707A7.476 7.476 0 0 1 13.025 8c0 2.071-.84 3.946-2.197 5.303l.708.707z"/><path d="M10.121 12.596A6.48 6.48 0 0 0 12.025 8a6.48 6.48 0 0 0-1.904-4.596l-.707.707A5.483 5.483 0 0 1 11.025 8a5.483 5.483 0 0 1-1.61 3.89l.706.706z"/><path d="M8.707 11.182A4.486 4.486 0 0 0 10.025 8a4.486 4.486 0 0 0-1.318-3.182L8 5.525A3.489 3.489 0 0 1 9.025 8 3.49 3.49 0 0 1 8 10.475l.707.707zM6.717 3.55A.5.5 0 0 1 7 4v8a.5.5 0 0 1-.812.39L3.825 10.5H1.5A.5.5 0 0 1 1 10V6a.5.5 0 0 1 .5-.5h2.325l2.363-1.89a.5.5 0 0 1 .529-.06z"/></svg>',
+        "bi-emoji-smile-fill":
+          '<svg viewBox="0 0 16 16"><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zM7 6.5C7 7.328 6.552 8 6 8s-1-.672-1-1.5S5.448 5 6 5s1 .672 1 1.5zM4.285 9.567a.5.5 0 0 1 .683.183A3.498 3.498 0 0 0 8 11.5a3.498 3.498 0 0 0 3.032-1.75.5.5 0 1 1 .866.5A4.498 4.498 0 0 1 8 12.5a4.498 4.498 0 0 1-3.898-2.25.5.5 0 0 1 .183-.683zM10 8c-.552 0-1-.672-1-1.5S9.448 5 10 5s1 .672 1 1.5S10.552 8 10 8z"/></svg>',
+      };
+
+      function renderMarker(type, color) {
+        markerDiv.style.color = color || "#00FF00";
+        if (type === "bar") {
+          markerDiv.innerHTML = `<div class="marker-bar-line" style="background-color: ${color}"></div>`;
+        } else {
+          markerDiv.innerHTML = `
+                <svg class="marker-arrow-icon" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" style="fill: ${color}">
+                    <path d="M12.14 8.753l-5.482 4.796c-.646.566-1.658.106-1.658-.753V3.204a1 1 0 0 1 1.659-.753l5.48 4.796a1 1 0 0 1 0 1.506z"/>
+                </svg>`;
+        }
+      }
+
+      function updateProgressBar(scrollY) {
+        if (progressContainer.style.display === "none") return;
+        const contentHeight = textoDiv.scrollHeight;
+        const viewportHeight =
+          document.getElementById("prompter-container").clientHeight;
+        const maxScroll = Math.max(1, contentHeight - viewportHeight);
+        const ratio = scrollY / maxScroll;
+        const trackHeight = viewportHeight - progressThumb.clientHeight;
+        let thumbTop = ratio * trackHeight;
+        thumbTop = Math.max(0, Math.min(thumbTop, trackHeight));
+        progressThumb.style.top = `${thumbTop}px`;
+      }
+
+      ipcRenderer.on("update-prompter-content", (e, content) => {
+        if (content) {
+          textoDiv.innerHTML = content;
+          setTimeout(() => updateProgressBar(lastKnownY), 100);
+        }
+        textoDiv.style.transform = `translate3d(0, -${lastKnownY}px, 0)`;
+      });
+
+      // === SINCRONIZAÇÃO DE SCROLL (BASEADA EM RAZÃO) ===
+      // Usa a razão (0 a 1) do scroll para sincronizar independente de padding
+      ipcRenderer.on("update-scroll", (e, data) => {
+        let targetY = 0;
+
+        // Calcula altura máxima de scroll local (descontando paddings extras)
+        const container = document.getElementById("prompter-container");
+        const containerHeight = container ? container.clientHeight : window.innerHeight;
+        const totalScrollHeight = textoDiv.scrollHeight;
+        
+        // Desconta padding-top e padding-bottom do cálculo
+        const computedStyle = window.getComputedStyle(textoDiv);
+        const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+        const paddingBottom = parseFloat(computedStyle.paddingBottom) || 0;
+        
+        // Altura pura do conteúdo (sem paddings extras)
+        const pureContentHeight = totalScrollHeight - paddingBottom;
+        
+        // Max scroll baseado no conteúdo puro
+        const localMaxScroll = Math.max(1, pureContentHeight - containerHeight);
+
+        // === NOVO: Corrige diferença de topo ===
+        // Sempre desconta o padding-top do targetY para alinhar o início do texto
+        let paddingTopOffset = paddingTop;
+
+        if (typeof data === "number") {
+          // Número direto = pixels (fallback)
+          targetY = data - paddingTopOffset;
+        } else if (typeof data === "object") {
+          if (data.ratio !== undefined) {
+            // NOVO: Razão de scroll (0 a 1) - mais precisa
+            targetY = data.ratio * localMaxScroll;
+          } else if (data.pixels !== undefined && data.maxScroll !== undefined) {
+            // Converte pixels do remetente para pixels locais usando razão
+            const remoteRatio = data.maxScroll > 0 ? data.pixels / data.maxScroll : 0;
+            targetY = remoteRatio * localMaxScroll;
+          } else if (data.percentage !== undefined) {
+            // Fallback: porcentagem da altura total
+            targetY = data.percentage * totalScrollHeight;
+          }
+        }
+
+        // Aplica o offset do padding-top SEMPRE
+        targetY = targetY - paddingTopOffset;
+
+        lastKnownY = targetY;
+        textoDiv.style.transform = `translate3d(0, -${targetY}px, 0)`;
+
+        if (typeof updateProgressBar === "function") updateProgressBar(targetY);
+      });
+
+      // === EXIBIÇÃO DE MENSAGENS COM ÍCONE OFFLINE ===
+      ipcRenderer.on("show-overlay-message", (e, item) => {
+        msgText.innerText = item.message;
+        msgBox.style.backgroundColor = item.bg;
+        msgBox.style.color = item.color;
+
+        // Pega o nome do ícone enviado pelo app.js (remove 'bi ' se houver)
+        // Ex: 'bi bi-cone-striped' vira 'bi-cone-striped'
+        const iconName = item.icon
+          ? item.icon.replace("bi ", "").trim()
+          : "default";
+
+        // Procura no nosso mapa. Se não achar exato, tenta achar um que contenha o nome.
+        let iconSvg = ICON_MAP[iconName] || ICON_MAP["default"];
+        if (!ICON_MAP[iconName]) {
+          const key = Object.keys(ICON_MAP).find((k) => iconName.includes(k));
+          if (key) iconSvg = ICON_MAP[key];
+        }
+
+        msgIconContainer.innerHTML = iconSvg;
+
+        msgOverlay.classList.add("show");
+        if (msgTimeout) clearTimeout(msgTimeout);
+        msgTimeout = setTimeout(() => {
+          msgOverlay.classList.remove("show");
+        }, 4000);
+      });
+
+      ipcRenderer.on("settings-updated-globally", (e, settings) => {
+        // 1. Configurações Básicas de Cor e Fonte
+        if (settings.backgroundColor)
+          document.body.style.backgroundColor = settings.backgroundColor;
+        if (settings.defaultFontColor)
+          textoDiv.style.color = settings.defaultFontColor;
+
+        if (settings.defaultFontSize) {
+          // Aplica o tamanho da fonte
+          textoDiv.style.fontSize = settings.defaultFontSize + "pt";
+        }
+        if (settings.defaultFont)
+          textoDiv.style.fontFamily = settings.defaultFont;
+
+        // === LÓGICA DA MARGEM (CORRIGIDA PARA VENCER O !IMPORTANT) ===
+        if (settings.prompterMargin !== undefined) {
+          // Se a margem for 0 (estado inicial/reset), removemos o estilo inline.
+          // Assim, o CSS original (3% na esquerda, 0% na direita) volta a mandar.
+          if (settings.prompterMargin === 0) {
+            textoDiv.style.removeProperty("padding-left");
+            textoDiv.style.removeProperty("padding-right");
+          } else {
+            // Se for diferente de 0 (ex: 100, 200, 300), forçamos a nova margem
+            // usando 'important' para passar por cima do CSS.
+            const marginVal = settings.prompterMargin + "px";
+
+            textoDiv.style.setProperty("padding-left", marginVal, "important");
+            textoDiv.style.setProperty("padding-right", marginVal, "important");
+          }
+        }
+
+        // === 3. LÓGICA DO ESPELHAMENTO VERTICAL (Correção do Item 1) ===
+        // Aplicamos o flip no container principal para inverter tudo (texto + margens)
+        const container = document.getElementById("prompter-container");
+
+        if (settings.flipVertical) {
+          // Inverte verticalmente (de ponta cabeça)
+          container.style.transform = "scaleY(-1)";
+        } else {
+          // Volta ao normal
+          container.style.transform = "none";
+        }
+
+        // Ajustes do Marcador (Seta)
+        renderMarker(
+          settings.cueType || "arrow",
+          settings.cueColor || "#00FF00"
+        );
+
+        // Ajuste da Barra de Progresso
+        if (settings.showProgressIndicator) {
+          progressContainer.style.display = "block";
+          updateProgressBar(lastKnownY);
+        } else {
+          progressContainer.style.display = "none";
+        }
+      });
+
+      window.onload = () => {
+        ipcRenderer.send("projection-ready");
+        ipcRenderer.send("request-initial-settings");
+
+        setTimeout(() => {
+          const height = window.innerHeight;
+          markerDiv.style.top = height / 2 + "px";
+        }, 500);
+      };
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "F11" || e.key === "Escape") {
+          e.preventDefault();
+          ipcRenderer.send("control-window", "fullscreen");
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+/* ==========================================================
+   CJK FONTS - Suporte para Chinês, Japonês e Coreano
+   Usa arquivos .ttc (TrueType Collection) do Noto Sans CJK
+   ========================================================== */
+
+/* Noto Sans CJK - Regular */
+@font-face {
+    font-family: 'Noto Sans CJK';
+    src: url('./noto-cjk/NotoSansCJK-Regular.ttc') format('truetype-collection');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Noto Sans CJK - Bold */
+@font-face {
+    font-family: 'Noto Sans CJK';
+    src: url('./noto-cjk/NotoSansCJK-Bold.ttc') format('truetype-collection');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
