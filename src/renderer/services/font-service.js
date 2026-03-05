@@ -241,9 +241,10 @@ const FontService = (function() {
             applyExactFontSizeToOperator(valor);
             updateFontUIState(null, valor);
 
-            // Salva nas preferências
+            // Salva nas preferências e sincroniza com a janela de projeção
             if (ipcRenderer) {
                 ipcRenderer.send('save-settings', { defaultFontSize: valor });
+                ipcRenderer.send('sync-projection-font-size', valor);
             }
         });
 
@@ -272,6 +273,11 @@ const FontService = (function() {
                 applyExactFontSizeToOperator(val);
                 updateFontUIState(null, val);
                 
+                // Sincroniza com janela de projeção
+                if (ipcRenderer) {
+                    ipcRenderer.send('sync-projection-font-size', val);
+                }
+                
                 // Limpa o input customizado
                 if (fontSizeCustom) fontSizeCustom.value = "";
                 
@@ -298,6 +304,11 @@ const FontService = (function() {
                 applyExactFontSizeToEditor(val);
                 applyExactFontSizeToOperator(val);
                 updateFontUIState(null, val);
+                
+                // Sincroniza com janela de projeção
+                if (ipcRenderer) {
+                    ipcRenderer.send('sync-projection-font-size', val);
+                }
                 
                 // Limpa o select pré-definido
                 if (fontSizePreset) fontSizePreset.value = "";
@@ -350,6 +361,11 @@ const FontService = (function() {
                     if (syncContentToPrompter) syncContentToPrompter();
                     
                     updateFontUIState(null, val);
+                    
+                    // Sincroniza com janela de projeção
+                    if (ipcRenderer) {
+                        ipcRenderer.send('sync-projection-font-size', val);
+                    }
                     
                     const editor = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
                     if (editor) editor.focus();

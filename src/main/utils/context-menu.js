@@ -29,17 +29,51 @@ function attachContextMenu(win) {
         const menuTemplate = [];
         
         // ========================================
+        // SEÇÃO 0: IR PARA OPERATOR (quando há seleção)
+        // ========================================
+        if (params.selectionText && params.selectionText.trim().length > 0) {
+            menuTemplate.push({
+                label: 'Go to Operator',
+                click: () => win.webContents.send('go-to-operator-at-selection')
+            });
+            menuTemplate.push({ type: 'separator' });
+        }
+        
+        // ========================================
         // SEÇÃO 1: CORREÇÃO ORTOGRÁFICA
         // ========================================
         // Se a palavra sob o cursor está marcada como errada
         if (params.misspelledWord) {
             // Se há sugestões de correção disponíveis
             if (params.dictionarySuggestions.length > 0) {
+                // Detecta o case da palavra original
+                const originalWord = params.misspelledWord;
+                
+                // Conta quantas letras são maiúsculas vs minúsculas
+                const letters = originalWord.replace(/[^a-zA-ZÀ-ÿ]/g, '');
+                const upperCount = (letters.match(/[A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÄËÏÖÜÇ]/g) || []).length;
+                const lowerCount = (letters.match(/[a-záéíóúâêîôûãõàèìòùäëïöüç]/g) || []).length;
+                
+                // Se maioria é maiúscula (>70%), trata como MAIÚSCULA
+                const isMostlyUpperCase = letters.length > 0 && (upperCount / letters.length) >= 0.7;
+                const isAllUpperCase = originalWord === originalWord.toUpperCase();
+                const isTitleCase = !isMostlyUpperCase && 
+                                    originalWord[0] === originalWord[0].toUpperCase() && 
+                                    originalWord.slice(1) === originalWord.slice(1).toLowerCase();
+                
                 // Adiciona cada sugestão como item clicável
                 params.dictionarySuggestions.forEach(suggestion => {
+                    // Aplica o mesmo case da palavra original à sugestão
+                    let casedSuggestion = suggestion;
+                    if (isAllUpperCase || isMostlyUpperCase) {
+                        casedSuggestion = suggestion.toUpperCase();
+                    } else if (isTitleCase) {
+                        casedSuggestion = suggestion.charAt(0).toUpperCase() + suggestion.slice(1).toLowerCase();
+                    }
+                    
                     menuTemplate.push({ 
-                        label: suggestion, 
-                        click: () => win.webContents.replaceMisspelling(suggestion) 
+                        label: casedSuggestion, 
+                        click: () => win.webContents.replaceMisspelling(casedSuggestion) 
                     });
                 });
             } else { 

@@ -147,7 +147,15 @@ function runSpellCheck(text, autoDetect = true, langCode = null) {
 
   for (const word of words) {
     if (!word.trim()) continue;
-    if (!dict.check(word)) {
+    
+    // 🔹 Verifica tanto a palavra original quanto em minúsculas
+    // Isso permite verificar palavras em CAIXA ALTA
+    const wordLower = word.toLowerCase();
+    const isCorrectOriginal = dict.check(word);
+    const isCorrectLower = dict.check(wordLower);
+    
+    // Se nenhuma versão está correta, marca como erro
+    if (!isCorrectOriginal && !isCorrectLower) {
       results.push(word);
     }
   }
@@ -162,6 +170,11 @@ function runSpellCheck(text, autoDetect = true, langCode = null) {
 function getSuggestions(word, langCode = null) {
   const clean = (word || '').replace(/[.,!?;:"'()]/g, '').trim();
   if (!clean) return [];
+
+  // 🔹 Detecta o case da palavra original
+  const isAllUpperCase = clean === clean.toUpperCase() && clean.length > 1;
+  const isTitleCase = clean[0] === clean[0].toUpperCase() && 
+                      clean.slice(1) === clean.slice(1).toLowerCase();
 
   // 🔹 Usa o idioma recebido do renderer ou o último detectado
   const lang = langCode || currentLang || 'pt-BR';
@@ -180,8 +193,24 @@ function getSuggestions(word, langCode = null) {
     }
   }
 
-  // 🔹 Gera as sugestões
-  const suggestions = dict.suggest(clean) || [];
+  // 🔹 Gera as sugestões (sempre busca em minúsculas para melhor resultado)
+  const cleanLower = clean.toLowerCase();
+  let suggestions = dict.suggest(cleanLower) || [];
+  
+  // Se não encontrar sugestões em minúsculas, tenta com a palavra original
+  if (suggestions.length === 0) {
+    suggestions = dict.suggest(clean) || [];
+  }
+
+  // 🔹 Aplica o mesmo case da palavra original às sugestões
+  suggestions = suggestions.map(suggestion => {
+    if (isAllUpperCase) {
+      return suggestion.toUpperCase();
+    } else if (isTitleCase) {
+      return suggestion.charAt(0).toUpperCase() + suggestion.slice(1).toLowerCase();
+    }
+    return suggestion;
+  });
 
   console.log(`[spellchecker] ✅ Sugestões (${lang}) para "${clean}":`, suggestions);
   return suggestions;

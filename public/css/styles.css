@@ -364,6 +364,48 @@ body {
   position: relative;
 }
 
+/* === CORREÇÃO: Forçar visibilidade correta das abas === */
+.tab-pane:not(.active) {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none;
+}
+
+.tab-pane.active {
+  display: flex !important;
+  visibility: visible !important;
+  pointer-events: auto;
+  opacity: 1;
+}
+
+/* Classe auxiliar para forçar reflow */
+.force-reflow {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* Garantir que toolbars e barras de formatação sejam sempre visíveis */
+.tab-pane.active .format-bar,
+.tab-pane.active .toolbar,
+.tab-pane.active .operator-toolbar,
+.tab-pane.active #operator-controls {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Evitar problemas de layout em containers flex */
+.tab-pane.active>* {
+  flex-shrink: 0;
+}
+
+/* Otimização de renderização para abas */
+.tab-pane {
+  will-change: opacity, visibility;
+  contain: layout style;
+}
+
 /* --------------------------------------------------------------------------
    2.5 TELA INICIAL (SIDEBAR E RECENTES)
    -------------------------------------------------------------------------- */
@@ -682,6 +724,32 @@ mark {
 .diff-added-highlight {
   background-color: rgba(52, 199, 89, 0.2);
   font-weight: 600;
+}
+
+/* Highlights dentro de elementos mark */
+mark.diff-removed-highlight {
+  background-color: rgba(255, 59, 48, 0.35);
+  text-decoration: line-through;
+  color: inherit;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+mark.diff-added-highlight {
+  background-color: rgba(52, 199, 89, 0.35);
+  font-weight: 600;
+  color: inherit;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+/* Container do painel de diff com formatação */
+.formatted-diff-panel {
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
 .find-match {
@@ -1028,6 +1096,59 @@ mark {
 #pref-standby,
 #pref-auto-update {
   padding-top: 24px !important;
+}
+
+/* --------------------------------------------------------------------------
+   Preferences - Responsividade para telas pequenas
+   -------------------------------------------------------------------------- */
+@media screen and (max-height: 700px) {
+  #pref-tabs .nav-link {
+    padding: 8px 12px !important;
+    font-size: 12px !important;
+  }
+  
+  #pref-content {
+    padding: 12px 0 16px 0 !important;
+  }
+  
+  #pref-content .row {
+    padding: 4px 0 !important;
+  }
+  
+  #pref-content label {
+    font-size: 12px !important;
+  }
+  
+  #pref-content .form-control,
+  #pref-content .form-select {
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+  }
+  
+  #pref-actions {
+    padding: 10px 20px !important;
+  }
+  
+  #pref-actions .btn {
+    padding: 8px 16px !important;
+    font-size: 12px !important;
+  }
+  
+  .standby-preview-box {
+    height: 120px !important;
+  }
+}
+
+@media screen and (max-width: 700px) {
+  #pref-tabs .nav-link {
+    padding: 8px 10px !important;
+    font-size: 11px !important;
+  }
+  
+  #pref-content .container-fluid {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
 }
 
 /* Dark Mode - Preferences - Botões e Checkboxes */
@@ -2634,6 +2755,55 @@ body.dark-mode .form-select:focus {
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
+   Telas muito pequenas / Notebooks compactos (altura < 700px)
+   -------------------------------------------------------------------------- */
+@media screen and (max-height: 700px) {
+  /* Home - Quick Tips mais compacto */
+  .quick-tips-box {
+    margin-top: 1rem !important;
+    padding: 1rem !important;
+  }
+  
+  .quick-tips-box ul li {
+    margin-bottom: 0.3rem !important;
+    font-size: 0.85rem !important;
+  }
+  
+  /* Welcome cards mais compactos */
+  .welcome-card {
+    padding: 16px !important;
+  }
+  
+  /* Home content com scroll */
+  .home-content {
+    padding: 20px !important;
+    overflow-y: auto !important;
+  }
+  
+  /* Log Activity mais compacto */
+  .log-body.open {
+    height: 120px !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Notebooks pequenos (altura 700px - 800px)
+   -------------------------------------------------------------------------- */
+@media screen and (max-height: 800px) and (min-height: 701px) {
+  .quick-tips-box {
+    margin-top: 1.5rem !important;
+  }
+  
+  .welcome-card {
+    padding: 18px !important;
+  }
+  
+  .log-body.open {
+    height: 150px !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
    Monitores pequenos / Laptops (1024px - 1440px)
    -------------------------------------------------------------------------- */
 @media screen and (min-width: 1024px) and (max-width: 1440px) {
@@ -2804,4 +2974,144 @@ body.dark-mode .form-select:focus {
   ::-webkit-scrollbar-thumb {
     border-radius: 7px;
   }
+}
+
+/* ============================================
+   TRANSMISSION CENTER - Styles
+   ============================================ */
+
+/* Server Cards - Base (Light Mode) */
+#local-server-card,
+#internet-server-card {
+  background-color: #ffffff;
+  border-color: #dee2e6;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Connection Panels - Base (Light Mode) */
+#local-connection-panel,
+#internet-connection-panel {
+  background-color: #f8f9fa;
+  border-color: #dee2e6;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* URL Display Inputs - Base (Light Mode) */
+#local-url-display,
+#internet-url-display {
+  background-color: #ffffff;
+  border-color: #ced4da;
+  color: #0d6efd;
+}
+
+/* Copy Buttons - Base (Light Mode) */
+#btn-copy-local,
+#btn-copy-internet {
+  background-color: #f8f9fa;
+  border-color: #ced4da;
+  color: #495057;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+#btn-copy-local:hover,
+#btn-copy-internet:hover {
+  background-color: #e9ecef;
+  border-color: #adb5bd;
+  color: #212529;
+}
+
+/* Server Cards - Dark Mode */
+[data-theme="dark"] #local-server-card,
+[data-theme="dark"] #internet-server-card,
+body.dark-mode #local-server-card,
+body.dark-mode #internet-server-card {
+  background-color: #1e2330 !important;
+  border-color: #2d323e !important;
+}
+
+[data-theme="dark"] #local-server-card strong,
+[data-theme="dark"] #internet-server-card strong,
+body.dark-mode #local-server-card strong,
+body.dark-mode #internet-server-card strong {
+  color: #e9ecef;
+}
+
+[data-theme="dark"] #local-server-card .text-muted,
+[data-theme="dark"] #internet-server-card .text-muted,
+body.dark-mode #local-server-card .text-muted,
+body.dark-mode #internet-server-card .text-muted {
+  color: #8b95a5 !important;
+}
+
+/* Connection Panels - Dark Mode */
+[data-theme="dark"] #local-connection-panel,
+[data-theme="dark"] #internet-connection-panel,
+body.dark-mode #local-connection-panel,
+body.dark-mode #internet-connection-panel {
+  background-color: #252a35 !important;
+  border-color: #2d323e !important;
+}
+
+/* URL Display Inputs - Dark Mode */
+[data-theme="dark"] #local-url-display,
+[data-theme="dark"] #internet-url-display,
+body.dark-mode #local-url-display,
+body.dark-mode #internet-url-display {
+  background-color: #1a1e28 !important;
+  border-color: #2d323e !important;
+  color: #4dabf7 !important;
+}
+
+/* Copy Buttons - Dark Mode */
+[data-theme="dark"] #btn-copy-local,
+[data-theme="dark"] #btn-copy-internet,
+body.dark-mode #btn-copy-local,
+body.dark-mode #btn-copy-internet {
+  background-color: #2d323e;
+  border-color: #3d4455;
+  color: #e9ecef;
+}
+
+[data-theme="dark"] #btn-copy-local:hover,
+[data-theme="dark"] #btn-copy-internet:hover,
+body.dark-mode #btn-copy-local:hover,
+body.dark-mode #btn-copy-internet:hover {
+  background-color: #3d4455;
+  border-color: #4d5565;
+  color: #fff;
+}
+
+[data-theme="dark"] #btn-copy-local i,
+[data-theme="dark"] #btn-copy-internet i,
+body.dark-mode #btn-copy-local i,
+body.dark-mode #btn-copy-internet i {
+  color: inherit;
+}
+
+/* Toggle Buttons - Dark Mode */
+[data-theme="dark"] #btn-toggle-local,
+[data-theme="dark"] #btn-toggle-internet,
+body.dark-mode #btn-toggle-local,
+body.dark-mode #btn-toggle-internet {
+  border-color: #3d4455;
+  color: #e9ecef;
+}
+
+[data-theme="dark"] #btn-toggle-local:hover,
+[data-theme="dark"] #btn-toggle-internet:hover,
+body.dark-mode #btn-toggle-local:hover,
+body.dark-mode #btn-toggle-internet:hover {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+  color: #fff;
+}
+
+/* Active Toggle Buttons (when server is ON) */
+[data-theme="dark"] #btn-toggle-local.btn-danger,
+[data-theme="dark"] #btn-toggle-internet.btn-danger,
+body.dark-mode #btn-toggle-local.btn-danger,
+body.dark-mode #btn-toggle-internet.btn-danger {
+  background-color: #dc3545;
+  border-color: #dc3545;
+  color: #fff;
 }

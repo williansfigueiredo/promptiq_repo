@@ -2,54 +2,25 @@
 // Removemos 'contextBridge' daqui e usamos a forma compatível.
 const { ipcRenderer } = require('electron');
 const path = require('path');
-let spellchecker = null;
 
-// Tenta carregar o módulo sem quebrar a aplicação
-try {
-  spellchecker = require(path.join(__dirname, '../renderer/services/spellchecker-service'));
-  console.log('[preload] spellchecker carregado com sucesso.');
-} catch (err) {
-  console.error('[preload] Erro ao carregar spellchecker:', err);
-}
+// ============================================================
+// SPELLCHECKER: Usando apenas o nativo do Chromium
+// ============================================================
+// O Typo.js foi removido para melhorar performance.
+// O spellchecker nativo do Electron/Chromium é suficiente.
 
-// Função para chamadas seguras (não quebra o app se falhar)
-function safeCall(fn, fallback = null) {
-  try {
-    const result = fn();
-    if (result && typeof result.then === 'function') {
-      return result.catch(err => {
-        console.error('[safeCall] Erro na Promise:', err);
-        return fallback;
-      });
-    }
-    return result;
-  } catch (err) {
-    console.error('[preload] erro:', err.message, err);
-    return fallback;
-  }
-}
+console.log('[preload] Usando spellchecker NATIVO do Chromium (Typo.js desativado).');
 
 // Exposição da API global diretamente no 'window'
+// Mantemos a API compatível mas retornando valores padrão
 window.cognito = {
   spell: {
-    // Detecta o idioma (sempre retorna pt-BR por enquanto)
-    detectLanguage: (text) =>
-      safeCall(() => spellchecker?.detectLanguage(text || ''), 'pt-BR'),
-
-    // Roda a verificação ortográfica
-    run: (text, autoDetect = true, langCode = null) =>
-      safeCall(() => spellchecker?.runSpellCheck(text || '', autoDetect, langCode), []),
-
-    // Sugestões de correção para uma palavra
- suggestions: (word, langCode = null) =>
-  safeCall(() => {
-    // 🔹 Se langCode não foi informado, detecta antes
-    const detectedLang = langCode || spellchecker?.detectLanguage(word || '');
-    const result = spellchecker?.getSuggestions(word || '', detectedLang);
-    console.log(`[preload] Sugestões solicitadas para "${word}" (${detectedLang})`);
-    return Array.isArray(result) ? result : [];
-  }, []),
-  
+    // API mantida para compatibilidade, mas não faz nada
+    // O spellchecker nativo do Chromium cuida de tudo
+    detectLanguage: () => 'pt-BR',
+    run: () => [],
+    check: () => true,
+    suggestions: () => [],
   },
 
   ipc: {

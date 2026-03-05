@@ -1,17 +1,17 @@
 // ============================================================
 // remote-connection.js
 // ============================================================
-// DESCRIÇÃO: Módulo de conexão remota (Internet/WebRTC)
-// FUNÇÃO: Gerencia conexões peer-to-peer via WebRTC para
-//         edição colaborativa em tempo real pela internet.
-//         Usa servidor de sinalização para handshake inicial.
+// DESCRIÇÃO: Módulo de conexão remota (Local + Internet)
+// FUNÇÃO: Gerencia conexões via Wi-Fi local E WebRTC para
+//         edição colaborativa em tempo real. Permite que
+//         ambos os modos funcionem simultaneamente.
 // ============================================================
 
 /**
  * RemoteConnectionModule
  * -----------------------
- * Módulo que implementa conexão WebRTC para colaboração
- * em tempo real via internet. Suporta múltiplos peers.
+ * Módulo que implementa conexão dupla para colaboração
+ * em tempo real via Local (Wi-Fi) e Internet (WebRTC).
  */
 const RemoteConnectionModule = (function() {
     
@@ -22,24 +22,44 @@ const RemoteConnectionModule = (function() {
     const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
     // ============================================================
-    // ESTADO INTERNO
+    // ESTADO INTERNO - SEPARADO PARA CADA MODO
     // ============================================================
-    let signalingSocket = null;   // Socket.io para sinalização
-    let peers = {};               // Lista de conexões WebRTC (por userId)
-    let myRoomId = null;          // ID da sala criada
+    
+    // Estado Internet (WebRTC)
+    let signalingSocket = null;
+    let peers = {};
+    let internetRoomId = null;
+    let isInternetActive = false;
+    
+    // Estado Local (Wi-Fi)
+    let isLocalActive = false;
+    let localUrl = null;
+    let localPin = null;
 
     // ============================================================
     // REFERÊNCIAS DOM
     // ============================================================
     let btnOpenRemoteModal = null;
-    let btnToggleServerModal = null;
-    let statusIndicator = null;
-    let statusAlert = null;
-    let connectionPanel = null;
-    let modalUrlDisplay = null;
-    let btnModalCopy = null;
     let sidebarIcon = null;
     let remoteModalInstance = null;
+    
+    // Elementos Local
+    let btnToggleLocal = null;
+    let localStatusBadge = null;
+    let localConnectionPanel = null;
+    let localUrlDisplay = null;
+    let btnCopyLocal = null;
+    
+    // Elementos Internet
+    let btnToggleInternet = null;
+    let internetStatusBadge = null;
+    let internetConnectionPanel = null;
+    let internetUrlDisplay = null;
+    let btnCopyInternet = null;
+
+    // Status Alert (compatibilidade)
+    let statusAlert = null;
+    let statusIndicator = null;
 
     // ============================================================
     // CALLBACKS EXTERNOS
@@ -56,26 +76,34 @@ const RemoteConnectionModule = (function() {
     // ============================================================
     // INICIALIZAÇÃO DO MÓDULO
     // ============================================================
-    /**
-     * init
-     * -----
-     * Inicializa o módulo de conexão remota.
-     */
     function init(options) {
-        // Referências DOM
+        // Botão sidebar
         btnOpenRemoteModal = options.btnOpenRemoteModal || document.getElementById("btn-open-remote-modal");
-        btnToggleServerModal = options.btnToggleServerModal || document.getElementById("btn-toggle-server-modal");
-        statusIndicator = options.statusIndicator || document.getElementById("status-indicator");
-        statusAlert = options.statusAlert || document.getElementById("server-status-alert");
-        connectionPanel = options.connectionPanel || document.getElementById("connection-details-panel");
-        modalUrlDisplay = options.modalUrlDisplay || document.getElementById("modal-url-display");
-        btnModalCopy = options.btnModalCopy || document.getElementById("btn-modal-copy");
         sidebarIcon = document.querySelector("#btn-open-remote-modal i");
         
+        // Modal
         const remoteModalElement = document.getElementById("remoteConnectionModal");
         if (remoteModalElement && typeof bootstrap !== 'undefined') {
             remoteModalInstance = new bootstrap.Modal(remoteModalElement);
         }
+        
+        // Elementos Local
+        btnToggleLocal = document.getElementById("btn-toggle-local");
+        localStatusBadge = document.getElementById("local-status-badge");
+        localConnectionPanel = document.getElementById("local-connection-panel");
+        localUrlDisplay = document.getElementById("local-url-display");
+        btnCopyLocal = document.getElementById("btn-copy-local");
+        
+        // Elementos Internet
+        btnToggleInternet = document.getElementById("btn-toggle-internet");
+        internetStatusBadge = document.getElementById("internet-status-badge");
+        internetConnectionPanel = document.getElementById("internet-connection-panel");
+        internetUrlDisplay = document.getElementById("internet-url-display");
+        btnCopyInternet = document.getElementById("btn-copy-internet");
+        
+        // Status Alert (compatibilidade)
+        statusAlert = document.getElementById("server-status-alert");
+        statusIndicator = document.getElementById("status-indicator");
         
         // Callbacks
         getActiveTextEditorArea = options.getActiveTextEditorArea;
@@ -92,7 +120,6 @@ const RemoteConnectionModule = (function() {
             sidebarIcon.classList.remove("broadcast-live");
         }
         
-        // Configura listeners
         setupEventListeners();
         setupIPCListeners();
     }
@@ -137,41 +164,123 @@ const RemoteConnectionModule = (function() {
     }
 
     // ============================================================
-    // FUNÇÃO: Iniciar Conexão WebRTC
+    // MODO LOCAL (WI-FI) - FUNÇÕES
     // ============================================================
-    /**
-     * startWebRTCConnection
-     * ----------------------
-     * Inicia a conexão WebRTC com o servidor de sinalização.
-     * Cria uma sala e aguarda conexões de peers.
-     */
+    
+    async function startLocalServer() {
+        if (!ipcRenderer) {
+            console.error("ipcRenderer não disponível");
+            return false;
+        }
+
+        try {
+            const result = await ipcRenderer.invoke('toggle-server', 'local');
+            
+            if (result && result.active) {
+                isLocalActive = true;
+                localUrl = result.url;
+                localPin = result.pin;
+                
+                updateLocalUI(true, `${result.url} | ID: ${result.pin}`);
+                updateSidebarIcon();
+                
+                if (addLogEntry) {
+                    addLogEntry({
+                        msg: 'Local server started',
+                        type: 'login',
+                        source: 'Local Network',
+                        user: 'System'
+                    });
+                }
+                
+                return true;
+            }
+            return false;
+        } catch (err) {
+            const mensagemExibicao = err.message
+                .replace("Error invoking remote method 'toggle-server':", "")
+                .replace("Error:", "")
+                .trim();
+
+            showConnectionError(mensagemExibicao);
+            isLocalActive = false;
+            updateLocalUI(false);
+            updateSidebarIcon();
+            return false;
+        }
+    }
+    
+    async function stopLocalServer() {
+        if (!ipcRenderer) return;
+        
+        try {
+            await ipcRenderer.invoke('toggle-server', 'local');
+            isLocalActive = false;
+            localUrl = null;
+            localPin = null;
+            updateLocalUI(false);
+            updateSidebarIcon();
+            
+            if (addLogEntry) {
+                addLogEntry({
+                    msg: 'Local server stopped',
+                    type: 'logout',
+                    source: 'Local Network',
+                    user: 'System'
+                });
+            }
+        } catch (err) {
+            console.error("Erro ao parar servidor local:", err);
+        }
+    }
+    
+    function updateLocalUI(active, url = "") {
+        if (active) {
+            if (localStatusBadge) {
+                localStatusBadge.textContent = "ONLINE";
+                localStatusBadge.classList.remove("bg-secondary");
+                localStatusBadge.classList.add("bg-success");
+            }
+            if (btnToggleLocal) {
+                btnToggleLocal.classList.remove("btn-outline-primary");
+                btnToggleLocal.classList.add("btn-danger");
+            }
+            if (localConnectionPanel) localConnectionPanel.classList.remove("d-none");
+            if (localUrlDisplay) localUrlDisplay.value = url;
+        } else {
+            if (localStatusBadge) {
+                localStatusBadge.textContent = "OFF";
+                localStatusBadge.classList.remove("bg-success");
+                localStatusBadge.classList.add("bg-secondary");
+            }
+            if (btnToggleLocal) {
+                btnToggleLocal.classList.remove("btn-danger");
+                btnToggleLocal.classList.add("btn-outline-primary");
+            }
+            if (localConnectionPanel) localConnectionPanel.classList.add("d-none");
+            if (localUrlDisplay) localUrlDisplay.value = "";
+        }
+    }
+
+    // ============================================================
+    // MODO INTERNET (WEBRTC) - FUNÇÕES
+    // ============================================================
+    
     async function startWebRTCConnection() {
-        // Verifica internet antes de tentar conectar
         const hasInternet = await checkInternetConnection();
         
         if (!hasInternet) {
             showConnectionError("No Connection! Connect to the internet to use this mode.");
-            
-            if (sidebarIcon) {
-                sidebarIcon.classList.remove('broadcast-live');
-                sidebarIcon.classList.add('broadcast-offline');
-            }
-            
-            if (btnToggleServerModal) {
-                btnToggleServerModal.disabled = false;
-            }
-            
-            return;
+            updateInternetUI(false);
+            updateSidebarIcon();
+            return false;
         }
 
         console.log("✅ Internet OK - Connecting...");
         
-        // ========================================
-        // 1. CONECTA AO SERVIDOR DE SINALIZAÇÃO
-        // ========================================
         if (!ioClient) {
             console.error("Socket.io client não disponível!");
-            return;
+            return false;
         }
         
         signalingSocket = ioClient(SIGNALING_URL, {
@@ -179,44 +288,29 @@ const RemoteConnectionModule = (function() {
             reconnection: false
         });
 
-        // Handler de erro de conexão
         signalingSocket.on('connect_error', (error) => {
             console.error("❌ Erro ao conectar:", error);
             showConnectionError("Connection Failed! We were unable to connect to the server.");
-            
             stopWebRTCConnection();
-            updateServerUI(false);
-            
-            if (btnToggleServerModal) {
-                btnToggleServerModal.disabled = false;
-            }
+            return false;
         });
 
-        // ========================================
-        // 2. GERA ID DA SALA (6 DÍGITOS)
-        // ========================================
-        myRoomId = Math.floor(100000 + Math.random() * 900000).toString();
+        internetRoomId = Math.floor(100000 + Math.random() * 900000).toString();
+        signalingSocket.emit('create-room', internetRoomId);
 
-        // ========================================
-        // 3. CRIA A SALA NO SERVIDOR
-        // ========================================
-        signalingSocket.emit('create-room', myRoomId);
+        isInternetActive = true;
+        updateInternetUI(true, `roteiro.promptiq.com.br | ID: ${internetRoomId}`);
+        updateSidebarIcon();
 
-        // ========================================
-        // 4. ATUALIZA A UI
-        // ========================================
-        updateServerUI(true, `roteiro.promptiq.com.br | ID: ${myRoomId}`);
-
-        // Ícone fica verde
-        if (sidebarIcon) {
-            sidebarIcon.classList.remove('broadcast-offline');
-            sidebarIcon.classList.add('broadcast-live');
-            console.log("🟢 Ícone Internet agora está VERDE");
+        if (addLogEntry) {
+            addLogEntry({
+                msg: 'Internet server started',
+                type: 'login',
+                source: 'Internet',
+                user: 'System'
+            });
         }
 
-        // ========================================
-        // 5. OUVE NOVOS USUÁRIOS ENTRANDO
-        // ========================================
         signalingSocket.on('user-connected', (userData) => {
             const targetId = userData.id || userData;
             const userName = userData.name || "Usuário Internet";
@@ -227,9 +321,6 @@ const RemoteConnectionModule = (function() {
             peers[targetId].userName = userName;
         });
 
-        // ========================================
-        // 6. OUVE SINAIS TÉCNICOS (ICE/SDP)
-        // ========================================
         signalingSocket.on('signal', async (data) => {
             const senderId = data.sender;
             
@@ -256,9 +347,6 @@ const RemoteConnectionModule = (function() {
             }
         });
 
-        // ========================================
-        // 7. OUVE DESCONEXÕES
-        // ========================================
         signalingSocket.on('user-disconnected', (userId) => {
             if (peers[userId]) {
                 const remoteName = peers[userId].userName || "Visitante (Web)";
@@ -281,42 +369,103 @@ const RemoteConnectionModule = (function() {
 
                 peers[userId].close();
                 delete peers[userId];
-                
-                console.log("Usuário desconectado:", userId);
             }
         });
+        
+        return true;
     }
 
     // ============================================================
     // FUNÇÃO: Parar Conexão WebRTC
     // ============================================================
-    /**
-     * stopWebRTCConnection
-     * ---------------------
-     * Para a conexão WebRTC e limpa todos os recursos.
-     */
     function stopWebRTCConnection() {
         if (signalingSocket) {
-            signalingSocket.emit('user-leaving', myRoomId);
+            signalingSocket.emit('user-leaving', internetRoomId);
             signalingSocket.disconnect();
             signalingSocket = null;
         }
 
-        // Volta ícone para vermelho
-        if (sidebarIcon) {
-            sidebarIcon.classList.remove('broadcast-live');
-            sidebarIcon.classList.add('broadcast-offline');
-        }
-        
-        console.log("🔴 Servidor de Internet Parado e Ícone resetado.");
-        
-        // Fecha todas as conexões
         Object.keys(peers).forEach(id => {
             if (peers[id]) peers[id].close();
         });
         
         peers = {};
-        myRoomId = null;
+        internetRoomId = null;
+        isInternetActive = false;
+        
+        updateInternetUI(false);
+        updateSidebarIcon();
+        
+        if (addLogEntry) {
+            addLogEntry({
+                msg: 'Internet server stopped',
+                type: 'logout',
+                source: 'Internet',
+                user: 'System'
+            });
+        }
+        
+        console.log("🔴 Servidor de Internet Parado");
+    }
+    
+    function updateInternetUI(active, url = "") {
+        if (active) {
+            if (internetStatusBadge) {
+                internetStatusBadge.textContent = "ONLINE";
+                internetStatusBadge.classList.remove("bg-secondary");
+                internetStatusBadge.classList.add("bg-success");
+            }
+            if (btnToggleInternet) {
+                btnToggleInternet.classList.remove("btn-outline-primary");
+                btnToggleInternet.classList.add("btn-danger");
+            }
+            if (internetConnectionPanel) internetConnectionPanel.classList.remove("d-none");
+            if (internetUrlDisplay) internetUrlDisplay.value = url;
+        } else {
+            if (internetStatusBadge) {
+                internetStatusBadge.textContent = "OFF";
+                internetStatusBadge.classList.remove("bg-success");
+                internetStatusBadge.classList.add("bg-secondary");
+            }
+            if (btnToggleInternet) {
+                btnToggleInternet.classList.remove("btn-danger");
+                btnToggleInternet.classList.add("btn-outline-primary");
+            }
+            if (internetConnectionPanel) internetConnectionPanel.classList.add("d-none");
+            if (internetUrlDisplay) internetUrlDisplay.value = "";
+        }
+    }
+
+    // ============================================================
+    // ÍCONE DA SIDEBAR (VERDE SE QUALQUER UM ATIVO)
+    // ============================================================
+    function updateSidebarIcon() {
+        if (sidebarIcon) {
+            if (isLocalActive || isInternetActive) {
+                sidebarIcon.classList.remove('broadcast-offline');
+                sidebarIcon.classList.add('broadcast-live');
+            } else {
+                sidebarIcon.classList.remove('broadcast-live');
+                sidebarIcon.classList.add('broadcast-offline');
+            }
+        }
+        
+        // Atualiza status alert (compatibilidade)
+        if (statusAlert && statusIndicator) {
+            if (isLocalActive || isInternetActive) {
+                statusAlert.classList.remove("alert-secondary");
+                statusAlert.classList.add("alert-success", "text-success");
+                statusAlert.querySelector("span").innerHTML = "Status: <strong>CONNECTED</strong>";
+                statusIndicator.classList.replace("text-danger", "text-success");
+                statusIndicator.classList.add("blink-animation");
+            } else {
+                statusAlert.classList.remove("alert-success", "text-success");
+                statusAlert.classList.add("alert-secondary");
+                statusAlert.querySelector("span").innerHTML = "Status: <strong>OFF</strong>";
+                statusIndicator.classList.replace("text-success", "text-danger");
+                statusIndicator.classList.remove("blink-animation");
+            }
+        }
     }
 
     // ============================================================
@@ -477,93 +626,54 @@ const RemoteConnectionModule = (function() {
     }
 
     // ============================================================
-    // FUNÇÃO: Broadcast de Texto para Todos os Peers
+    // BROADCAST PARA TODOS OS MODOS ATIVOS
     // ============================================================
+    
     /**
-     * broadcastTextUpdate
-     * --------------------
-     * Envia atualização de texto para todos os peers conectados.
+     * broadcastToAll
+     * ---------------
+     * Envia atualização de texto para TODOS os dispositivos conectados,
+     * tanto via Local (Wi-Fi) quanto via Internet (WebRTC).
      * 
      * @param {string} content - Conteúdo HTML a enviar
-     * @param {string|null} ignoreId - ID do peer a ignorar (quem enviou)
+     * @param {string|null} ignoreId - ID do peer WebRTC a ignorar (quem enviou)
+     */
+    function broadcastToAll(content, ignoreId = null) {
+        // Envia para peers WebRTC (Internet)
+        if (isInternetActive) {
+            Object.keys(peers).forEach(id => {
+                if (id !== ignoreId) {
+                    const peer = peers[id];
+                    if (peer.dataChannel && peer.dataChannel.readyState === 'open') {
+                        peer.dataChannel.send(JSON.stringify({ 
+                            type: 'update', 
+                            content: content 
+                        }));
+                    }
+                }
+            });
+        }
+        
+        // Envia para servidor local (Wi-Fi)
+        if (isLocalActive && ipcRenderer) {
+            ipcRenderer.send('send-text-to-remote', content);
+        }
+    }
+    
+    /**
+     * broadcastTextUpdate (compatibilidade)
+     * Alias para broadcastToAll - envia para AMBOS os modos
      */
     function broadcastTextUpdate(content, ignoreId = null) {
-        Object.keys(peers).forEach(id => {
-            if (id !== ignoreId) {
-                const peer = peers[id];
-                if (peer.dataChannel && peer.dataChannel.readyState === 'open') {
-                    peer.dataChannel.send(JSON.stringify({ 
-                        type: 'update', 
-                        content: content 
-                    }));
-                }
-            }
-        });
+        broadcastToAll(content, ignoreId);
     }
 
     // ============================================================
-    // FUNÇÃO: Atualizar UI do Modal
+    // FUNÇÃO: Atualizar UI do Modal (COMPATIBILIDADE)
     // ============================================================
-    /**
-     * updateServerUI
-     * ---------------
-     * Atualiza todos os elementos visuais do modal de conexão.
-     * 
-     * @param {boolean} isActive - Se o servidor está ativo
-     * @param {string} url - URL/ID para exibir
-     */
     function updateServerUI(isActive, url = "") {
-        if (isActive) {
-            // Status: ONLINE
-            if (statusAlert) {
-                statusAlert.classList.remove("alert-secondary");
-                statusAlert.classList.add("alert-success", "text-success");
-                statusAlert.querySelector("span").innerHTML = "Status: <strong>CONNECTED</strong>";
-            }
-
-            // Indicador visual
-            if (statusIndicator) {
-                statusIndicator.classList.replace("text-danger", "text-success");
-                statusIndicator.classList.add("blink-animation");
-            }
-
-            // Botão vira "Parar"
-            if (btnToggleServerModal) {
-                btnToggleServerModal.classList.replace("btn-primary", "btn-danger");
-                btnToggleServerModal.innerHTML = '<i class="bi bi-stop-circle"></i> STOP SERVER';
-            }
-
-            // Mostra link de conexão
-            if (connectionPanel) connectionPanel.classList.remove("d-none");
-            if (modalUrlDisplay) modalUrlDisplay.value = url;
-
-            // Desabilita seleção de modo
-            document.querySelectorAll('input[name="connection-mode"]')
-                .forEach(el => el.disabled = true);
-        } else {
-            // Status: OFF
-            if (statusAlert) {
-                statusAlert.classList.remove("alert-success", "text-success");
-                statusAlert.classList.add("alert-secondary");
-                statusAlert.querySelector("span").innerHTML = "Status: <strong>OFF</strong>";
-            }
-
-            if (statusIndicator) {
-                statusIndicator.classList.replace("text-success", "text-danger");
-                statusIndicator.classList.remove("blink-animation");
-            }
-
-            if (btnToggleServerModal) {
-                btnToggleServerModal.classList.replace("btn-danger", "btn-primary");
-                btnToggleServerModal.innerHTML = '<i class="bi bi-power"></i> START SERVER';
-            }
-
-            if (connectionPanel) connectionPanel.classList.add("d-none");
-            if (modalUrlDisplay) modalUrlDisplay.value = "";
-
-            document.querySelectorAll('input[name="connection-mode"]')
-                .forEach(el => el.disabled = false);
-        }
+        // Mantido para compatibilidade - agora usa updateSidebarIcon
+        updateSidebarIcon();
     }
 
     // ============================================================
@@ -593,120 +703,66 @@ const RemoteConnectionModule = (function() {
             });
         }
 
-        // Botão Iniciar/Parar
-        if (btnToggleServerModal) {
-            btnToggleServerModal.addEventListener('click', async () => {
-                const selectedMode = document.querySelector('input[name="connection-mode"]:checked')?.value;
-                btnToggleServerModal.disabled = true;
-
-                if (selectedMode === 'ngrok') {
-                    // Modo Internet (WebRTC)
-                    if (signalingSocket && signalingSocket.connected) {
-                        // Desliga
-                        if (addLogEntry) {
-                            addLogEntry({
-                                msg: `Você saiu da sala.`,
-                                type: 'logout',
-                                source: 'Internet',
-                                user: 'Você'
-                            });
-                        }
-
-                        if (ipcRenderer) {
-                            ipcRenderer.send('user-disconnected-remote', {
-                                name: 'Você',
-                                source: 'Internet'
-                            });
-                        }
-
-                        stopWebRTCConnection();
-                        updateServerUI(false);
-                        
-                        if (sidebarIcon) {
-                            sidebarIcon.classList.remove('broadcast-live');
-                            sidebarIcon.classList.add('broadcast-offline');
-                        }
-                    } else {
-                        // Liga
-                        try {
-                            await startWebRTCConnection();
-                        } catch (err) {
-                            if (sidebarIcon) {
-                                sidebarIcon.classList.remove('broadcast-live');
-                                sidebarIcon.classList.add('broadcast-offline');
-                            }
-                        }
-                    }
-                    btnToggleServerModal.disabled = false;
+        // Botão Toggle Local
+        if (btnToggleLocal) {
+            btnToggleLocal.addEventListener('click', async () => {
+                btnToggleLocal.disabled = true;
+                
+                if (isLocalActive) {
+                    await stopLocalServer();
                 } else {
-                    // Modo Local (Wi-Fi) - delega para main process
-                    handleLocalMode();
+                    await startLocalServer();
                 }
+                
+                btnToggleLocal.disabled = false;
+            });
+        }
+        
+        // Botão Toggle Internet
+        if (btnToggleInternet) {
+            btnToggleInternet.addEventListener('click', async () => {
+                btnToggleInternet.disabled = true;
+                
+                if (isInternetActive) {
+                    stopWebRTCConnection();
+                } else {
+                    await startWebRTCConnection();
+                }
+                
+                btnToggleInternet.disabled = false;
             });
         }
 
-        // Botão Copiar Link
-        if (btnModalCopy) {
-            btnModalCopy.addEventListener("click", () => {
-                if (modalUrlDisplay) {
-                    modalUrlDisplay.select();
+        // Botão Copiar Local
+        if (btnCopyLocal) {
+            btnCopyLocal.addEventListener("click", () => {
+                if (localUrlDisplay) {
+                    localUrlDisplay.select();
                     document.execCommand("copy");
-
-                    const icon = btnModalCopy.querySelector("i");
-                    if (icon) {
-                        const oldClass = icon.className;
-                        icon.className = "bi bi-check-lg";
-                        setTimeout(() => icon.className = oldClass, 2000);
-                    }
+                    showCopyFeedback(btnCopyLocal);
+                }
+            });
+        }
+        
+        // Botão Copiar Internet
+        if (btnCopyInternet) {
+            btnCopyInternet.addEventListener("click", () => {
+                if (internetUrlDisplay) {
+                    internetUrlDisplay.select();
+                    document.execCommand("copy");
+                    showCopyFeedback(btnCopyInternet);
                 }
             });
         }
     }
-
-    // ============================================================
-    // HANDLER PARA MODO LOCAL (WI-FI)
-    // ============================================================
-    async function handleLocalMode() {
-        if (!ipcRenderer) {
-            console.error("ipcRenderer não disponível");
-            btnToggleServerModal.disabled = false;
-            return;
+    
+    function showCopyFeedback(btn) {
+        const icon = btn.querySelector("i");
+        if (icon) {
+            const oldClass = icon.className;
+            icon.className = "bi bi-check-lg";
+            setTimeout(() => icon.className = oldClass, 2000);
         }
-
-        try {
-            const result = await ipcRenderer.invoke('toggle-server', 'local');
-            
-            if (result && result.active) {
-                const textoParaMostrar = `${result.url} | ID: ${result.pin}`;
-                updateServerUI(true, textoParaMostrar);
-                
-                if (sidebarIcon) {
-                    sidebarIcon.classList.remove('broadcast-offline');
-                    sidebarIcon.classList.add('broadcast-live');
-                }
-            } else {
-                updateServerUI(false);
-                if (sidebarIcon) {
-                    sidebarIcon.classList.remove('broadcast-live');
-                    sidebarIcon.classList.add('broadcast-offline');
-                }
-            }
-        } catch (err) {
-            const mensagemExibicao = err.message
-                .replace("Error invoking remote method 'toggle-server':", "")
-                .replace("Error:", "")
-                .trim();
-
-            showConnectionError(mensagemExibicao);
-
-            if (sidebarIcon) {
-                sidebarIcon.classList.remove('broadcast-live');
-                sidebarIcon.classList.add('broadcast-offline');
-            }
-            updateServerUI(false);
-        }
-        
-        btnToggleServerModal.disabled = false;
     }
 
     // ============================================================
@@ -733,7 +789,7 @@ const RemoteConnectionModule = (function() {
             }
         });
 
-        // Recebe atualização do roteirista
+        // Recebe atualização do roteirista (local)
         ipcRenderer.on("update-from-remote", (event, newText) => {
             const editor = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
 
@@ -752,6 +808,19 @@ const RemoteConnectionModule = (function() {
                 if (flashRedBorderMultiple) flashRedBorderMultiple(editor, 2);
 
                 if (syncContentToPrompter) syncContentToPrompter();
+                
+                // Propaga para Internet se estiver ativo
+                if (isInternetActive) {
+                    Object.keys(peers).forEach(id => {
+                        const peer = peers[id];
+                        if (peer.dataChannel && peer.dataChannel.readyState === 'open') {
+                            peer.dataChannel.send(JSON.stringify({ 
+                                type: 'update', 
+                                content: newText 
+                            }));
+                        }
+                    });
+                }
             }
         });
     }
@@ -764,11 +833,17 @@ const RemoteConnectionModule = (function() {
         setActiveDocumentId,
         startWebRTCConnection,
         stopWebRTCConnection,
+        startLocalServer,
+        stopLocalServer,
         broadcastTextUpdate,
+        broadcastToAll,
         updateServerUI,
         checkInternetConnection,
-        isConnected: () => signalingSocket && signalingSocket.connected,
-        getRoomId: () => myRoomId,
+        isConnected: () => isLocalActive || isInternetActive,
+        isLocalConnected: () => isLocalActive,
+        isInternetConnected: () => isInternetActive,
+        getRoomId: () => internetRoomId,
+        getLocalPin: () => localPin,
         getPeers: () => peers
     };
     

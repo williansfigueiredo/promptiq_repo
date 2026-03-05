@@ -30,7 +30,8 @@ const TimelineDiffModule = (function() {
     let diffTitleLeft = null;         // Título do painel esquerdo
     let diffTitleRight = null;        // Título do painel direito
     let diffStatusText = null;        // Texto de status da comparação
-    let btnRestoreVersion = null;     // Botão para restaurar versão
+    let btnRestoreLeft = null;        // Botão para restaurar versão esquerda
+    let btnRestoreRight = null;       // Botão para restaurar versão direita
 
     // ============================================================
     // CALLBACKS EXTERNOS
@@ -57,7 +58,8 @@ const TimelineDiffModule = (function() {
         diffTitleLeft = options.diffTitleLeft || document.getElementById("diff-title-left");
         diffTitleRight = options.diffTitleRight || document.getElementById("diff-title-right");
         diffStatusText = options.diffStatusText || document.getElementById("diff-status-text");
-        btnRestoreVersion = options.btnRestoreVersion || document.getElementById("btn-restore-version");
+        btnRestoreLeft = options.btnRestoreLeft || document.getElementById("btn-restore-left");
+        btnRestoreRight = options.btnRestoreRight || document.getElementById("btn-restore-right");
         
         // Inicializa modal Bootstrap
         if (timelineModalEl && typeof bootstrap !== 'undefined') {
@@ -121,15 +123,31 @@ const TimelineDiffModule = (function() {
             container = document.getElementById(`document-content-${id}`);
         }
 
-        if (!container) return "";
+        if (!container) {
+            console.log(`[Timeline] Container não encontrado para doc-${id}`);
+            return { html: "", text: "" };
+        }
 
         // Procura o editor dentro do container
-        const editor = container.querySelector(
-            '.text-editor-area, .editor-content, textarea, [contenteditable="true"]'
-        );
+        const editor = container.querySelector('.text-editor-area');
+        
+        if (!editor) {
+            // Tenta buscar por contenteditable
+            const fallbackEditor = container.querySelector('[contenteditable="true"]');
+            if (fallbackEditor) {
+                return {
+                    html: fallbackEditor.innerHTML,
+                    text: fallbackEditor.innerText
+                };
+            }
+            console.log(`[Timeline] Editor não encontrado no container doc-${id}`);
+            return { html: "", text: "" };
+        }
 
-        if (editor) return editor.innerText;
-        return "";
+        return {
+            html: editor.innerHTML,
+            text: editor.innerText
+        };
     }
 
     // ============================================================
@@ -150,7 +168,8 @@ const TimelineDiffModule = (function() {
         if (diffTitleLeft) diffTitleLeft.innerText = "-";
         if (diffTitleRight) diffTitleRight.innerText = "-";
         if (diffStatusText) diffStatusText.innerText = "Select 2 boxes in the left list.";
-        if (btnRestoreVersion) btnRestoreVersion.classList.add("d-none");
+        if (btnRestoreLeft) btnRestoreLeft.classList.add("d-none");
+        if (btnRestoreRight) btnRestoreRight.classList.add("d-none");
     }
 
     // ============================================================
@@ -172,6 +191,7 @@ const TimelineDiffModule = (function() {
         // 1. DOCUMENTO ATUAL (TOPO DA LISTA)
         // ========================================
         const editorArea = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
+        const currentHtml = editorArea ? editorArea.innerHTML : "";
         const currentText = editorArea ? editorArea.innerText : "";
         const currentName = activeDoc.name || activeDoc.filename || "Current File";
 
@@ -179,7 +199,8 @@ const TimelineDiffModule = (function() {
             id: "current",
             displayName: currentName,
             subInfo: "Editing now (Active Tab)",
-            content: currentText,
+            content: currentHtml,       // HTML para restauração
+            textContent: currentText,   // Texto para comparação visual
             type: "current",
             timestamp: Date.now(),
         };
@@ -190,14 +211,26 @@ const TimelineDiffModule = (function() {
         const documents = getDocuments ? getDocuments() : [];
         const otherTabs = documents
             .filter((d) => d.id !== activeDoc.id)
-            .map((d) => ({
-                id: `tab-${d.id}`,
-                displayName: d.name || d.filename || `Doc ${d.id}`,
-                subInfo: "Other Open Tab",
-                content: getTabContentFromDOM(d.id) || d.content,
-                type: "tab",
-                timestamp: Date.now() - 100,
-            }));
+            .map((d) => {
+                const tabContent = getTabContentFromDOM(d.id);
+                // Se não pegou do DOM, o conteúdo do documento pode ser texto puro
+                const hasHtmlFromDOM = tabContent.html && tabContent.html.length > 0;
+                
+                console.log(`[Timeline] Aba ${d.id}: hasHtmlFromDOM=${hasHtmlFromDOM}, tabContent.html.length=${tabContent.html?.length || 0}`);
+                if (hasHtmlFromDOM) {
+                    console.log(`[Timeline] Aba ${d.id} HTML (primeiros 200 chars):`, tabContent.html.substring(0, 200));
+                }
+                
+                return {
+                    id: `tab-${d.id}`,
+                    displayName: d.name || d.filename || `Doc ${d.id}`,
+                    subInfo: "Other Open Tab",
+                    content: hasHtmlFromDOM ? tabContent.html : d.content,
+                    textContent: hasHtmlFromDOM ? tabContent.text : (typeof d.content === 'string' ? d.content : ''),
+                    type: "tab",
+                    timestamp: Date.now() - 100,
+                };
+            });
 
         // ========================================
         // 3. HISTÓRICO DE VERSÕES SALVAS
@@ -209,7 +242,8 @@ const TimelineDiffModule = (function() {
                 id: `hist-${h.id}`,
                 displayName: h.date,
                 subInfo: "Versão Salva",
-                content: h.content,
+                content: h.content,         // HTML para restauração
+                textContent: h.content,     // Texto (histórico pode ser texto puro)
                 type: "history",
                 timestamp: h.id,
             }));
@@ -343,6 +377,11 @@ const TimelineDiffModule = (function() {
         const oldVer = items[0];  // Mais antigo
         const newVer = items[1];  // Mais recente
 
+        // Debug: mostra os itens selecionados
+        console.log('[Timeline] oldVer:', oldVer.displayName, 'type:', oldVer.type);
+        console.log('[Timeline] oldVer.content (primeiros 300 chars):', oldVer.content.substring(0, 300));
+        console.log('[Timeline] newVer:', newVer.displayName, 'type:', newVer.type);
+
         // Atualiza títulos
         if (diffTitleLeft) diffTitleLeft.innerText = oldVer.displayName;
         if (diffTitleRight) diffTitleRight.innerText = newVer.displayName;
@@ -356,7 +395,10 @@ const TimelineDiffModule = (function() {
             return;
         }
         
-        const diff = Diff.diffWords(oldVer.content, newVer.content);
+        // Usa textContent para comparação visual (não HTML)
+        const oldText = oldVer.textContent || oldVer.content;
+        const newText = newVer.textContent || newVer.content;
+        const diff = Diff.diffWords(oldText, newText);
 
         // Limpa painéis
         if (diffLeftPanel) diffLeftPanel.innerHTML = "";
@@ -391,15 +433,34 @@ const TimelineDiffModule = (function() {
         });
 
         // ========================================
-        // BOTÃO RESTAURAR VERSÃO
+        // BOTÕES RESTAURAR VERSÃO (Esquerda e Direita)
         // ========================================
-        if (btnRestoreVersion) {
-            btnRestoreVersion.classList.remove("d-none");
-            btnRestoreVersion.onclick = () => {
+        // Botão Restaurar Esquerda (versão antiga)
+        if (btnRestoreLeft) {
+            btnRestoreLeft.classList.remove("d-none");
+            btnRestoreLeft.onclick = () => {
                 if (confirm(`Reverter o editor atual para o conteúdo de "${oldVer.displayName}"?`)) {
                     const editor = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
                     if (editor) {
-                        editor.innerText = oldVer.content;
+                        console.log('[Timeline] Restaurando versão ESQUERDA:', oldVer.content.substring(0, 200));
+                        editor.innerHTML = oldVer.content;
+                        editor.dispatchEvent(new Event('input', { bubbles: true }));
+                        if (timelineModal) timelineModal.hide();
+                    }
+                }
+            };
+        }
+
+        // Botão Restaurar Direita (versão nova/atual)
+        if (btnRestoreRight) {
+            btnRestoreRight.classList.remove("d-none");
+            btnRestoreRight.onclick = () => {
+                if (confirm(`Reverter o editor atual para o conteúdo de "${newVer.displayName}"?`)) {
+                    const editor = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
+                    if (editor) {
+                        console.log('[Timeline] Restaurando versão DIREITA:', newVer.content.substring(0, 200));
+                        editor.innerHTML = newVer.content;
+                        editor.dispatchEvent(new Event('input', { bubbles: true }));
                         if (timelineModal) timelineModal.hide();
                     }
                 }

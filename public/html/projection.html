@@ -31,8 +31,8 @@
 
       /* === ÁREA DO TEXTO === */
       #texto-limpo {
-        padding-top: 4.1vh;
-        padding-bottom: 30vh; /* Espaço extra no fim para subir tudo */
+        padding-top: 0;
+        margin-bottom: 50vh; /* Espaço extra no fim para subir tudo (usa margin igual ao Operator) */
 
         /* === MUDANÇA AQUI: Margens PEQUENAS e SIMÉTRICAS === */
         /* Isso dá mais espaço para o texto não quebrar antes da hora */
@@ -75,28 +75,28 @@
         transition: top 0.05s linear;
       }
 
-      /* Tamanho da seta ajustado para 30px */
+      /* Tamanho da seta - responsivo para telas grandes (TVs) */
       .marker-arrow-icon {
-        width: 50px;
-        height: 50px;
+        width: clamp(50px, 5vw, 150px);
+        height: clamp(50px, 5vw, 150px);
         margin-left: 0px;
         filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.8));
       }
 
       .marker-bar-line {
         width: 100%;
-        height: 4px;
+        height: clamp(4px, 0.5vh, 12px);
         background-color: currentColor;
         box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
       }
 
-      /* === 2. BARRA DE PROGRESSO === */
+      /* === 2. BARRA DE PROGRESSO - Responsiva para TVs === */
       #progress-container {
         position: absolute;
         top: 0;
         bottom: 0;
         left: 0;
-        width: 8px;
+        width: clamp(8px, 1vw, 20px);
         background: rgb(0, 0, 0);
         z-index: 9500;
         display: none;
@@ -107,7 +107,7 @@
         top: 0;
         left: 0 !important;
         width: 100%;
-        height: 40px;
+        height: clamp(40px, 4vh, 100px);
         background-color: white;
         box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
         transition: top 0.1s linear;
@@ -171,9 +171,44 @@
         text-transform: uppercase;
         line-height: 1.1;
       }
+
+      /* === 4. OVERLAY DE STANDBY === */
+      #standby-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #000000;
+        background-size: contain;
+        background-position: center;
+        background-repeat: no-repeat;
+        z-index: 99999;
+        display: none;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        transition: opacity 0.5s ease-in-out;
+      }
+
+      #standby-overlay.active {
+        display: flex;
+        opacity: 1;
+      }
+
+      #standby-overlay.fade-out {
+        opacity: 0;
+      }
+
+      #standby-overlay.has-image {
+        background-size: cover;
+      }
     </style>
   </head>
   <body>
+    <!-- Overlay de Standby (fica por cima de tudo) -->
+    <div id="standby-overlay"></div>
+
     <div id="prompter-container">
       <div id="message-overlay">
         <div id="message-box">
@@ -284,50 +319,40 @@
         textoDiv.style.transform = `translate3d(0, -${lastKnownY}px, 0)`;
       });
 
-      // === SINCRONIZAÇÃO DE SCROLL (BASEADA EM RAZÃO) ===
-      // Usa a razão (0 a 1) do scroll para sincronizar independente de padding
+      // === SINCRONIZAÇÃO DE TAMANHO DA FONTE ===
+      // Recebe o tamanho da fonte do Operator em tempo real
+      ipcRenderer.on("sync-font-size", (e, fontSize) => {
+        if (fontSize > 0) {
+          textoDiv.style.fontSize = fontSize + "pt";
+        }
+      });
+
+      // === SINCRONIZAÇÃO DE SCROLL (BASEADA EM PORCENTAGEM DO TEXTO) ===
+      // Sincronização direta: a porcentagem representa quanto do texto já passou
       ipcRenderer.on("update-scroll", (e, data) => {
         let targetY = 0;
 
-        // Calcula altura máxima de scroll local (descontando paddings extras)
-        const container = document.getElementById("prompter-container");
-        const containerHeight = container ? container.clientHeight : window.innerHeight;
-        const totalScrollHeight = textoDiv.scrollHeight;
-        
-        // Desconta padding-top e padding-bottom do cálculo
-        const computedStyle = window.getComputedStyle(textoDiv);
-        const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
-        const paddingBottom = parseFloat(computedStyle.paddingBottom) || 0;
-        
-        // Altura pura do conteúdo (sem paddings extras)
-        const pureContentHeight = totalScrollHeight - paddingBottom;
-        
-        // Max scroll baseado no conteúdo puro
-        const localMaxScroll = Math.max(1, pureContentHeight - containerHeight);
-
-        // === NOVO: Corrige diferença de topo ===
-        // Sempre desconta o padding-top do targetY para alinhar o início do texto
-        let paddingTopOffset = paddingTop;
+        // Altura real do texto (sem margin-bottom)
+        const textHeight = textoDiv.offsetHeight;
 
         if (typeof data === "number") {
-          // Número direto = pixels (fallback)
-          targetY = data - paddingTopOffset;
+          // Número direto = pixels (legado)
+          targetY = data;
         } else if (typeof data === "object") {
-          if (data.ratio !== undefined) {
-            // NOVO: Razão de scroll (0 a 1) - mais precisa
+          if (data.textPercent !== undefined) {
+            // Porcentagem do texto - aplica diretamente
+            targetY = data.textPercent * textHeight;
+          } else if (data.ratio !== undefined) {
+            // Fallback: razão de scroll (legado)
+            const container = document.getElementById("prompter-container");
+            const containerHeight = container ? container.clientHeight : window.innerHeight;
+            const localMaxScroll = Math.max(1, textHeight - containerHeight);
             targetY = data.ratio * localMaxScroll;
-          } else if (data.pixels !== undefined && data.maxScroll !== undefined) {
-            // Converte pixels do remetente para pixels locais usando razão
-            const remoteRatio = data.maxScroll > 0 ? data.pixels / data.maxScroll : 0;
-            targetY = remoteRatio * localMaxScroll;
-          } else if (data.percentage !== undefined) {
-            // Fallback: porcentagem da altura total
-            targetY = data.percentage * totalScrollHeight;
           }
         }
 
-        // Aplica o offset do padding-top SEMPRE
-        targetY = targetY - paddingTopOffset;
+        // Garante valor não negativo
+        targetY = Math.max(0, targetY);
 
         lastKnownY = targetY;
         textoDiv.style.transform = `translate3d(0, -${targetY}px, 0)`;
@@ -370,12 +395,23 @@
         if (settings.defaultFontColor)
           textoDiv.style.color = settings.defaultFontColor;
 
+        // === 1.1 BARRA DE PROGRESSO - Adapta cores ao tema ===
+        // A barra de fundo segue o backgroundColor, o thumb segue a cor do texto
+        if (settings.backgroundColor) {
+          progressContainer.style.backgroundColor = settings.backgroundColor;
+        }
+        if (settings.defaultFontColor) {
+          progressThumb.style.backgroundColor = settings.defaultFontColor;
+        }
+
         if (settings.defaultFontSize) {
           // Aplica o tamanho da fonte
           textoDiv.style.fontSize = settings.defaultFontSize + "pt";
         }
         if (settings.defaultFont)
           textoDiv.style.fontFamily = settings.defaultFont;
+        if (settings.lineSpacing)
+          textoDiv.style.lineHeight = settings.lineSpacing;
 
         // === LÓGICA DA MARGEM (CORRIGIDA PARA VENCER O !IMPORTANT) ===
         if (settings.prompterMargin !== undefined) {
@@ -394,17 +430,23 @@
           }
         }
 
-        // === 3. LÓGICA DO ESPELHAMENTO VERTICAL (Correção do Item 1) ===
+        // === 3. LÓGICA DO ESPELHAMENTO (HORIZONTAL E VERTICAL) ===
         // Aplicamos o flip no container principal para inverter tudo (texto + margens)
         const container = document.getElementById("prompter-container");
-
-        if (settings.flipVertical) {
-          // Inverte verticalmente (de ponta cabeça)
-          container.style.transform = "scaleY(-1)";
+        
+        // Calcula os valores de escala baseado nos estados de flip
+        const scaleX = settings.flipHorizontal ? -1 : 1;
+        const scaleY = settings.flipVertical ? -1 : 1;
+        
+        // Aplica a transformação combinada (permite H, V ou ambos)
+        if (settings.flipHorizontal || settings.flipVertical) {
+          container.style.transform = `scale(${scaleX}, ${scaleY})`;
         } else {
           // Volta ao normal
           container.style.transform = "none";
         }
+        
+        console.log("🗂️ Espelhamento - H:", settings.flipHorizontal, "V:", settings.flipVertical);
 
         // Ajustes do Marcador (Seta)
         renderMarker(
@@ -435,6 +477,44 @@
         if (e.key === "F11" || e.key === "Escape") {
           e.preventDefault();
           ipcRenderer.send("control-window", "fullscreen");
+        }
+      });
+
+      // ============================================================
+      // STANDBY MODE - Mostra imagem de standby quando inativo
+      // ============================================================
+      const standbyOverlay = document.getElementById("standby-overlay");
+      
+      ipcRenderer.on("standby-mode", (event, data) => {
+        console.log("[Standby] Comando recebido:", data);
+        
+        if (data.enabled && data.imagePath) {
+          // Ativa o modo standby
+          const imagePath = data.imagePath.replace(/\\/g, '/');
+          standbyOverlay.style.backgroundImage = `url("file://${imagePath}")`;
+          standbyOverlay.classList.add('has-image');
+          standbyOverlay.style.display = 'flex';
+          
+          // Fade in
+          requestAnimationFrame(() => {
+            standbyOverlay.classList.add('active');
+            standbyOverlay.classList.remove('fade-out');
+          });
+          
+          console.log("[Standby] Modo Standby ATIVADO na projeção");
+        } else {
+          // Desativa o modo standby
+          standbyOverlay.classList.add('fade-out');
+          standbyOverlay.classList.remove('active');
+          
+          // Aguarda a animação de fade out terminar
+          setTimeout(() => {
+            standbyOverlay.style.display = 'none';
+            standbyOverlay.style.backgroundImage = 'none';
+            standbyOverlay.classList.remove('has-image', 'fade-out');
+          }, 500);
+          
+          console.log("[Standby] Modo Standby DESATIVADO na projeção");
         }
       });
     </script>

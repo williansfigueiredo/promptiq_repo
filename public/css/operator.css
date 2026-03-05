@@ -103,6 +103,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* Desativa seleção de texto no Operator */
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
 }
 
 #prompterText-control {
@@ -117,6 +121,15 @@
 /* Esconde a barra de rolagem */
 #operator-tab-pane ::-webkit-scrollbar {
   display: none !important;
+}
+
+/* Remove outline de foco no container do prompter */
+.prompter-in-control:focus,
+.prompter-in-control:focus-visible,
+#prompterText-control:focus,
+#prompterText-control:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 

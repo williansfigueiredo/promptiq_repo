@@ -29,6 +29,33 @@ autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 
 // ============================================================
+// AUTO-UPDATER: Função para sanitizar mensagens de erro
+// ============================================================
+function sanitizeUpdateError(errorMessage) {
+  // Remove referências a GitHub, repositório, etc.
+  const msg = (errorMessage || '').toLowerCase();
+  
+  if (msg.includes('404') || msg.includes('not found') || msg.includes('cannot find')) {
+    return 'Update server is temporarily unavailable. Please try again later.';
+  }
+  if (msg.includes('403') || msg.includes('forbidden') || msg.includes('access denied')) {
+    return 'Unable to access update server. Please check your internet connection.';
+  }
+  if (msg.includes('401') || msg.includes('unauthorized')) {
+    return 'Authentication required. Please contact support.';
+  }
+  if (msg.includes('network') || msg.includes('enotfound') || msg.includes('econnrefused') || msg.includes('etimedout')) {
+    return 'Network error. Please check your internet connection and try again.';
+  }
+  if (msg.includes('github') || msg.includes('repo') || msg.includes('repository')) {
+    return 'Update service is currently unavailable. Please try again later.';
+  }
+  
+  // Mensagem genérica para outros erros
+  return 'Unable to check for updates. Please try again later.';
+}
+
+// ============================================================
 // OTIMIZAÇÃO DE MEMÓRIA (Flags do Chromium/V8)
 // ============================================================
 // Limita o tamanho máximo do heap do V8 para 512MB
@@ -66,6 +93,7 @@ const defaultSettings = {
   prompterFontScale: 30, prompterMargin: 40, lineSpacing: 1.5,
   backgroundColor: '#000000', cueColor: '#00FF00', cueType: 'arrow',
   overallSpeed: 50, mirrorMode: 'none', autoCheckForUpdates: true,
+  flipHorizontal: false, flipVertical: false,  // Espelhamento para broadcast
   useCustomStandbyImage: false, standbyImagePath: null,
   standbyTimeout: 5,  // Minutos de inatividade antes do modo Standby
   appTheme: 'light',
@@ -103,11 +131,37 @@ let splashWindow = null;     // Janela de splash screen inicial
 let overlayWindow = null;    // Janela de overlay (mensagens rápidas)
 const windowPairs = new Map(); // Mapa de janelas pareadas (editor <-> prompter)
 
+// Arquivo .ptq a ser aberto (passado via linha de comando ou duplo clique)
+let fileToOpen = null;
+
 // Variáveis do servidor remoto Wi-Fi
 let remoteApp = null;        // Instância do Express
 let remoteServer = null;     // Servidor HTTP
 let remoteIo = null;         // Instância do Socket.io
 let isRemoteRunning = false; // Flag: servidor está ativo?
+
+// ============================================================
+// HISTÓRICO DE CLIPBOARD (Frequent Copy)
+// ============================================================
+// Armazena as palavras/textos mais copiados pelo usuário
+const clipboardHistory = new Map(); // Map<string, number> -> texto: contagem
+const MAX_CLIPBOARD_ITEMS = 50;     // Limite máximo de itens únicos no histórico
+
+/**
+ * getTopClipboardItems
+ * ----------------------
+ * Retorna os N itens mais copiados ordenados por frequência.
+ * 
+ * @param {number} count - Número de itens a retornar (default: 5)
+ * @returns {Array<{text: string, count: number}>}
+ */
+function getTopClipboardItems(count = 5) {
+  const sorted = [...clipboardHistory.entries()]
+    .sort((a, b) => b[1] - a[1])  // Ordena por contagem decrescente
+    .slice(0, count)               // Pega os top N
+    .map(([text, cnt]) => ({ text, count: cnt }));
+  return sorted;
+}
 
 // Servidor local para servir o modelo VOSK
 let modelServer = null;
@@ -208,12 +262,87 @@ function extractTextFromRtf(rtf) {
  * @param {BrowserWindow} win - Janela do Electron
  */
 function attachContextMenu(win) {
-  win.webContents.on('context-menu', (event, params) => {
+  win.webContents.on('context-menu', async (event, params) => {
     const menuTemplate = [];
+    
+    // ========================================
+    // SEÇÃO: FREQUENTES (Quick Paste)
+    // ========================================
+    const topItems = getTopClipboardItems(5);
+    if (topItems.length > 0) {
+      menuTemplate.push({ label: '📋 Frequentes', enabled: false });
+      topItems.forEach(item => {
+        // Trunca texto longo para exibição no menu
+        const displayText = item.text.length > 30 
+          ? item.text.substring(0, 27) + '...' 
+          : item.text;
+        menuTemplate.push({
+          label: `   ${displayText}`,
+          click: () => {
+            // Insere o texto na posição atual via execCommand
+            win.webContents.executeJavaScript(`
+              (function() {
+                const text = ${JSON.stringify(item.text)};
+                const sel = window.getSelection();
+                if (sel.rangeCount > 0) {
+                  const range = sel.getRangeAt(0);
+                  range.deleteContents();
+                  range.insertNode(document.createTextNode(text));
+                  range.collapse(false);
+                  sel.removeAllRanges();
+                  sel.addRange(range);
+                  // Dispara evento de input para registrar a mudança
+                  const editor = document.querySelector('.text-editor-area');
+                  if (editor) editor.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+              })()
+            `);
+          }
+        });
+      });
+      menuTemplate.push({ type: 'separator' });
+    }
+    
+    // Opção "Ir para Operator" quando há texto selecionado
+    if (params.selectionText && params.selectionText.trim().length > 0) {
+      menuTemplate.push({
+        label: 'Go to Operator',
+        icon: null,
+        click: () => win.webContents.send('go-to-operator-at-selection')
+      });
+      menuTemplate.push({ type: 'separator' });
+    }
+    
     if (params.misspelledWord) {
       if (params.dictionarySuggestions.length > 0) {
+        // Detecta o case da palavra original
+        const originalWord = params.misspelledWord;
+        
+        // Conta quantas letras são maiúsculas vs minúsculas
+        const letters = originalWord.replace(/[^a-zA-ZÀ-ÿ]/g, '');
+        const upperCount = (letters.match(/[A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÄËÏÖÜÇ]/g) || []).length;
+        const lowerCount = (letters.match(/[a-záéíóúâêîôûãõàèìòùäëïöüç]/g) || []).length;
+        
+        // Se maioria é maiúscula (>70%), trata como MAIÚSCULA
+        const isMostlyUpperCase = letters.length > 0 && (upperCount / letters.length) >= 0.7;
+        const isAllUpperCase = originalWord === originalWord.toUpperCase();
+        const isTitleCase = !isMostlyUpperCase && 
+                            originalWord[0] === originalWord[0].toUpperCase() && 
+                            originalWord.slice(1) === originalWord.slice(1).toLowerCase();
+        
         params.dictionarySuggestions.forEach(suggestion => {
-          menuTemplate.push({ label: suggestion, click: () => win.webContents.replaceMisspelling(suggestion) });
+          // Aplica o mesmo case da palavra original à sugestão
+          let casedSuggestion = suggestion;
+          if (isAllUpperCase || isMostlyUpperCase) {
+            casedSuggestion = suggestion.toUpperCase();
+          } else if (isTitleCase) {
+            casedSuggestion = suggestion.charAt(0).toUpperCase() + suggestion.slice(1).toLowerCase();
+          }
+          
+          menuTemplate.push({ 
+            label: casedSuggestion, 
+            click: () => win.webContents.replaceMisspelling(casedSuggestion) 
+          });
         });
       } else { menuTemplate.push({ label: '(Sem sugestões)', enabled: false }); }
       menuTemplate.push({ type: 'separator' });
@@ -291,6 +420,23 @@ function initializeApp() {
   controlWindow.maximize(); // Maximiza a janela (ocupa a tela toda)
   controlWindow.show();     // Agora sim mostra a janela pro usuário
 
+  // Envia configurações iniciais e tema quando a janela terminar de carregar
+  controlWindow.webContents.on('did-finish-load', () => {
+    controlWindow.webContents.send('settings-updated-globally', currentSettings);
+    controlWindow.webContents.send('apply-theme', currentSettings.appTheme || 'light');
+    console.log(`🎨 Tema inicial enviado para controlWindow: ${currentSettings.appTheme || 'light'}`);
+    
+    // Se há um arquivo .ptq para abrir (passado via linha de comando ou duplo clique)
+    if (fileToOpen) {
+      console.log(`📂 Enviando arquivo para abrir: ${fileToOpen}`);
+      // Pequeno delay para garantir que o renderer está pronto
+      setTimeout(() => {
+        controlWindow.webContents.send('open-file-from-system', fileToOpen);
+        fileToOpen = null; // Limpa para não abrir novamente
+      }, 500);
+    }
+  });
+
   // DevTools desabilitado para produção
   // controlWindow.webContents.openDevTools();
 
@@ -313,6 +459,7 @@ function initializeApp() {
 function createSplashWindow() {
   splashWindow = new BrowserWindow({
     width: 600, height: 400, transparent: true, frame: false, alwaysOnTop: true,
+    icon: APP_ICON,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -326,11 +473,99 @@ function createSplashWindow() {
   }, 5000);
 }
 
-// Inicia a aplicação quando o Electron estiver pronto
-app.whenReady().then(() => {
-  createSplashWindow();
-  initAutoUpdater();
-});
+// ============================================================
+// SEÇÃO 5.1: SINGLE INSTANCE LOCK & ASSOCIAÇÃO DE ARQUIVOS .PTQ
+// ============================================================
+// Garante que apenas uma instância do app rode por vez
+// e permite abrir arquivos .ptq com duplo clique
+
+/**
+ * Extrai o caminho do arquivo .ptq dos argumentos
+ * @param {string[]} argv - Argumentos da linha de comando
+ * @returns {string|null} - Caminho do arquivo ou null
+ */
+function getFileFromArgv(argv) {
+  // Ignora o primeiro argumento (path do electron/app)
+  // Em produção: argv[0] = path do app, argv[1] = arquivo
+  // Em dev: argv[0] = electron, argv[1] = ".", argv[2] = arquivo
+  for (let i = 1; i < argv.length; i++) {
+    const arg = argv[i];
+    // Ignora flags do Electron
+    if (arg.startsWith('--') || arg.startsWith('-') || arg === '.') continue;
+    // Verifica se é um arquivo .ptq
+    if (arg.toLowerCase().endsWith('.ptq') && fs.existsSync(arg)) {
+      return arg;
+    }
+  }
+  return null;
+}
+
+// Tenta obter o lock de instância única
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  // Já existe uma instância rodando - fecha esta
+  console.log('[SingleInstance] Já existe uma instância rodando. Fechando...');
+  app.quit();
+} else {
+  // Esta é a primeira instância
+  
+  // Evento: Outra instância tentou abrir (com arquivo)
+  app.on('second-instance', (event, argv, workingDirectory) => {
+    console.log('[SingleInstance] Segunda instância detectada. Argv:', argv);
+    
+    // Extrai arquivo dos argumentos
+    const filePath = getFileFromArgv(argv);
+    
+    if (filePath) {
+      console.log('[SingleInstance] Arquivo para abrir:', filePath);
+      
+      // Envia para a janela principal
+      if (controlWindow) {
+        // Restaura a janela se minimizada
+        if (controlWindow.isMinimized()) controlWindow.restore();
+        controlWindow.focus();
+        
+        // Envia o arquivo para ser aberto
+        controlWindow.webContents.send('open-file-from-system', filePath);
+      }
+    } else {
+      // Apenas foca na janela existente
+      if (controlWindow) {
+        if (controlWindow.isMinimized()) controlWindow.restore();
+        controlWindow.focus();
+      }
+    }
+  });
+
+  // Captura arquivo passado na inicialização
+  fileToOpen = getFileFromArgv(process.argv);
+  if (fileToOpen) {
+    console.log('[Startup] Arquivo para abrir na inicialização:', fileToOpen);
+  }
+
+  // Inicia a aplicação quando o Electron estiver pronto
+  app.whenReady().then(() => {
+    createSplashWindow();
+    initAutoUpdater();
+  });
+
+  // macOS: Evento quando arquivo é aberto via Finder
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault();
+    console.log('[macOS] Arquivo aberto via Finder:', filePath);
+    
+    if (filePath.toLowerCase().endsWith('.ptq')) {
+      if (controlWindow) {
+        // App já está rodando - envia para a janela
+        controlWindow.webContents.send('open-file-from-system', filePath);
+      } else {
+        // App ainda não iniciou - guarda para abrir depois
+        fileToOpen = filePath;
+      }
+    }
+  });
+}
 
 // ============================================================
 // AUTO-UPDATER: Inicialização e Eventos
@@ -447,7 +682,7 @@ ipcMain.on('check-for-updates', (event) => {
   const onError = (err) => {
     event.sender.send('update-check-result', {
       status: 'error',
-      message: `Error checking for updates: ${err.message}`
+      message: sanitizeUpdateError(err.message)
     });
   };
 
@@ -461,7 +696,7 @@ ipcMain.on('check-for-updates', (event) => {
     log.error('[AutoUpdater] Manual check failed:', err.message);
     event.sender.send('update-check-result', {
       status: 'error',
-      message: `Connection failed: ${err.message}`
+      message: sanitizeUpdateError(err.message)
     });
   });
 });
@@ -583,6 +818,38 @@ ipcMain.on('set-spell-check-language', (event, langCode) => {
 });
 
 // ============================================================
+// IPC HANDLER: HISTÓRICO DE CLIPBOARD (Frequent Copy)
+// ============================================================
+// Recebe texto copiado pelo usuário e incrementa a contagem
+
+ipcMain.on('clipboard-item-copied', (event, text) => {
+  if (!text || typeof text !== 'string') return;
+  
+  // Limita texto a 200 caracteres para evitar itens muito grandes
+  const trimmedText = text.trim().substring(0, 200);
+  if (trimmedText.length < 2) return;  // Ignora textos muito curtos
+  
+  // Incrementa contagem ou adiciona novo item
+  const currentCount = clipboardHistory.get(trimmedText) || 0;
+  clipboardHistory.set(trimmedText, currentCount + 1);
+  
+  // Limita tamanho do histórico (remove itens menos usados)
+  if (clipboardHistory.size > MAX_CLIPBOARD_ITEMS) {
+    const sorted = [...clipboardHistory.entries()].sort((a, b) => a[1] - b[1]);
+    const toRemove = sorted.slice(0, clipboardHistory.size - MAX_CLIPBOARD_ITEMS);
+    toRemove.forEach(([key]) => clipboardHistory.delete(key));
+  }
+  
+  console.log(`[Clipboard] Item registrado: "${trimmedText.substring(0, 20)}..." (${clipboardHistory.get(trimmedText)}x)`);
+});
+
+// Limpa o histórico de clipboard
+ipcMain.on('clipboard-history-clear', () => {
+  clipboardHistory.clear();
+  console.log('[Clipboard] Histórico limpo');
+});
+
+// ============================================================
 // SEÇÃO 10: IPC HANDLERS - OPERAÇÕES DE ARQUIVO
 // ============================================================
 // Handlers para abrir, salvar e gerenciar arquivos
@@ -687,6 +954,14 @@ ipcMain.on('reopen-recent-file', async (event, filePath) => {
     const content = await readFileContent(filePath);
     event.sender.send('file-opened', { content, name: path.basename(filePath), path: filePath });
   } catch (err) { dialog.showErrorBox('Erro ao abrir recente', `Arquivo não encontrado: ${err.message}`); }
+});
+
+// Abre arquivo passado por linha de comando ou duplo clique
+ipcMain.on('read-and-open-file', async (event, filePath) => {
+  try {
+    const content = await readFileContent(filePath);
+    event.sender.send('file-opened', { content, name: path.basename(filePath), path: filePath });
+  } catch (err) { dialog.showErrorBox('Erro ao abrir arquivo', err.message); }
 });
 
 // Limpa lista de arquivos recentes
@@ -928,14 +1203,25 @@ ipcMain.on('save-backup-files', async (event, backupData) => {
 // Abre janela modal de preferências e gerencia imagem de standby
 
 ipcMain.on('open-preferences-window', () => {
+  // Calcula tamanho responsivo baseado na tela disponível
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+  
+  // Tamanho máximo desejado, com limite baseado na tela
+  const preferredWidth = Math.min(830, Math.floor(screenWidth * 0.9));
+  const preferredHeight = Math.min(800, Math.floor(screenHeight * 0.9));
+  
   const win = new BrowserWindow({
-    width: 830,
-    height: 800,
+    width: preferredWidth,
+    height: preferredHeight,
+    minWidth: 600,
+    minHeight: 400,
     title: "Preferences",
     icon: APP_ICON,
     parent: controlWindow,
     modal: true,
-    resizable: false,
+    resizable: true,
 
     // === CORREÇÃO AQUI ===
     frame: false,              // Remove a barra branca/padrão do Windows
@@ -953,8 +1239,6 @@ ipcMain.on('open-preferences-window', () => {
   win.removeMenu();
   win.loadFile(path.join(__dirname, '../../public/html/preferences.html'));
 
-  // DEBUG: Abre DevTools automaticamente para debug
-  win.webContents.openDevTools({ mode: 'detach' });
 
   win.webContents.on('did-finish-load', () => {
     // Recarrega configurações do disco para garantir dados atualizados
@@ -973,12 +1257,28 @@ let currentAppTheme = 'light';
 ipcMain.on('set-app-theme', (event, theme) => {
   currentAppTheme = theme;
   currentSettings.appTheme = theme;
+  
+  // Salva o tema no disco para persistir entre sessões
+  try {
+    fs.writeFileSync(configPath, JSON.stringify(currentSettings, null, 2));
+    console.log(`✅ Tema '${theme}' salvo em disco`);
+  } catch (err) {
+    console.error("❌ Erro ao salvar tema:", err);
+  }
+  
   // Propaga para todas as janelas
   BrowserWindow.getAllWindows().forEach(win => {
     if (!win.isDestroyed()) {
       win.webContents.send('apply-theme', theme);
     }
   });
+});
+
+// Handler para solicitar tema atual
+ipcMain.on('request-current-theme', (event) => {
+  const theme = currentSettings.appTheme || 'light';
+  event.sender.send('current-theme', theme);
+  console.log(`🎨 Tema atual enviado: ${theme}`);
 });
 
 // Abre diálogo para selecionar imagem de standby
@@ -1304,6 +1604,27 @@ ipcMain.on('open-projection-window', () => {
 });
 
 // ============================================================
+// SEÇÃO 18.1: STANDBY MODE PARA JANELA DE PROJEÇÃO
+// ============================================================
+// Envia comando de standby apenas para janelas de projeção
+
+ipcMain.on('show-standby-projection', (event, standbyData) => {
+  console.log('[Standby] Comando recebido:', standbyData.enabled ? 'ATIVAR' : 'DESATIVAR');
+  
+  // Encontra e envia apenas para janelas de projeção (não a principal)
+  BrowserWindow.getAllWindows().forEach(win => {
+    if (!win.isDestroyed()) {
+      // Verifica se é uma janela de projeção pelo título
+      const title = win.getTitle();
+      if (title === 'Teleprompter Output' || title === 'Broadcast Live') {
+        win.webContents.send('standby-mode', standbyData);
+        console.log('[Standby] Enviado para janela de projeção');
+      }
+    }
+  });
+});
+
+// ============================================================
 // SEÇÃO 19: SINCRONIZAÇÃO EM TEMPO REAL
 // ============================================================
 // Sincroniza posição de scroll, conteúdo e marcador entre janelas
@@ -1326,6 +1647,15 @@ ipcMain.on('update-prompter-content', (event, content) => {
     // Se a janela não for destruída E (não for quem enviou OU for a janela de projeção)
     if (!win.isDestroyed() && (win.webContents.id !== event.sender.id)) {
       win.webContents.send('update-prompter-content', content);
+    }
+  });
+});
+
+// Sincroniza tamanho da fonte do Operator para a Projection
+ipcMain.on('sync-projection-font-size', (event, fontSize) => {
+  BrowserWindow.getAllWindows().forEach(win => {
+    if (!win.isDestroyed() && (win.webContents.id !== event.sender.id)) {
+      win.webContents.send('sync-font-size', fontSize);
     }
   });
 });

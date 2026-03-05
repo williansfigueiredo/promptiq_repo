@@ -319,6 +319,7 @@
                     <button class="btn btn-tool" title="Invert Colors" id="op-btn-invert"><i class="bi bi-palette-fill"></i></button>
                     <div class="tool-separator"></div>
                 
+                    <button class="btn btn-tool" title="Mirror Horizontal" id="op-btn-mirror-h"><i class="bi bi-arrow-left-right"></i></button>
                     <button class="btn btn-tool" title="Mirror Vertical" id="op-btn-mirror-v"><i class="bi bi-arrow-down-up"></i></button>
                     <button class="btn btn-tool" title="Select Margin Width" id="op-btn-margin"><i class="bi bi-aspect-ratio"></i></button>
                     <button class="btn btn-tool" title="Toggle Fullscreen" id="op-btn-fullscreen"><i class="bi bi-display"></i></button>
@@ -338,7 +339,7 @@
 </button>
                  </div>
 
-                 <div class="flex-grow-1 position-relative bg-dark overflow-hidden">
+                 <div id="operator-prompter-wrapper" class="flex-grow-1 position-relative overflow-hidden" style="background-color: #000000;">
                      <div class="prompter-in-control">
                         <div id="prompterText-control"></div>
                     </div>
@@ -479,10 +480,20 @@
                             </div>
                         </div>
 
-                        <div class="p-2 border-top bg-white d-flex justify-content-end align-items-center gap-2">
+                        <div class="p-2 border-top bg-white d-flex flex-wrap justify-content-end align-items-center gap-2">
                             <small id="diff-status-text" class="text-muted me-auto">Waiting for selection...</small>
-                            <button id="btn-restore-version" class="btn btn-sm btn-warning d-none">
-                                <i class="bi bi-arrow-counterclockwise"></i> Restore Left Version
+                            
+                            <!-- Botão principal: Aplica apenas as mudanças de texto preservando formatação -->
+                            <button id="btn-apply-changes" class="btn btn-sm btn-success d-none" title="Transfer only text changes, keep your formatting">
+                                <i class="bi bi-patch-check"></i> <span id="btn-apply-label">Apply Changes</span>
+                            </button>
+                            
+                            <!-- Botões de substituição completa (mostram nome do documento) -->
+                            <button id="btn-restore-left" class="btn btn-sm btn-outline-secondary d-none" title="Replace with full version from left panel">
+                                <i class="bi bi-box-arrow-in-left"></i> <span id="btn-left-label">Use Left</span>
+                            </button>
+                            <button id="btn-restore-right" class="btn btn-sm btn-outline-secondary d-none" title="Replace with full version from right panel">
+                                <i class="bi bi-box-arrow-in-right"></i> <span id="btn-right-label">Use Right</span>
                             </button>
                         </div>
                     </div>
@@ -507,40 +518,66 @@
                     </div>
     
                     <div class="mb-3">
-                        <label class="form-label text-secondary small text-uppercase fw-bold">Connection Mode</label>
+                        <label class="form-label text-secondary small text-uppercase fw-bold">Connection Modes</label>
                         <div class="row g-2">
-                            <div class="col-6">
-                                <input type="radio" class="btn-check" name="connection-mode" id="mode-local" value="local" checked>
-                                <label class="btn btn-outline-secondary w-100 py-3 shadow-sm border-light-subtle" for="mode-local">
-                                    <i class="bi bi-router d-block fs-3 mb-1"></i>
-                                   Local Network
-                                </label>
+                            <!-- LOCAL NETWORK SERVER -->
+                            <div class="col-12">
+                                <div class="d-flex align-items-center justify-content-between p-3 border rounded shadow-sm mb-2" id="local-server-card">
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-router fs-3 me-3 text-secondary"></i>
+                                        <div>
+                                            <strong>Local Network</strong>
+                                            <small class="d-block text-muted">Wi-Fi / LAN</small>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span id="local-status-badge" class="badge bg-secondary">OFF</span>
+                                        <button id="btn-toggle-local" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-power"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="local-connection-panel" class="d-none p-2 rounded border mb-2">
+                                    <div class="input-group input-group-sm">
+                                        <input type="text" id="local-url-display" class="form-control fw-bold font-monospace" readonly value="...">
+                                        <button class="btn btn-outline-secondary" id="btn-copy-local" title="Copy">
+                                            <i class="bi bi-clipboard"></i>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="col-6">
-                                <input type="radio" class="btn-check" name="connection-mode" id="mode-ngrok" value="ngrok">
-                                <label class="btn btn-outline-secondary w-100 py-3 shadow-sm border-light-subtle" for="mode-ngrok">
-                                    <i class="bi bi-globe d-block fs-3 mb-1"></i>
-                                    Internet
-                                </label>
+                            
+                            <!-- INTERNET SERVER -->
+                            <div class="col-12">
+                                <div class="d-flex align-items-center justify-content-between p-3 border rounded shadow-sm mb-2" id="internet-server-card">
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-globe fs-3 me-3 text-secondary"></i>
+                                        <div>
+                                            <strong>Internet</strong>
+                                            <small class="d-block text-muted">Cloud Server</small>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span id="internet-status-badge" class="badge bg-secondary">OFF</span>
+                                        <button id="btn-toggle-internet" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-power"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="internet-connection-panel" class="d-none p-2 rounded border mb-2">
+                                    <div class="input-group input-group-sm">
+                                        <input type="text" id="internet-url-display" class="form-control fw-bold font-monospace" readonly value="...">
+                                        <button class="btn btn-outline-secondary" id="btn-copy-internet" title="Copy">
+                                            <i class="bi bi-clipboard"></i>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
     
-                    <button id="btn-toggle-server-modal" class="btn btn-primary w-100 py-2 mb-4 fw-bold shadow">
-                        <i class="bi bi-power"></i> START SERVER
-                    </button>
-    
-                    <div id="connection-details-panel" class="d-none bg-light p-3 rounded border">
-                        <label class="form-label text-primary small fw-bold mb-1">Link to the Screenwriter:</label>
-                        <div class="input-group shadow-sm">
-                            <input type="text" id="modal-url-display" class="form-control bg-white text-primary border-end-0 fw-bold font-monospace" readonly value="...">
-                            <button class="btn btn-white border border-start-0 bg-white text-secondary" id="btn-modal-copy" title="Copy Link">
-                                <i class="bi bi-clipboard"></i>
-                            </button>
-                        </div>
-                        <small class="text-muted d-block mt-2 text-small-rem">
-                            <i class="bi bi-info-circle"></i> Send this link to whoever will be editing the text.
-                        </small>
+                    <div class="alert alert-info small mb-0">
+                        <i class="bi bi-info-circle"></i> You can enable both modes simultaneously. All connected devices will receive the same content updates.
                     </div>
     
                 </div>

@@ -34,6 +34,21 @@ document.addEventListener("DOMContentLoaded", () => {
   // HotkeyHandler é definido globalmente pelo hotkey-handler.js
 
   // ============================================================
+  // CLIPBOARD HISTORY: Rastreia textos copiados
+  // ============================================================
+  // Envia para o main process cada texto copiado para mostrar no menu de contexto
+  
+  document.addEventListener('copy', () => {
+    setTimeout(() => {
+      const selection = window.getSelection();
+      const copiedText = selection ? selection.toString().trim() : '';
+      if (copiedText && copiedText.length >= 2) {
+        ipcRenderer.send('clipboard-item-copied', copiedText);
+      }
+    }, 10);  // Pequeno delay para garantir que o clipboard foi atualizado
+  });
+
+  // ============================================================
   // SEÇÃO 2: VARIÁVEIS DE ESTADO DO PROMPTER
   // ============================================================
   // Memória persistente de posição e configurações do prompter
@@ -264,6 +279,17 @@ document.addEventListener("DOMContentLoaded", () => {
     console.log("⚙️ Settings recebidas:", settings);
     globalPrefs = settings;
 
+    // Aplica o tema salvo
+    if (settings.appTheme) {
+      if (settings.appTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        document.body.classList.add('dark-mode');
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+        document.body.classList.remove('dark-mode');
+      }
+    }
+
     if (settings.defaultFontSize) {
       currentFontSizePT = settings.defaultFontSize;
 
@@ -280,6 +306,26 @@ document.addEventListener("DOMContentLoaded", () => {
     // Atualiza atalhos de teclado/mouse se HotkeyHandler existir
     if (typeof HotkeyHandler !== 'undefined') {
       HotkeyHandler.updateSettings(settings);
+    }
+
+    // Restaura estado dos botões de espelhamento
+    if (typeof operatorState !== 'undefined') {
+      // Mirror Horizontal
+      if (settings.flipHorizontal !== undefined) {
+        operatorState.mirrorH = settings.flipHorizontal;
+        const btnMirrorH = document.getElementById('op-btn-mirror-h');
+        if (btnMirrorH) {
+          btnMirrorH.classList.toggle('active', settings.flipHorizontal);
+        }
+      }
+      // Mirror Vertical
+      if (settings.flipVertical !== undefined) {
+        operatorState.mirrorV = settings.flipVertical;
+        const btnMirrorV = document.getElementById('op-btn-mirror-v');
+        if (btnMirrorV) {
+          btnMirrorV.classList.toggle('active', settings.flipVertical);
+        }
+      }
     }
 
     if (typeof applySettingsToVisuals === 'function') {
@@ -451,44 +497,36 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /**
-   * Mostra o overlay de Standby
+   * Mostra o overlay de Standby APENAS na tela de projeção/broadcast
    */
   function showStandby() {
-    const overlay = document.getElementById('standby-overlay');
-    if (!overlay || isStandbyActive) return;
+    if (isStandbyActive) return;
 
     isStandbyActive = true;
 
-    // Configura imagem de fundo se houver
-    if (standbySettings.imagePath) {
-      overlay.style.backgroundImage = `url("file://${standbySettings.imagePath.replace(/\\/g, '/')}")`;
-      overlay.classList.add('has-image');
-    } else {
-      overlay.style.backgroundImage = 'none';
-      overlay.classList.remove('has-image');
-    }
+    // NÃO mostra na tela principal - apenas envia para a janela de projeção
+    ipcRenderer.send('show-standby-projection', {
+      imagePath: standbySettings.imagePath,
+      enabled: true
+    });
 
-    overlay.style.display = 'flex';
-    overlay.classList.remove('fade-out');
-
-    console.log('[Standby] Modo Standby ativado');
+    console.log('[Standby] Modo Standby ativado (enviado para projeção)');
   }
 
   /**
-   * Esconde o overlay de Standby
+   * Esconde o overlay de Standby na tela de projeção
    */
   function hideStandby() {
-    const overlay = document.getElementById('standby-overlay');
-    if (!overlay || !isStandbyActive) return;
+    if (!isStandbyActive) return;
 
-    overlay.classList.add('fade-out');
+    // Envia comando para esconder standby na projeção
+    ipcRenderer.send('show-standby-projection', {
+      imagePath: null,
+      enabled: false
+    });
 
-    setTimeout(() => {
-      overlay.style.display = 'none';
-      overlay.classList.remove('fade-out');
-      isStandbyActive = false;
-      console.log('[Standby] Modo Standby desativado');
-    }, 300);
+    isStandbyActive = false;
+    console.log('[Standby] Modo Standby desativado (enviado para projeção)');
   }
 
   /**
@@ -562,6 +600,29 @@ document.addEventListener("DOMContentLoaded", () => {
       prompterText.style.fontFamily = prefs.defaultFont;
       prompterText.style.color = prefs.defaultFontColor;
       prompterContainer.style.backgroundColor = prefs.backgroundColor;
+
+      // Aplica cor também no container PAI (wrapper)
+      const prompterWrapper = document.getElementById("operator-prompter-wrapper");
+      if (prompterWrapper && prefs.backgroundColor) {
+        prompterWrapper.style.backgroundColor = prefs.backgroundColor;
+      }
+
+      // Detecta se está invertido baseado na cor de fundo
+      if (prefs.backgroundColor === "#FFFFFF" || prefs.backgroundColor === "white") {
+        operatorState.isInverted = true;
+      } else if (prefs.backgroundColor === "#000000" || prefs.backgroundColor === "black") {
+        operatorState.isInverted = false;
+      }
+
+      // Atualiza cores da barra de progresso
+      const progressBar = document.getElementById("prompter-custom-scrollbar");
+      const progressThumb = document.getElementById("prompter-scrollbar-thumb");
+      if (progressBar && prefs.backgroundColor) {
+        progressBar.style.backgroundColor = prefs.backgroundColor;
+      }
+      if (progressThumb && prefs.defaultFontColor) {
+        progressThumb.style.backgroundColor = prefs.defaultFontColor;
+      }
 
       // ✅ USA A MEMÓRIA GLOBAL (currentFontSizePT)
       if (typeof currentFontSizePT !== 'undefined' && currentFontSizePT > 0) {
@@ -1006,25 +1067,16 @@ document.addEventListener("DOMContentLoaded", () => {
         textEl.style.transform = `translate3d(0, -${this.decimalScroll}px, 0)`;
       }
 
-      // === 2. ENVIA RAZÃO DE SCROLL PARA A TV (Sincronização Precisa) ===
-      // Reutiliza 'container' já declarado acima
-      const syncContainerHeight = container ? container.clientHeight : 0;
-      const syncContentHeight = textEl ? textEl.scrollHeight : 0;
+      // === 2. ENVIA POSIÇÃO DE SCROLL PARA A TV (Sincronização Direta) ===
+      // Calcula porcentagem da altura do texto que já passou
+      const textHeight = textEl ? textEl.offsetHeight : 0;
+      
+      // Porcentagem do texto que já passou pelo topo (0 a 1)
+      const textPercentage = textHeight > 0 ? Math.min(1, Math.max(0, this.decimalScroll / textHeight)) : 0;
 
-      // Desconta margin-bottom do texto para cálculo preciso
-      const computedStyle = textEl ? window.getComputedStyle(textEl) : null;
-      const marginBottom = computedStyle ? (parseFloat(computedStyle.marginBottom) || 0) : 0;
-      const pureContentHeight = syncContentHeight - marginBottom;
-      const maxScrollSync = Math.max(1, pureContentHeight - syncContainerHeight);
-
-      // Razão de scroll: 0 = topo, 1 = fim (limitada entre 0 e 1)
-      const scrollRatio = Math.min(1, Math.max(0, this.decimalScroll / maxScrollSync));
-
-      // Envia razão E valores absolutos para compatibilidade
+      // Envia porcentagem para sincronia perfeita
       ipcRenderer.send('sync-scroll-position', {
-        ratio: scrollRatio,
-        pixels: this.decimalScroll,
-        maxScroll: maxScrollSync
+        textPercent: textPercentage
       });
 
       this.animationFrameId = requestAnimationFrame(() => this.loop());
@@ -1044,20 +1096,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const el = prompterContainer;
         const textEl = document.getElementById('prompterText-control');
 
-        // Desconta margin-bottom do texto para cálculo preciso
-        const computedStyle = textEl ? window.getComputedStyle(textEl) : null;
-        const marginBottom = computedStyle ? (parseFloat(computedStyle.marginBottom) || 0) : 0;
-        const pureContentHeight = el.scrollHeight - marginBottom;
-        const maxScroll = Math.max(1, pureContentHeight - el.clientHeight);
+        // Porcentagem da altura do texto que já passou
+        const textHeight = textEl ? textEl.offsetHeight : el.scrollHeight;
+        const textPercentage = textHeight > 0 ? Math.min(1, Math.max(0, el.scrollTop / textHeight)) : 0;
 
-        // Razão de scroll (0 a 1) - limitada
-        const scrollRatio = Math.min(1, Math.max(0, el.scrollTop / maxScroll));
-
-        // Envia RAZÃO para a TV (sincronização precisa)
+        // Envia porcentagem para a TV
         ipcRenderer.send('sync-scroll-position', {
-          ratio: scrollRatio,
-          pixels: el.scrollTop,
-          maxScroll: maxScroll
+          textPercent: textPercentage
         });
 
         // Atualiza a posição interna do motor para quando der Play de novo não pular
@@ -1545,20 +1590,39 @@ document.addEventListener("DOMContentLoaded", () => {
           ScrollEngine.setSpeed(-currentSpeed);
         },
         previousLine: () => {
-          // Volta uma linha
+          // Volta uma linha (funciona tanto parado quanto rodando)
           const container = document.querySelector(".prompter-in-control");
-          if (container) {
-            const lineHeight = parseInt(getComputedStyle(container).lineHeight) || 30;
-            container.scrollTop -= lineHeight;
+          const textEl = document.getElementById("prompterText-control");
+          if (!container || !textEl) return;
+          
+          const lineHeight = parseInt(getComputedStyle(textEl).lineHeight) || 30;
+          
+          if (ScrollEngine.isRunning) {
+            // Se está rodando, ajusta o decimalScroll e atualiza o transform
+            ScrollEngine.decimalScroll = Math.max(0, ScrollEngine.decimalScroll - lineHeight);
+            textEl.style.transform = `translate3d(0, -${ScrollEngine.decimalScroll}px, 0)`;
+          } else {
+            // Se está parado, usa scrollTop normal
+            container.scrollTop = Math.max(0, container.scrollTop - lineHeight);
             ScrollEngine.decimalScroll = container.scrollTop;
           }
         },
         nextLine: () => {
-          // Avança uma linha
+          // Avança uma linha (funciona tanto parado quanto rodando)
           const container = document.querySelector(".prompter-in-control");
-          if (container) {
-            const lineHeight = parseInt(getComputedStyle(container).lineHeight) || 30;
-            container.scrollTop += lineHeight;
+          const textEl = document.getElementById("prompterText-control");
+          if (!container || !textEl) return;
+          
+          const lineHeight = parseInt(getComputedStyle(textEl).lineHeight) || 30;
+          const maxScroll = textEl.offsetHeight - container.clientHeight;
+          
+          if (ScrollEngine.isRunning) {
+            // Se está rodando, ajusta o decimalScroll e atualiza o transform
+            ScrollEngine.decimalScroll = Math.min(maxScroll, ScrollEngine.decimalScroll + lineHeight);
+            textEl.style.transform = `translate3d(0, -${ScrollEngine.decimalScroll}px, 0)`;
+          } else {
+            // Se está parado, usa scrollTop normal
+            container.scrollTop = Math.min(maxScroll, container.scrollTop + lineHeight);
             ScrollEngine.decimalScroll = container.scrollTop;
           }
         },
@@ -1607,6 +1671,13 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("keydown", (e) => {
     const operatorPane = document.getElementById("operator-tab-pane");
     if (!operatorPane || !operatorPane.classList.contains("show")) return;
+
+    // Bloqueia Tab para evitar navegação indesejada e abertura de modais
+    if (e.key === "Tab") {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
 
     // Só trata Escape para fullscreen (resto é pelo HotkeyHandler)
     if (e.key === "Escape") {
@@ -2821,15 +2892,28 @@ document.addEventListener("DOMContentLoaded", () => {
       const defaultTextColor = operatorState.isInverted ? "#000000" : "#FFFFFF";
 
       if (prompterContainer) {
-        // Aplica cor apenas no CONTAINER GERAL
+        // Aplica cor no CONTAINER DO PROMPTER
         prompterContainer.style.backgroundColor = bgColor;
         prompterContainer.style.color = defaultTextColor;
 
         const textControl = document.getElementById("prompterText-control");
         if (textControl) textControl.style.color = defaultTextColor;
 
-        // === REMOVIDO: O loop que forçava a cor nos filhos foi apagado ===
-        // Agora ele respeita se o filho tiver <span style="color: red">
+        // Aplica cor também no container PAI (wrapper)
+        const prompterWrapper = document.getElementById("operator-prompter-wrapper");
+        if (prompterWrapper) {
+          prompterWrapper.style.backgroundColor = bgColor;
+        }
+
+        // Aplica cor na barra de progresso
+        const progressBar = document.getElementById("prompter-custom-scrollbar");
+        const progressThumb = document.getElementById("prompter-scrollbar-thumb");
+        if (progressBar) {
+          progressBar.style.backgroundColor = bgColor;
+        }
+        if (progressThumb) {
+          progressThumb.style.backgroundColor = defaultTextColor;
+        }
       }
 
       ipcRenderer.send("save-settings", {
@@ -2848,9 +2932,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (opBtnMirrorH) {
     opBtnMirrorH.addEventListener("click", () => {
+      // 1. Inverte o estado da variável (True/False)
       operatorState.mirrorH = !operatorState.mirrorH;
-      applyTransforms();
+
+      // 2. Muda a cor do botão para indicar que está ativo
       opBtnMirrorH.classList.toggle("active", operatorState.mirrorH);
+
+      // 3. NÃO aplica localmente - apenas envia para a janela de projeção/broadcast
+      ipcRenderer.send("save-settings", {
+        flipHorizontal: operatorState.mirrorH
+      });
+
+      console.log("🗂️ Mirror Horizontal:", operatorState.mirrorH ? "ATIVADO" : "DESATIVADO");
     });
   }
 
@@ -2977,6 +3070,30 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ============================================================
+  // SEÇÃO 32.1: CLIQUE NO PROMPTER PARA PLAY/PAUSE
+  // ============================================================
+  // Permite clicar na área do prompter para alternar play/pause
+  
+  // Usa prompterContainer já declarado no início do arquivo
+  if (prompterContainer) {
+    prompterContainer.addEventListener("click", (e) => {
+      // Ignora cliques em botões ou controles dentro do container
+      if (e.target.closest("button") || e.target.closest("input") || e.target.closest("a")) {
+        return;
+      }
+      
+      // Toggle play/pause
+      if (ScrollEngine.isRunning) {
+        ScrollEngine.pause();
+        ipcRenderer.send("control-prompter", "pause");
+      } else {
+        ScrollEngine.start();
+        ipcRenderer.send("control-prompter", "play");
+      }
+    });
+  }
+
+  // ============================================================
   // SEÇÃO 33: SINCRONIZAÇÃO EDITOR → PROMPTER
   // ============================================================
   // Envia conteúdo do editor para o prompter local e janela externa
@@ -3031,6 +3148,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // 🔥 ENVIA PARA O MAIN PROCESS PRIMEIRO (Janela Externa)
     ipcRenderer.send("update-prompter-content", finalContent);
 
+    // 🔥 SINCRONIZA TAMANHO DA FONTE COM A JANELA DE PROJEÇÃO
+    if (typeof currentFontSizePT !== 'undefined' && currentFontSizePT > 0) {
+      ipcRenderer.send("sync-projection-font-size", currentFontSizePT);
+    }
+
     // 🔥 ENVIA PARA ROTEIRISTAS REMOTOS (Wi-Fi Local)
     ipcRenderer.send("send-text-to-remote", finalContent);
 
@@ -3042,7 +3164,14 @@ document.addEventListener("DOMContentLoaded", () => {
       control.style.color = baseColor;
 
       if (prompterContainer) {
-        prompterContainer.style.backgroundColor = operatorState.isInverted ? "#FFFFFF" : "#000000";
+        const bgColor = operatorState.isInverted ? "#FFFFFF" : "#000000";
+        prompterContainer.style.backgroundColor = bgColor;
+        
+        // Atualiza também o wrapper pai
+        const prompterWrapper = document.getElementById("operator-prompter-wrapper");
+        if (prompterWrapper) {
+          prompterWrapper.style.backgroundColor = bgColor;
+        }
       }
 
       const paragraphs = control.querySelectorAll("p, div, h1, h2, h3");
@@ -3547,6 +3676,33 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // ============================================================
+  // HANDLER: Abrir arquivo .ptq via duplo clique ou linha de comando
+  // ============================================================
+  /**
+   * Recebe um arquivo .ptq para abrir (vindo do sistema operacional)
+   * - Duplo clique no arquivo no Explorer
+   * - Arrastar arquivo para o ícone do app
+   * - Linha de comando
+   */
+  ipcRenderer.on("open-file-from-system", (event, filePath) => {
+    console.log("📂 [Sistema] Solicitação para abrir arquivo:", filePath);
+
+    if (!filePath) {
+      console.warn("⚠️ Caminho do arquivo vazio");
+      return;
+    }
+
+    // Verifica se é um arquivo .ptq
+    if (!filePath.toLowerCase().endsWith('.ptq')) {
+      console.warn("⚠️ Arquivo não é .ptq:", filePath);
+      return;
+    }
+
+    // Envia para o main process ler o conteúdo do arquivo
+    ipcRenderer.send("read-and-open-file", filePath);
+  });
+
+  // ============================================================
   // HANDLER: Restaurar Backup HTML
   // ============================================================
   /**
@@ -3828,17 +3984,20 @@ document.addEventListener("DOMContentLoaded", () => {
       barContainer.style.right = 'auto';
 
       barContainer.style.width = '10px';
-      barContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.1)'; // Fundo leve para ver que existe
+      // Cor adapta ao estado de inversão
+      const isInverted = operatorState && operatorState.isInverted;
+      barContainer.style.backgroundColor = isInverted ? '#FFFFFF' : '#000000';
       barContainer.style.zIndex = '9999'; // Acima de tudo
       barContainer.style.pointerEvents = 'none'; // Não bloqueia cliques
 
-      // O INDICADOR (Quadradinho Branco)
+      // O INDICADOR (Quadradinho)
       barThumb = document.createElement('div');
       barThumb.id = 'prompter-scrollbar-thumb';
       barThumb.style.position = 'absolute';
       barThumb.style.width = '100%';
       barThumb.style.height = '30px'; // Um pouco maior para visibilidade
-      barThumb.style.backgroundColor = '#FFFFFF';
+      // Cor adapta ao estado de inversão
+      barThumb.style.backgroundColor = isInverted ? '#000000' : '#FFFFFF';
       barThumb.style.top = '0px';
       barThumb.style.boxShadow = '2px 2px 5px rgba(0,0,0,0.5)';
 
@@ -3973,7 +4132,21 @@ document.addEventListener("DOMContentLoaded", () => {
   const diffTitleLeft = document.getElementById("diff-title-left");
   const diffTitleRight = document.getElementById("diff-title-right");
   const diffStatusText = document.getElementById("diff-status-text");
-  const btnRestoreVersion = document.getElementById("btn-restore-version");
+  const btnRestoreLeft = document.getElementById("btn-restore-left");
+  const btnRestoreRight = document.getElementById("btn-restore-right");
+  const btnApplyChanges = document.getElementById("btn-apply-changes");
+  const btnLeftLabel = document.getElementById("btn-left-label");
+  const btnRightLabel = document.getElementById("btn-right-label");
+  const btnApplyLabel = document.getElementById("btn-apply-label");
+  
+  // DEBUG: Verifica se elementos foram encontrados
+  console.log('[Timeline] Elementos carregados:', {
+    diffLeftPanel: !!diffLeftPanel,
+    diffRightPanel: !!diffRightPanel,
+    btnRestoreLeft: !!btnRestoreLeft,
+    btnRestoreRight: !!btnRestoreRight,
+    btnApplyChanges: !!btnApplyChanges
+  });
 
   // --- HELPER 1: PEGAR NOME VISUAL DA ABA (Infalível) ---
   function getTabNameFromDOM(id) {
@@ -3998,6 +4171,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --- HELPER 2: PEGAR CONTEÚDO REAL DA ABA (O que está digitado) ---
+  // Retorna {html, text} para preservar formatação
   function getTabContentFromDOM(id) {
     // 1. Tenta achar o container
     // Se seu app usa IDs como 'doc-1', 'document-content-1', ajuste aqui:
@@ -4005,15 +4179,20 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!container)
       container = document.getElementById(`document-content-${id}`);
 
-    if (!container) return "";
+    if (!container) return { html: "", text: "" };
 
     // 2. Tenta achar o editor dentro do container
     const editor = container.querySelector(
       '.text-editor-area, .editor-content, textarea, [contenteditable="true"]'
     );
 
-    if (editor) return editor.innerText; // Pega texto visível
-    return "";
+    if (editor) {
+      return {
+        html: editor.innerHTML,  // Preserva formatação
+        text: editor.innerText   // Para comparação diff
+      };
+    }
+    return { html: "", text: "" };
   }
 
   // --- ABRIR MODAL ---
@@ -4028,6 +4207,45 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // --- FUNÇÃO PARA DESTACAR TEXTO EM ELEMENTO HTML ---
+  // Encontra e marca texto com uma classe CSS, preservando estrutura HTML
+  function highlightTextInElement(element, textToFind, className) {
+    if (!textToFind || textToFind.trim().length < 2) return;
+    
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      null,
+      false
+    );
+    
+    const textNodes = [];
+    let node;
+    while (node = walker.nextNode()) {
+      textNodes.push(node);
+    }
+    
+    // Escapa caracteres especiais para regex
+    const escaped = textToFind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escaped})`, 'gi');
+    
+    textNodes.forEach(textNode => {
+      const text = textNode.textContent;
+      if (regex.test(text)) {
+        // Reset regex lastIndex
+        regex.lastIndex = 0;
+        
+        const span = document.createElement('span');
+        span.innerHTML = text.replace(regex, `<mark class="${className}">$1</mark>`);
+        
+        // Substitui o nó de texto pelo span com highlights
+        if (textNode.parentNode) {
+          textNode.parentNode.replaceChild(span, textNode);
+        }
+      }
+    });
+  }
+
   function resetDiffView() {
     diffLeftPanel.innerHTML =
       '<p class="text-muted text-center mt-5">Select the first item (Original/Old)</p>';
@@ -4036,7 +4254,9 @@ document.addEventListener("DOMContentLoaded", () => {
     diffTitleLeft.innerText = "-";
     diffTitleRight.innerText = "-";
     diffStatusText.innerText = "Select 2 boxes in the left list.";
-    btnRestoreVersion.classList.add("d-none");
+    if (btnRestoreLeft) btnRestoreLeft.classList.add("d-none");
+    if (btnRestoreRight) btnRestoreRight.classList.add("d-none");
+    if (btnApplyChanges) btnApplyChanges.classList.add("d-none");
   }
 
   // --- RENDERIZAR LISTA LATERAL ---
@@ -4045,6 +4265,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 1. O Documento Atual (Topo da lista)
     const editorArea = getActiveTextEditorArea(); // Sua função existente
+    const currentHtml = editorArea ? editorArea.innerHTML : "";
     const currentText = editorArea ? editorArea.innerText : "";
     const currentName = activeDoc.name || activeDoc.filename || "Current File";
 
@@ -4052,7 +4273,8 @@ document.addEventListener("DOMContentLoaded", () => {
       id: "current",
       displayName: currentName,
       subInfo: "Editing now (Active Tab)",
-      content: currentText,
+      content: currentHtml,     // HTML para restauração
+      textContent: currentText, // Texto para comparação diff
       type: "current",
       timestamp: Date.now(), // Mais recente possível
     };
@@ -4060,14 +4282,18 @@ document.addEventListener("DOMContentLoaded", () => {
     // 2. Outros Documentos Abertos (Abas)
     const otherTabs = documents
       .filter((d) => d.id !== activeDoc.id)
-      .map((d) => ({
-        id: `tab-${d.id}`,
-        displayName: d.name || d.filename || `Doc ${d.id}`,
-        subInfo: "Other Open Tab",
-        content: getTabContentFromDOM(d.id) || d.content,
-        type: "tab",
-        timestamp: Date.now() - 100, // Um pouco mais antigo que o atual
-      }));
+      .map((d) => {
+        const tabContent = getTabContentFromDOM(d.id);
+        return {
+          id: `tab-${d.id}`,
+          displayName: d.name || d.filename || `Doc ${d.id}`,
+          subInfo: "Other Open Tab",
+          content: tabContent.html || d.content,   // HTML para restauração
+          textContent: tabContent.text || d.content, // Texto para diff
+          type: "tab",
+          timestamp: Date.now() - 100, // Um pouco mais antigo que o atual
+        };
+      });
 
     // 3. Histórico (Versões Salvas)
     const history = (activeDoc.history || [])
@@ -4077,7 +4303,8 @@ document.addEventListener("DOMContentLoaded", () => {
         id: `hist-${h.id}`, // Prefixo para ID único
         displayName: h.date, // Data/Hora como título
         subInfo: "Versão Salva",
-        content: h.content,
+        content: h.content,      // Isso já deveria ser HTML preservado
+        textContent: h.content,  // Para diff (remove tags se necessário)
         type: "history",
         timestamp: h.id, // Assumindo que o ID do histórico é Date.now()
       }));
@@ -4178,7 +4405,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (items.length === 1) {
         // Modo Leitura (Mostra só na esquerda)
         diffTitleLeft.innerText = items[0].displayName;
-        diffLeftPanel.innerText = items[0].content;
+        diffLeftPanel.innerText = items[0].textContent || items[0].content;
         diffTitleRight.innerText = "-";
         diffRightPanel.innerHTML =
           '<p class="text-muted text-center mt-5">Selecione mais um para comparar</p>';
@@ -4189,26 +4416,41 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Caso 2: Dois itens selecionados -> COMPARAÇÃO
-    // Precisamos saber qual é o "Antigo" (Esquerda) e qual é o "Novo" (Direita)
-    // Vamos ordenar pelo timestamp que criamos no objeto
-    items.sort((a, b) => a.timestamp - b.timestamp);
+    // Lógica: O documento ATUAL (current) é o ORIGINAL (esquerda)
+    // Documentos externos (tabs/history) são o NEW (direita) com mudanças
+    
+    // Ordena para que o "current" fique sempre na esquerda como ORIGINAL
+    items.sort((a, b) => {
+      // current sempre primeiro (esquerda/original)
+      if (a.type === "current") return -1;
+      if (b.type === "current") return 1;
+      // Entre outros tipos, ordena por timestamp (mais antigo primeiro)
+      return a.timestamp - b.timestamp;
+    });
 
-    const oldVer = items[0]; // Menor timestamp (mais antigo)
-    const newVer = items[1]; // Maior timestamp (mais novo)
+    const oldVer = items[0]; // ORIGINAL - documento atual/formatado
+    const newVer = items[1]; // NEW - documento externo com mudanças
 
     // Atualiza Títulos
     diffTitleLeft.innerText = oldVer.displayName;
     diffTitleRight.innerText = newVer.displayName;
     diffStatusText.innerText = `Comparando: ${oldVer.displayName} -> ${newVer.displayName}`;
 
-    // Roda a biblioteca Diff
-    const diff = Diff.diffWords(oldVer.content, newVer.content);
+    // Roda a biblioteca Diff usando textContent (texto puro para comparação)
+    const oldText = oldVer.textContent || oldVer.content;
+    const newText = newVer.textContent || newVer.content;
+    const diff = Diff.diffWords(oldText, newText);
 
     // Limpa Painéis
     diffLeftPanel.innerHTML = "";
     diffRightPanel.innerHTML = "";
-
-    // Loop Mágico do Diff
+    
+    // ========================================
+    // MODO DIFF TEXTO - Mostra diferenças lado a lado
+    // ========================================
+    // Vermelho = texto que NÃO existe no outro documento
+    // Verde = texto NOVO/adicionado
+    
     diff.forEach((part) => {
       // Se for REMOVIDO: Aparece na Esquerda (Vermelho)
       if (part.removed) {
@@ -4236,37 +4478,320 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    // Botão de Restaurar (Opcional: Pega o texto da esquerda e joga no editor)
-    btnRestoreVersion.classList.remove("d-none");
-    btnRestoreVersion.onclick = () => {
-      if (
-        confirm(
-          `Reverter o editor atual para o conteúdo de "${oldVer.displayName}"?`
-        )
-      ) {
-        const editor = getActiveTextEditorArea();
-        if (editor) {
-          editor.innerText = oldVer.content; // Restaura
-          timelineModal.hide(); // Fecha modal
-        }
+    // ========================================
+    // BOTÕES DE AÇÃO - COM NOMES DINÂMICOS
+    // ========================================
+    
+    // Trunca nome para caber no botão
+    const truncateName = (name, max = 15) => 
+      name.length > max ? name.substring(0, max) + "..." : name;
+
+    // Detecta qual documento é o "atual" (onde o usuário está editando)
+    const currentDoc = getActiveDocument();
+    const currentDocName = currentDoc?.name || currentDoc?.filename || "Current";
+    
+    // Identifica qual versão é a do documento ATUAL (formatado) vs documento EXTERNO (Word)
+    const isOldVerCurrent = oldVer.type === "current";
+    const isNewVerCurrent = newVer.type === "current";
+    
+    // Labels descritivos
+    const oldLabel = truncateName(oldVer.displayName);
+    const newLabel = truncateName(newVer.displayName);
+
+    // ========================================
+    // BOTÃO "APPLY CHANGES" - MERGE INTELIGENTE
+    // ========================================
+    // Transfere apenas as mudanças de TEXTO para o documento atual, preservando formatação
+    console.log('[Timeline] btnApplyChanges encontrado:', !!btnApplyChanges);
+    
+    if (btnApplyChanges) {
+      btnApplyChanges.classList.remove("d-none");
+      console.log('[Timeline] Botão Apply Changes tornou visível');
+      
+      // Label dinâmico explicando a ação
+      if (btnApplyLabel) {
+        btnApplyLabel.innerText = "Apply Text Changes";
       }
-    };
+      
+      btnApplyChanges.onclick = () => {
+        try {
+          console.log('[Timeline] Botão Apply Changes clicado!');
+          
+          const editor = getActiveTextEditorArea();
+          if (!editor) {
+            alert("Nenhum editor ativo encontrado.");
+            return;
+          }
+          
+          // ========================================
+          // DETECTA QUAL É O DOCUMENTO COM FORMATAÇÃO
+          // ========================================
+          // O documento ATUAL (type="current") tem a formatação que queremos manter
+          // O outro documento (type="tab") tem as mudanças de texto que queremos aplicar
+          
+          let formattedDoc, sourceDoc;
+          
+          if (isNewVerCurrent) {
+            // 3 v2.ptq (direita/current) tem formatação, MC.docx (esquerda/tab) tem mudanças
+            formattedDoc = newVer;
+            sourceDoc = oldVer;
+          } else if (isOldVerCurrent) {
+            // oldVer (esquerda/current) tem formatação, newVer (direita/tab) tem mudanças
+            formattedDoc = oldVer;
+            sourceDoc = newVer;
+          } else {
+            // Nenhum é current - pergunta ao usuário
+            const choice = confirm(
+              `Qual documento tem a FORMATAÇÃO ([MC] amarelo, cores)?\n\n` +
+              `[OK] = ${newVer.displayName} (direita)\n` +
+              `[Cancelar] = ${oldVer.displayName} (esquerda)`
+            );
+            formattedDoc = choice ? newVer : oldVer;
+            sourceDoc = choice ? oldVer : newVer;
+          }
+          
+          console.log('[Timeline] Documento formatado:', formattedDoc.displayName);
+          console.log('[Timeline] Documento fonte:', sourceDoc.displayName);
+          
+          // Textos para comparação
+          const formattedText = formattedDoc.textContent || formattedDoc.content;
+          const sourceText = sourceDoc.textContent || sourceDoc.content;
+          
+          // Calcula o diff
+          const changes = Diff.diffWords(formattedText, sourceText);
+          
+          // Separa adições e remoções
+          const additions = changes.filter(p => p.added);
+          const removals = changes.filter(p => p.removed);
+          
+          if (additions.length === 0 && removals.length === 0) {
+            alert("Os textos são idênticos. Nenhuma mudança a aplicar.");
+            return;
+          }
+          
+          // Mostra preview
+          let preview = `Aplicar mudanças de "${sourceDoc.displayName}" para "${formattedDoc.displayName}"?\n\n`;
+          
+          if (additions.length > 0) {
+            preview += `ADICIONAR (${additions.length} trechos):\n`;
+            additions.slice(0, 3).forEach(p => {
+              preview += `  ✅ "${p.value.substring(0, 40)}${p.value.length > 40 ? '...' : ''}"\n`;
+            });
+          }
+          
+          if (removals.length > 0) {
+            preview += `\nREMOVER (${removals.length} trechos):\n`;
+            removals.slice(0, 3).forEach(p => {
+              preview += `  ❌ "${p.value.substring(0, 40)}${p.value.length > 40 ? '...' : ''}"\n`;
+            });
+          }
+          
+          preview += `\nSua formatação ([MC], cores) será PRESERVADA.`;
+          
+          if (!confirm(preview)) return;
+          
+          // ========================================
+          // MERGE INTELIGENTE - NOVA ABORDAGEM
+          // ========================================
+          // Estratégia: reconstrói o texto final baseado no diff,
+          // depois tenta aplicar a formatação do documento original
+          
+          let mergedHtml = formattedDoc.content;
+          
+          // 1. PROCESSA ADIÇÕES
+          // Para cada adição, encontra onde inserir baseado no contexto
+          changes.forEach((part, idx) => {
+            if (part.added) {
+              const textToAdd = part.value;
+              
+              // Encontra o contexto ANTES (última parte não-adicionada/removida)
+              let contextBefore = "";
+              for (let i = idx - 1; i >= 0; i--) {
+                if (!changes[i].added && !changes[i].removed) {
+                  contextBefore = changes[i].value;
+                  break;
+                }
+              }
+              
+              // Encontra o contexto DEPOIS (próxima parte não-adicionada/removida)
+              let contextAfter = "";
+              for (let i = idx + 1; i < changes.length; i++) {
+                if (!changes[i].added && !changes[i].removed) {
+                  contextAfter = changes[i].value;
+                  break;
+                }
+              }
+              
+              console.log('[Merge] Adicionando:', textToAdd.substring(0, 50));
+              console.log('[Merge] Contexto antes:', contextBefore.substring(Math.max(0, contextBefore.length - 30)));
+              console.log('[Merge] Contexto depois:', contextAfter.substring(0, 30));
+              
+              // Tenta encontrar o ponto de inserção
+              if (contextBefore) {
+                // Pega os últimos N caracteres do contexto para localização mais precisa
+                const searchContext = contextBefore.slice(-30);
+                
+                // Encontra a posição no HTML (ignora tags)
+                // Cria regex que ignora tags HTML entre os caracteres
+                const flexibleSearch = searchContext
+                  .split('')
+                  .map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+                  .join('(?:<[^>]*>)*\\s*');
+                
+                try {
+                  const regex = new RegExp(flexibleSearch, 'i');
+                  const match = regex.exec(mergedHtml);
+                  
+                  if (match) {
+                    let insertPos = match.index + match[0].length;
+                    
+                    // CORREÇÃO: Avança até sair de qualquer tag span aberta
+                    // Procura a próxima tag de fechamento </span> ou </div> ou quebra de linha
+                    const afterMatch = mergedHtml.slice(insertPos);
+                    const closeTagMatch = afterMatch.match(/^[^<]*(<\/span>|<\/div>|<br\s*\/?>|<\/p>)/i);
+                    
+                    if (closeTagMatch) {
+                      // Insere DEPOIS da tag de fechamento para não herdar estilo
+                      insertPos += closeTagMatch.index + closeTagMatch[0].length;
+                    }
+                    
+                    // Insere o texto - agora fora de tags de formatação
+                    mergedHtml = mergedHtml.slice(0, insertPos) + textToAdd + mergedHtml.slice(insertPos);
+                    console.log('[Merge] Texto inserido na posição:', insertPos);
+                  } else {
+                    console.log('[Merge] Contexto não encontrado, tentando inserção simples');
+                    // Fallback: insere após encontrar texto similar
+                    const simpleSearch = contextBefore.slice(-15);
+                    const simplePos = mergedHtml.indexOf(simpleSearch);
+                    if (simplePos !== -1) {
+                      const insertAt = simplePos + simpleSearch.length;
+                      mergedHtml = mergedHtml.slice(0, insertAt) + textToAdd + mergedHtml.slice(insertAt);
+                    }
+                  }
+                } catch (e) {
+                  console.error('[Merge] Erro no regex:', e);
+                }
+              } else if (contextAfter) {
+                // Não há contexto antes - insere no início antes do contexto depois
+                const searchContext = contextAfter.substring(0, 30);
+                const pos = mergedHtml.indexOf(searchContext);
+                if (pos !== -1) {
+                  mergedHtml = mergedHtml.slice(0, pos) + textToAdd + mergedHtml.slice(pos);
+                }
+              }
+            }
+          });
+          
+          // 2. PROCESSA REMOÇÕES (remove texto do HTML)
+          removals.forEach(part => {
+            const textToRemove = part.value;
+            
+            // Escapa caracteres especiais
+            const escaped = textToRemove.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            
+            // Remove preservando tags ao redor
+            // Regex que captura o texto mesmo com tags no meio
+            const flexibleRemove = escaped
+              .split(/\s+/)
+              .filter(w => w.length > 0)
+              .join('(?:<[^>]*>)*\\s*(?:<[^>]*>)*');
+            
+            try {
+              const regex = new RegExp(flexibleRemove, 'gi');
+              mergedHtml = mergedHtml.replace(regex, '');
+            } catch (e) {
+              // Fallback: remoção direta
+              mergedHtml = mergedHtml.replace(textToRemove, '');
+            }
+          });
+          
+          // 3. Limpa espaços extras
+          mergedHtml = mergedHtml
+            .replace(/(<[^>]*>)\s+(<)/g, '$1$2')
+            .replace(/\s{2,}/g, ' ')
+            .replace(/>\s+</g, '><')
+            .trim();
+          
+          // 4. Aplica ao editor
+          editor.innerHTML = mergedHtml;
+          editor.dispatchEvent(new Event('input', { bubbles: true }));
+          
+          console.log('[Timeline] Merge aplicado com sucesso');
+          alert('Mudanças aplicadas! Verifique o resultado.');
+          timelineModal.hide();
+          
+        } catch (error) {
+          console.error('[Timeline] Erro no Apply Changes:', error);
+          alert('Erro ao aplicar mudanças: ' + error.message);
+        }
+      };
+    }
+
+    // ========================================
+    // BOTÕES "USE LEFT/RIGHT" - SUBSTITUIÇÃO COMPLETA
+    // ========================================
+    
+    // Botão Usar Versão Esquerda (versão antiga) - substitui TUDO
+    if (btnRestoreLeft) {
+      btnRestoreLeft.classList.remove("d-none");
+      if (btnLeftLabel) btnLeftLabel.innerText = `Use: ${oldLabel}`;
+      
+      btnRestoreLeft.onclick = () => {
+        if (confirm(`Substituir TODO o conteúdo pelo documento "${oldVer.displayName}"?\n\n⚠️ Isso substituirá completamente o texto E a formatação.`)) {
+          const editor = getActiveTextEditorArea();
+          if (editor) {
+            editor.innerHTML = oldVer.content;
+            editor.dispatchEvent(new Event('input', { bubbles: true }));
+            timelineModal.hide();
+          }
+        }
+      };
+    }
+
+    // Botão Usar Versão Direita (versão nova/atual) - substitui TUDO
+    if (btnRestoreRight) {
+      btnRestoreRight.classList.remove("d-none");
+      if (btnRightLabel) btnRightLabel.innerText = `Use: ${newLabel}`;
+      
+      btnRestoreRight.onclick = () => {
+        if (confirm(`Substituir TODO o conteúdo pelo documento "${newVer.displayName}"?\n\n⚠️ Isso substituirá completamente o texto E a formatação.`)) {
+          const editor = getActiveTextEditorArea();
+          if (editor) {
+            editor.innerHTML = newVer.content;
+            editor.dispatchEvent(new Event('input', { bubbles: true }));
+            timelineModal.hide();
+          }
+        }
+      };
+    }
   }
 
   // ============================================================
   // SEÇÃO 44: CONTROLE REMOTO (MODAL WI-FI / INTERNET)
   // ============================================================
-  // Inicializa servidor remoto e exibe informações de conexão
+  // Inicializa servidores remotos separados para Local e Internet
 
   const btnOpenRemoteModal = document.getElementById("btn-open-remote-modal");
-  const btnToggleServerModal = document.getElementById(
-    "btn-toggle-server-modal"
-  );
   const statusIndicator = document.getElementById("status-indicator");
   const statusAlert = document.getElementById("server-status-alert");
-  const connectionPanel = document.getElementById("connection-details-panel");
-  const modalUrlDisplay = document.getElementById("modal-url-display");
-  const btnModalCopy = document.getElementById("btn-modal-copy");
+  
+  // Novos elementos - Modo Local
+  const btnToggleLocal = document.getElementById("btn-toggle-local");
+  const localStatusBadge = document.getElementById("local-status-badge");
+  const localConnectionPanel = document.getElementById("local-connection-panel");
+  const localUrlDisplay = document.getElementById("local-url-display");
+  const btnCopyLocal = document.getElementById("btn-copy-local");
+  
+  // Novos elementos - Modo Internet
+  const btnToggleInternet = document.getElementById("btn-toggle-internet");
+  const internetStatusBadge = document.getElementById("internet-status-badge");
+  const internetConnectionPanel = document.getElementById("internet-connection-panel");
+  const internetUrlDisplay = document.getElementById("internet-url-display");
+  const btnCopyInternet = document.getElementById("btn-copy-internet");
+  
+  // Estado dos servidores
+  let isLocalServerActive = false;
+  let isInternetServerActive = false;
 
   // REFERÊNCIA AO ÍCONE DA SIDEBAR
   const sidebarIcon = document.querySelector("#btn-open-remote-modal i");
@@ -4294,91 +4819,135 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
   // ============================================================
-  // SEÇÃO 45: TOGGLE DO SERVIDOR REMOTO
+  // SEÇÃO 45: TOGGLE DOS SERVIDORES REMOTOS (SEPARADOS)
   // ============================================================
-  // Lógica para iniciar/parar servidor Wi-Fi ou WebRTC
+  // Lógica para iniciar/parar servidor Wi-Fi e WebRTC separadamente
 
-  if (btnToggleServerModal) {
-    btnToggleServerModal.addEventListener('click', async () => {
-      const selectedMode = document.querySelector('input[name="connection-mode"]:checked').value;
-      btnToggleServerModal.disabled = true;
-
-      if (selectedMode === 'ngrok') {
-
-        // SE JÁ ESTIVER LIGADO -> DESLIGA
-        if (signalingSocket && signalingSocket.connected) {
-          // ⭐ AVISA QUE VAI DESLIGAR
-          const yourName = "Você"; // ou pega do seu username
-          addLogEntry({
-            msg: `${yourName} saiu da sala.`,
-            type: 'logout',
-            source: 'Internet',
-            user: yourName
-          });
-
-          // Envia para o servidor local também
-          ipcRenderer.send('user-disconnected-remote', {
-            name: yourName,
-            source: 'Internet'
-          });
-
-          stopWebRTCConnection();
-          updateServerUI(false);
-
-          if (sidebarIcon) {
-            sidebarIcon.classList.remove('broadcast-live');
-            sidebarIcon.classList.add('broadcast-offline');
-          }
-        }
-
-
-        // SE ESTIVER DESLIGADO -> LIGA
-        else {
-          try {
-            // Primeiro tentamos a conexão
-            await startWebRTCConnection();
-
-            // O ícone deve mudar para verde APENAS se o socket conectar de fato
-            // Vamos deixar a função startWebRTCConnection cuidar disso internamente
-          } catch (err) {
-            // Caso ocorra erro, garante que o ícone fique vermelho
-            if (sidebarIcon) {
-              sidebarIcon.classList.remove('broadcast-live');
-              sidebarIcon.classList.add('broadcast-offline');
-            }
-          }
-        }
-        btnToggleServerModal.disabled = false;
-
+  // === FUNÇÕES DE ATUALIZAÇÃO DE UI ===
+  function updateSidebarIcon() {
+    if (sidebarIcon) {
+      if (isLocalServerActive || isInternetServerActive) {
+        sidebarIcon.classList.remove('broadcast-offline');
+        sidebarIcon.classList.add('broadcast-live');
+      } else {
+        sidebarIcon.classList.remove('broadcast-live');
+        sidebarIcon.classList.add('broadcast-offline');
       }
+    }
+    
+    // Atualiza status alert geral
+    if (statusAlert && statusIndicator) {
+      if (isLocalServerActive || isInternetServerActive) {
+        statusAlert.classList.remove("alert-secondary");
+        statusAlert.classList.add("alert-success", "text-success");
+        statusAlert.querySelector("span").innerHTML = "Status: <strong>CONNECTED</strong>";
+        statusIndicator.classList.replace("text-danger", "text-success");
+        statusIndicator.classList.add("blink-animation");
+      } else {
+        statusAlert.classList.remove("alert-success", "text-success");
+        statusAlert.classList.add("alert-secondary");
+        statusAlert.querySelector("span").innerHTML = "Status: <strong>OFF</strong>";
+        statusIndicator.classList.replace("text-success", "text-danger");
+        statusIndicator.classList.remove("blink-animation");
+      }
+    }
+  }
 
-      // === MODO LOCAL (WI-FI) ===
-      // === MODO LOCAL (WI-FI) ===
-      else {
+  function updateLocalUI(active, url = "") {
+    if (active) {
+      if (localStatusBadge) {
+        localStatusBadge.textContent = "ONLINE";
+        localStatusBadge.classList.remove("bg-secondary");
+        localStatusBadge.classList.add("bg-success");
+      }
+      if (btnToggleLocal) {
+        btnToggleLocal.classList.remove("btn-outline-primary");
+        btnToggleLocal.classList.add("btn-danger");
+      }
+      if (localConnectionPanel) localConnectionPanel.classList.remove("d-none");
+      if (localUrlDisplay) localUrlDisplay.value = url;
+    } else {
+      if (localStatusBadge) {
+        localStatusBadge.textContent = "OFF";
+        localStatusBadge.classList.remove("bg-success");
+        localStatusBadge.classList.add("bg-secondary");
+      }
+      if (btnToggleLocal) {
+        btnToggleLocal.classList.remove("btn-danger");
+        btnToggleLocal.classList.add("btn-outline-primary");
+      }
+      if (localConnectionPanel) localConnectionPanel.classList.add("d-none");
+      if (localUrlDisplay) localUrlDisplay.value = "";
+    }
+  }
+  
+  function updateInternetUI(active, url = "") {
+    if (active) {
+      if (internetStatusBadge) {
+        internetStatusBadge.textContent = "ONLINE";
+        internetStatusBadge.classList.remove("bg-secondary");
+        internetStatusBadge.classList.add("bg-success");
+      }
+      if (btnToggleInternet) {
+        btnToggleInternet.classList.remove("btn-outline-primary");
+        btnToggleInternet.classList.add("btn-danger");
+      }
+      if (internetConnectionPanel) internetConnectionPanel.classList.remove("d-none");
+      if (internetUrlDisplay) internetUrlDisplay.value = url;
+    } else {
+      if (internetStatusBadge) {
+        internetStatusBadge.textContent = "OFF";
+        internetStatusBadge.classList.remove("bg-success");
+        internetStatusBadge.classList.add("bg-secondary");
+      }
+      if (btnToggleInternet) {
+        btnToggleInternet.classList.remove("btn-danger");
+        btnToggleInternet.classList.add("btn-outline-primary");
+      }
+      if (internetConnectionPanel) internetConnectionPanel.classList.add("d-none");
+      if (internetUrlDisplay) internetUrlDisplay.value = "";
+    }
+  }
+
+  // === BOTÃO TOGGLE LOCAL (WI-FI) ===
+  if (btnToggleLocal) {
+    btnToggleLocal.addEventListener('click', async () => {
+      btnToggleLocal.disabled = true;
+      
+      if (isLocalServerActive) {
+        // Desligar servidor local
+        try {
+          await ipcRenderer.invoke('toggle-server', 'local');
+          isLocalServerActive = false;
+          updateLocalUI(false);
+          updateSidebarIcon();
+          addLogEntry({
+            msg: 'Local server stopped',
+            type: 'logout',
+            source: 'Local Network',
+            user: 'System'
+          });
+        } catch (err) {
+          console.error("Erro ao parar servidor local:", err);
+        }
+      } else {
+        // Ligar servidor local
         try {
           const result = await ipcRenderer.invoke('toggle-server', 'local');
-
-          // 🟢 SE O SERVIDOR LIGOU COM SUCESSO
+          
           if (result && result.active) {
-            let textoParaMostrar = `${result.url} | ID: ${result.pin}`;
-            updateServerUI(true, textoParaMostrar);
-
-            // 🔥 ADICIONE ESTA PARTE PARA ATIVAR O VERDE:
-            if (sidebarIcon) {
-              sidebarIcon.classList.remove('broadcast-offline');
-              sidebarIcon.classList.add('broadcast-live'); // Ativa o piscar verde
-            }
-          }
-          // 🔴 SE O USUÁRIO CLICOU PARA PARAR O SERVIDOR
-          else {
-            updateServerUI(false);
-            if (sidebarIcon) {
-              sidebarIcon.classList.remove('broadcast-live');
-              sidebarIcon.classList.add('broadcast-offline'); // Volta para vermelho
-            }
+            isLocalServerActive = true;
+            const textoParaMostrar = `${result.url} | ID: ${result.pin}`;
+            updateLocalUI(true, textoParaMostrar);
+            updateSidebarIcon();
+            addLogEntry({
+              msg: 'Local server started',
+              type: 'login',
+              source: 'Local Network',
+              user: 'System'
+            });
           }
         } catch (err) {
-          // 🔴 SE DER ERRO (SEM REDE), LIMPA A MSG E MANTÉM VERMELHO
           let mensagemExibicao = err.message
             .replace("Error invoking remote method 'toggle-server':", "")
             .replace("Error:", "")
@@ -4387,28 +4956,93 @@ document.addEventListener("DOMContentLoaded", () => {
           const alertDiv = document.createElement('div');
           alertDiv.className = 'alert alert-danger alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3 shadow-lg';
           alertDiv.style.zIndex = '10001';
-          alertDiv.style.backgroundColor = '#f8d7da';
-          alertDiv.style.color = '#842029';
-          alertDiv.style.border = '1px solid #f5c2c7';
-
           alertDiv.innerHTML = `
             <div class="d-flex align-items-center">
                 <i class="bi bi-wifi-off fs-4 me-3"></i> 
                 <div>${mensagemExibicao}</div>
                 <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
             </div>
-        `;
+          `;
           document.body.appendChild(alertDiv);
           setTimeout(() => alertDiv.remove(), 5000);
-
-          // GARANTE QUE FIQUE VERMELHO
-          if (sidebarIcon) {
-            sidebarIcon.classList.remove('broadcast-live');
-            sidebarIcon.classList.add('broadcast-offline');
-          }
-          updateServerUI(false);
+          
+          isLocalServerActive = false;
+          updateLocalUI(false);
+          updateSidebarIcon();
         }
-        btnToggleServerModal.disabled = false;
+      }
+      
+      btnToggleLocal.disabled = false;
+    });
+  }
+  
+  // === BOTÃO TOGGLE INTERNET (WEBRTC) ===
+  if (btnToggleInternet) {
+    btnToggleInternet.addEventListener('click', async () => {
+      btnToggleInternet.disabled = true;
+      
+      if (isInternetServerActive) {
+        // Desligar servidor internet
+        addLogEntry({
+          msg: 'You left the room.',
+          type: 'logout',
+          source: 'Internet',
+          user: 'You'
+        });
+        
+        ipcRenderer.send('user-disconnected-remote', {
+          name: 'You',
+          source: 'Internet'
+        });
+        
+        stopWebRTCConnection();
+        isInternetServerActive = false;
+        updateInternetUI(false);
+        updateSidebarIcon();
+      } else {
+        // Ligar servidor internet
+        try {
+          await startWebRTCConnection();
+          // startWebRTCConnection já atualiza isInternetServerActive e a UI
+        } catch (err) {
+          console.error("Erro ao conectar WebRTC:", err);
+          isInternetServerActive = false;
+          updateInternetUI(false);
+          updateSidebarIcon();
+        }
+      }
+      
+      btnToggleInternet.disabled = false;
+    });
+  }
+  
+  // === BOTÕES DE COPIAR ===
+  if (btnCopyLocal) {
+    btnCopyLocal.addEventListener("click", () => {
+      if (localUrlDisplay) {
+        localUrlDisplay.select();
+        document.execCommand("copy");
+        const icon = btnCopyLocal.querySelector("i");
+        if (icon) {
+          const oldClass = icon.className;
+          icon.className = "bi bi-check-lg";
+          setTimeout(() => icon.className = oldClass, 2000);
+        }
+      }
+    });
+  }
+  
+  if (btnCopyInternet) {
+    btnCopyInternet.addEventListener("click", () => {
+      if (internetUrlDisplay) {
+        internetUrlDisplay.select();
+        document.execCommand("copy");
+        const icon = btnCopyInternet.querySelector("i");
+        if (icon) {
+          const oldClass = icon.className;
+          icon.className = "bi bi-check-lg";
+          setTimeout(() => icon.className = oldClass, 2000);
+        }
       }
     });
   }
@@ -4416,21 +5050,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // === FUNÇÃO AUXILIAR PARA PARAR WEBRTC E LIMPAR TUDO ===
   function stopWebRTCConnection() {
     if (signalingSocket) {
-      // ⭐ ANTES DE DESCONECTAR, AVISA QUE ESTÁ SAINDO
       signalingSocket.emit('user-leaving', myRoomId);
-
       signalingSocket.disconnect();
       signalingSocket = null;
     }
-
-    // 🔴 ADICIONE ISTO PARA VOLTAR AO VERMELHO:
-    const sidebarIconInternet = document.querySelector("#btn-open-remote-modal i");
-    if (sidebarIconInternet) {
-      sidebarIconInternet.classList.remove('broadcast-live');
-      sidebarIconInternet.classList.add('broadcast-offline');
-    }
-
-    console.log("🔴 Servidor de Internet Parado e Ícone resetado.");
 
     // Fecha todas as conexões abertas
     Object.keys(peers).forEach(id => {
@@ -4439,69 +5062,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     peers = {};
     myRoomId = null;
+    isInternetServerActive = false;
 
     console.log("Servidor de Internet Parado.");
-  }
-
-  // Função que atualiza o visual do Modal
-  function updateServerUI(isActive, url = "") {
-    if (isActive) {
-      // Muda status para ONLINE
-      statusAlert.classList.remove("alert-secondary");
-      statusAlert.classList.add("alert-success", "text-success");
-      statusAlert.querySelector("span").innerHTML =
-        "Status: <strong>CONNECTED</strong>";
-
-      // Luzinha dentro do modal
-      statusIndicator.classList.replace("text-danger", "text-success");
-      statusIndicator.classList.add("blink-animation");
-
-      // Botão vira "Parar"
-      btnToggleServerModal.classList.replace("btn-primary", "btn-danger");
-      btnToggleServerModal.innerHTML =
-        '<i class="bi bi-stop-circle"></i> STOP SERVER';
-
-      // Mostra o Link
-      connectionPanel.classList.remove("d-none");
-      modalUrlDisplay.value = url;
-
-      document
-        .querySelectorAll('input[name="connection-mode"]')
-        .forEach((el) => (el.disabled = true));
-    } else {
-      // Muda status para OFF
-      statusAlert.classList.remove("alert-success", "text-success");
-      statusAlert.classList.add("alert-secondary");
-      statusAlert.querySelector("span").innerHTML =
-        "Status: <strong>OFF</strong>";
-
-      statusIndicator.classList.replace("text-success", "text-danger");
-      statusIndicator.classList.remove("blink-animation");
-
-      btnToggleServerModal.classList.replace("btn-danger", "btn-primary");
-      btnToggleServerModal.innerHTML =
-        '<i class="bi bi-power"></i> START SERVER';
-
-      connectionPanel.classList.add("d-none");
-      modalUrlDisplay.value = "";
-
-      document
-        .querySelectorAll('input[name="connection-mode"]')
-        .forEach((el) => (el.disabled = false));
-    }
-  }
-
-  // 3. Botão de Copiar Link
-  if (btnModalCopy) {
-    btnModalCopy.addEventListener("click", () => {
-      modalUrlDisplay.select();
-      document.execCommand("copy");
-
-      const icon = btnModalCopy.querySelector("i");
-      const oldClass = icon.className;
-      icon.className = "bi bi-check-lg";
-      setTimeout(() => (icon.className = oldClass), 2000);
-    });
   }
 
   // ============================================================
@@ -4651,7 +5214,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ipcRenderer.send("send-full-state-to-remote", fullState);
   });
 
-  // ✅ SOLUÇÃO 1: Quando recebe atualização do roteirista
+  // ✅ SOLUÇÃO 1: Quando recebe atualização do roteirista (Local Wi-Fi)
   ipcRenderer.on("update-from-remote", (event, newText) => {
     const editor = getActiveTextEditorArea();
 
@@ -4675,6 +5238,11 @@ document.addEventListener("DOMContentLoaded", () => {
       // 🔥 O PASSO CRUCIAL: Manda atualizar a janela do Operador IMEDIATAMENTE
       if (typeof syncContentToPrompter === "function") {
         syncContentToPrompter();
+      }
+      
+      // 🔗 PROPAGAÇÃO: Se Internet estiver ativo, envia para os peers WebRTC também
+      if (isInternetServerActive && typeof broadcastTextUpdate === "function") {
+        broadcastTextUpdate(newText);
       }
     }
   });
@@ -4933,11 +5501,10 @@ document.addEventListener("DOMContentLoaded", () => {
    * Cria sala única e aguarda outros participantes
    */
   async function startWebRTCConnection() {
-    // 🔥 NOVO: Verifica internet ANTES de tentar conectar
+    // Verifica internet ANTES de tentar conectar
     const hasInternet = await checkInternetConnection();
 
     if (!hasInternet) {
-      // Mostra alerta amigável
       const alertDiv = document.createElement('div');
       alertDiv.className = 'alert alert-danger alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3';
       alertDiv.style.zIndex = '9999';
@@ -4948,44 +5515,23 @@ document.addEventListener("DOMContentLoaded", () => {
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         `;
       document.body.appendChild(alertDiv);
-
-      // Remove o alerta após 5 segundos
       setTimeout(() => alertDiv.remove(), 5000);
 
-      // Para o processo e volta o botão ao normal
-      if (btnToggleServerModal) {
-        btnToggleServerModal.disabled = false;
-      }
-
-      // 🔴 ADICIONE ESTA LINHA PARA ARRUMAR O ÍCONE:
-      if (sidebarIcon) {
-        sidebarIcon.classList.remove('broadcast-live');
-        sidebarIcon.classList.add('broadcast-offline');
-      }
-
-      if (btnToggleServerModal) {
-        btnToggleServerModal.disabled = false;
-      }
-
-      return; // ❌ PARA AQUI - Não tenta conectar
-
-      // 🟢 AO FINAL DO SUCESSO DA CONEXÃO INTERNET:
-      if (sidebarIcon) {
-        sidebarIcon.classList.remove('broadcast-offline');
-        sidebarIcon.classList.add('broadcast-live'); // Fica verde
-      }
+      isInternetServerActive = false;
+      updateInternetUI(false);
+      updateSidebarIcon();
+      return;
     }
 
-    // ✅ TEM INTERNET - Continua normalmente
     console.log("✅ Internet OK - Connecting...");
 
     // 1. Conecta ao servidor de sinalização
     signalingSocket = ioClient(SIGNALING_URL, {
-      timeout: 10000, // 10 segundos de timeout
-      reconnection: false // Não reconecta automaticamente
+      timeout: 10000,
+      reconnection: false
     });
 
-    // 🔥 NOVO: Tratamento de erro de conexão
+    // Tratamento de erro de conexão
     signalingSocket.on('connect_error', (error) => {
       console.error("❌ Erro ao conectar:", error);
 
@@ -4999,16 +5545,12 @@ document.addEventListener("DOMContentLoaded", () => {
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         `;
       document.body.appendChild(alertDiv);
-
       setTimeout(() => alertDiv.remove(), 5000);
 
-      // Limpa tudo e volta ao estado inicial
       stopWebRTCConnection();
-      updateServerUI(false);
-
-      if (btnToggleServerModal) {
-        btnToggleServerModal.disabled = false;
-      }
+      isInternetServerActive = false;
+      updateInternetUI(false);
+      updateSidebarIcon();
     });
 
     // 2. Gera ID
@@ -5018,15 +5560,17 @@ document.addEventListener("DOMContentLoaded", () => {
     signalingSocket.emit('create-room', myRoomId);
 
     // 4. Atualiza UI
-    updateServerUI(true, `roteiro.promptiq.com.br | ID: ${myRoomId}`);
+    isInternetServerActive = true;
+    updateInternetUI(true, `roteiro.promptiq.com.br | ID: ${myRoomId}`);
+    updateSidebarIcon();
+    
+    addLogEntry({
+      msg: 'Internet server started',
+      type: 'login',
+      source: 'Internet',
+      user: 'System'
+    });
 
-    // 🟢 ADICIONE ISTO AQUI PARA O ÍCONE DA SIDEBAR FICAR VERDE:
-    const sidebarIconInternet = document.querySelector("#btn-open-remote-modal i");
-    if (sidebarIconInternet) {
-      sidebarIconInternet.classList.remove('broadcast-offline');
-      sidebarIconInternet.classList.add('broadcast-live'); // Ativa o piscar verde
-      console.log("🟢 Ícone Internet agora está VERDE");
-    }
     // 5. Ouve novos usuários entrando
     signalingSocket.on('user-connected', (userData) => {
       const targetId = userData.id || userData;
@@ -5194,7 +5738,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
           if (typeof syncContentToPrompter === 'function') syncContentToPrompter();
 
+          // Propaga para outros peers WebRTC
           broadcastTextUpdate(data.content, userId);
+          
+          // 🔗 PROPAGAÇÃO: Se Local estiver ativo, envia para Wi-Fi também
+          if (isLocalServerActive) {
+            ipcRenderer.send('send-text-to-remote', data.content);
+          }
 
           const remoteName = (peers[userId] && peers[userId].userName) ? peers[userId].userName : "Roteirista (Web)";
 
