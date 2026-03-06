@@ -714,6 +714,239 @@ mark {
   overflow-wrap: break-word;
   white-space: pre-wrap;
   overflow-y: auto;
+  padding: 0 !important;
+}
+
+/* ============================================
+   DIFF ESTILO GIT/GITHUB
+   ============================================ */
+.diff-lines-container {
+  width: 100%;
+}
+
+.diff-line {
+  display: flex;
+  align-items: stretch;
+  min-height: 24px;
+  line-height: 24px;
+  font-family: 'SF Mono', 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* Número da linha */
+.diff-line-num {
+  flex: 0 0 40px;
+  text-align: right;
+  padding: 0 8px;
+  color: rgba(0, 0, 0, 0.4);
+  background-color: rgba(0, 0, 0, 0.02);
+  border-right: 1px solid rgba(0, 0, 0, 0.1);
+  user-select: none;
+  font-size: 12px;
+}
+
+/* Prefixo +/- */
+.diff-line-prefix {
+  flex: 0 0 20px;
+  text-align: center;
+  font-weight: bold;
+  user-select: none;
+}
+
+/* Conteúdo da linha */
+.diff-line-content {
+  flex: 1;
+  padding: 0 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Linha removida (vermelho) */
+.diff-line-removed {
+  background-color: rgba(255, 59, 48, 0.15);
+}
+
+.diff-line-removed .diff-line-num {
+  background-color: rgba(255, 59, 48, 0.2);
+  color: rgba(139, 0, 0, 0.8);
+}
+
+.diff-line-removed .diff-line-prefix {
+  color: #d73a49;
+}
+
+.diff-line-removed .diff-line-content {
+  color: #24292e;
+}
+
+/* Linha que foi removida do outro painel (aparece tachada) */
+.diff-line-removed-from-here {
+  background-color: rgba(255, 59, 48, 0.08);
+}
+
+.diff-line-removed-from-here .diff-line-num {
+  background-color: rgba(255, 59, 48, 0.1);
+  color: rgba(139, 0, 0, 0.5);
+  font-size: 10px;
+}
+
+.diff-line-removed-from-here .diff-line-prefix {
+  color: #d73a49;
+  opacity: 0.6;
+}
+
+.diff-line-removed-from-here .diff-line-content {
+  color: #999;
+  text-decoration: line-through;
+  font-style: italic;
+}
+
+/* Linha adicionada (verde) */
+.diff-line-added {
+  background-color: rgba(52, 199, 89, 0.15);
+}
+
+.diff-line-added .diff-line-num {
+  background-color: rgba(52, 199, 89, 0.2);
+  color: rgba(0, 100, 0, 0.8);
+}
+
+.diff-line-added .diff-line-prefix {
+  color: #22863a;
+}
+
+.diff-line-added .diff-line-content {
+  color: #24292e;
+}
+
+/* Linha que foi adicionada no outro painel (aparece em itálico) */
+.diff-line-added-to-other {
+  background-color: rgba(52, 199, 89, 0.08);
+}
+
+.diff-line-added-to-other .diff-line-num {
+  background-color: rgba(52, 199, 89, 0.1);
+  color: rgba(0, 100, 0, 0.5);
+  font-size: 10px;
+}
+
+.diff-line-added-to-other .diff-line-prefix {
+  color: #22863a;
+  opacity: 0.6;
+}
+
+.diff-line-added-to-other .diff-line-content {
+  color: #999;
+  font-style: italic;
+}
+
+/* Linha igual (sem alteração) */
+.diff-line-unchanged {
+  background-color: transparent;
+}
+
+.diff-line-unchanged .diff-line-content {
+  color: #586069;
+}
+
+/* Placeholder para alinhamento */
+.diff-line-placeholder {
+  background-color: rgba(0, 0, 0, 0.03);
+  min-height: 24px;
+}
+
+.diff-line-placeholder .diff-line-num,
+.diff-line-placeholder .diff-line-prefix,
+.diff-line-placeholder .diff-line-content {
+  background-color: transparent;
+}
+
+/* Dark mode */
+[data-theme="dark"] .diff-line-removed,
+body.dark-mode .diff-line-removed {
+  background-color: rgba(248, 81, 73, 0.2);
+}
+
+[data-theme="dark"] .diff-line-removed .diff-line-num,
+body.dark-mode .diff-line-removed .diff-line-num {
+  background-color: rgba(248, 81, 73, 0.3);
+  color: #f85149;
+}
+
+[data-theme="dark"] .diff-line-removed .diff-line-prefix,
+body.dark-mode .diff-line-removed .diff-line-prefix {
+  color: #f85149;
+}
+
+[data-theme="dark"] .diff-line-removed .diff-line-content,
+body.dark-mode .diff-line-removed .diff-line-content {
+  color: #ffa198;
+}
+
+[data-theme="dark"] .diff-line-added,
+body.dark-mode .diff-line-added {
+  background-color: rgba(63, 185, 80, 0.2);
+}
+
+[data-theme="dark"] .diff-line-added .diff-line-num,
+body.dark-mode .diff-line-added .diff-line-num {
+  background-color: rgba(63, 185, 80, 0.3);
+  color: #3fb950;
+}
+
+[data-theme="dark"] .diff-line-added .diff-line-prefix,
+body.dark-mode .diff-line-added .diff-line-prefix {
+  color: #3fb950;
+}
+
+[data-theme="dark"] .diff-line-added .diff-line-content,
+body.dark-mode .diff-line-added .diff-line-content {
+  color: #7ee787;
+}
+
+[data-theme="dark"] .diff-line-unchanged .diff-line-content,
+body.dark-mode .diff-line-unchanged .diff-line-content {
+  color: #8b949e;
+}
+
+/* Dark mode para linhas espelhadas */
+[data-theme="dark"] .diff-line-removed-from-here,
+body.dark-mode .diff-line-removed-from-here {
+  background-color: rgba(248, 81, 73, 0.08);
+}
+
+[data-theme="dark"] .diff-line-removed-from-here .diff-line-content,
+body.dark-mode .diff-line-removed-from-here .diff-line-content {
+  color: #666;
+  text-decoration: line-through;
+}
+
+[data-theme="dark"] .diff-line-added-to-other,
+body.dark-mode .diff-line-added-to-other {
+  background-color: rgba(63, 185, 80, 0.08);
+}
+
+[data-theme="dark"] .diff-line-added-to-other .diff-line-content,
+body.dark-mode .diff-line-added-to-other .diff-line-content {
+  color: #666;
+}
+
+[data-theme="dark"] .diff-line-num,
+body.dark-mode .diff-line-num {
+  color: rgba(255, 255, 255, 0.4);
+  background-color: rgba(255, 255, 255, 0.02);
+  border-right-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .diff-line,
+body.dark-mode .diff-line {
+  border-bottom-color: rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="dark"] .diff-line-placeholder,
+body.dark-mode .diff-line-placeholder {
+  background-color: rgba(255, 255, 255, 0.03);
 }
 
 .diff-removed-highlight {
@@ -724,6 +957,70 @@ mark {
 .diff-added-highlight {
   background-color: rgba(52, 199, 89, 0.2);
   font-weight: 600;
+}
+
+/* Legenda do diff */
+.diff-legend-removed {
+  color: #d73a49;
+  font-weight: 600;
+}
+
+.diff-legend-added {
+  color: #22863a;
+  font-weight: 600;
+}
+
+/* ============================================
+   DIFF INLINE - Estilos para comparação inline
+   ============================================ */
+
+/* Texto ADICIONADO no v2 (verde) */
+.diff-inline-added {
+  background-color: rgba(52, 199, 89, 0.25);
+  color: #155724;
+  padding: 1px 3px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+/* Texto REMOVIDO do v1 (vermelho tachado) */
+.diff-inline-removed {
+  background-color: rgba(255, 59, 48, 0.2);
+  color: #721c24;
+  text-decoration: line-through;
+  padding: 1px 3px;
+  border-radius: 3px;
+  opacity: 0.8;
+}
+
+/* Container do texto limpo (painel esquerdo) */
+.diff-text-clean {
+  color: #333;
+}
+
+/* Container do texto com marcações (painel direito) */
+.diff-text-marked {
+  color: #333;
+}
+
+/* Dark mode */
+[data-theme="dark"] .diff-inline-added,
+body.dark-mode .diff-inline-added {
+  background-color: rgba(63, 185, 80, 0.3);
+  color: #7ee787;
+}
+
+[data-theme="dark"] .diff-inline-removed,
+body.dark-mode .diff-inline-removed {
+  background-color: rgba(248, 81, 73, 0.25);
+  color: #ffa198;
+}
+
+[data-theme="dark"] .diff-text-clean,
+body.dark-mode .diff-text-clean,
+[data-theme="dark"] .diff-text-marked,
+body.dark-mode .diff-text-marked {
+  color: #e0e0e0;
 }
 
 /* Highlights dentro de elementos mark */
@@ -1106,34 +1403,34 @@ mark.diff-added-highlight {
     padding: 8px 12px !important;
     font-size: 12px !important;
   }
-  
+
   #pref-content {
     padding: 12px 0 16px 0 !important;
   }
-  
+
   #pref-content .row {
     padding: 4px 0 !important;
   }
-  
+
   #pref-content label {
     font-size: 12px !important;
   }
-  
+
   #pref-content .form-control,
   #pref-content .form-select {
     padding: 6px 10px !important;
     font-size: 12px !important;
   }
-  
+
   #pref-actions {
     padding: 10px 20px !important;
   }
-  
+
   #pref-actions .btn {
     padding: 8px 16px !important;
     font-size: 12px !important;
   }
-  
+
   .standby-preview-box {
     height: 120px !important;
   }
@@ -1144,7 +1441,7 @@ mark.diff-added-highlight {
     padding: 8px 10px !important;
     font-size: 11px !important;
   }
-  
+
   #pref-content .container-fluid {
     padding-left: 10px !important;
     padding-right: 10px !important;
@@ -2758,28 +3055,29 @@ body.dark-mode .form-select:focus {
    Telas muito pequenas / Notebooks compactos (altura < 700px)
    -------------------------------------------------------------------------- */
 @media screen and (max-height: 700px) {
+
   /* Home - Quick Tips mais compacto */
   .quick-tips-box {
     margin-top: 1rem !important;
     padding: 1rem !important;
   }
-  
+
   .quick-tips-box ul li {
     margin-bottom: 0.3rem !important;
     font-size: 0.85rem !important;
   }
-  
+
   /* Welcome cards mais compactos */
   .welcome-card {
     padding: 16px !important;
   }
-  
+
   /* Home content com scroll */
   .home-content {
     padding: 20px !important;
     overflow-y: auto !important;
   }
-  
+
   /* Log Activity mais compacto */
   .log-body.open {
     height: 120px !important;
@@ -2793,11 +3091,11 @@ body.dark-mode .form-select:focus {
   .quick-tips-box {
     margin-top: 1.5rem !important;
   }
-  
+
   .welcome-card {
     padding: 18px !important;
   }
-  
+
   .log-body.open {
     height: 150px !important;
   }

@@ -37,7 +37,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // CLIPBOARD HISTORY: Rastreia textos copiados
   // ============================================================
   // Envia para o main process cada texto copiado para mostrar no menu de contexto
-  
+
   document.addEventListener('copy', () => {
     setTimeout(() => {
       const selection = window.getSelection();
@@ -620,8 +620,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (progressBar && prefs.backgroundColor) {
         progressBar.style.backgroundColor = prefs.backgroundColor;
       }
-      if (progressThumb && prefs.defaultFontColor) {
-        progressThumb.style.backgroundColor = prefs.defaultFontColor;
+      if (progressThumb) {
+        // Usa a cor personalizada se definida, senão usa a cor do texto
+        progressThumb.style.backgroundColor = prefs.progressThumbColor || prefs.defaultFontColor || '#FFFFFF';
       }
 
       // ✅ USA A MEMÓRIA GLOBAL (currentFontSizePT)
@@ -663,21 +664,26 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (cueMarker) {
-      cueMarker.style.display = 'flex';
-      cueMarker.style.alignItems = 'center';
-      cueMarker.style.color = prefs.cueColor || '#00FF00';
-      const type = prefs.cueType || 'arrow';
-      if (type === 'bar') {
-        cueMarker.innerHTML = '<div style="width: 100vw; height: 4px; background: currentColor; opacity: 0.8;"></div>';
-        cueMarker.style.width = '100%';
-      } else {
-        cueMarker.innerHTML = '<i class="bi bi-caret-right-fill"></i>';
-        cueMarker.style.fontSize = '3rem';
-        cueMarker.style.left = '-2px';
+      // Verifica se deve mostrar o cue marker (padrão: true)
+      const shouldShowCue = prefs.showCueMarker !== false;
+      cueMarker.style.display = shouldShowCue ? 'flex' : 'none';
+      
+      if (shouldShowCue) {
+        cueMarker.style.alignItems = 'center';
+        cueMarker.style.color = prefs.cueColor || '#00FF00';
+        const type = prefs.cueType || 'arrow';
+        if (type === 'bar') {
+          cueMarker.innerHTML = '<div style="width: 100vw; height: 4px; background: currentColor; opacity: 0.8;"></div>';
+          cueMarker.style.width = '100%';
+        } else {
+          cueMarker.innerHTML = '<i class="bi bi-caret-right-fill"></i>';
+          cueMarker.style.fontSize = '3rem';
+          cueMarker.style.left = '-2px';
+        }
+        cueMarker.style.position = 'absolute';
+        cueMarker.style.zIndex = '2000';
+        if (!cueMarker.style.top) cueMarker.style.top = '50%';
       }
-      cueMarker.style.position = 'absolute';
-      cueMarker.style.zIndex = '2000';
-      if (!cueMarker.style.top) cueMarker.style.top = '50%';
     }
 
     // ✅ SINCRONIZA ESTILOS COM ROTEIRISTAS REMOTOS
@@ -1070,7 +1076,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // === 2. ENVIA POSIÇÃO DE SCROLL PARA A TV (Sincronização Direta) ===
       // Calcula porcentagem da altura do texto que já passou
       const textHeight = textEl ? textEl.offsetHeight : 0;
-      
+
       // Porcentagem do texto que já passou pelo topo (0 a 1)
       const textPercentage = textHeight > 0 ? Math.min(1, Math.max(0, this.decimalScroll / textHeight)) : 0;
 
@@ -1594,9 +1600,9 @@ document.addEventListener("DOMContentLoaded", () => {
           const container = document.querySelector(".prompter-in-control");
           const textEl = document.getElementById("prompterText-control");
           if (!container || !textEl) return;
-          
+
           const lineHeight = parseInt(getComputedStyle(textEl).lineHeight) || 30;
-          
+
           if (ScrollEngine.isRunning) {
             // Se está rodando, ajusta o decimalScroll e atualiza o transform
             ScrollEngine.decimalScroll = Math.max(0, ScrollEngine.decimalScroll - lineHeight);
@@ -1612,10 +1618,10 @@ document.addEventListener("DOMContentLoaded", () => {
           const container = document.querySelector(".prompter-in-control");
           const textEl = document.getElementById("prompterText-control");
           if (!container || !textEl) return;
-          
+
           const lineHeight = parseInt(getComputedStyle(textEl).lineHeight) || 30;
           const maxScroll = textEl.offsetHeight - container.clientHeight;
-          
+
           if (ScrollEngine.isRunning) {
             // Se está rodando, ajusta o decimalScroll e atualiza o transform
             ScrollEngine.decimalScroll = Math.min(maxScroll, ScrollEngine.decimalScroll + lineHeight);
@@ -3073,7 +3079,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // SEÇÃO 32.1: CLIQUE NO PROMPTER PARA PLAY/PAUSE
   // ============================================================
   // Permite clicar na área do prompter para alternar play/pause
-  
+
   // Usa prompterContainer já declarado no início do arquivo
   if (prompterContainer) {
     prompterContainer.addEventListener("click", (e) => {
@@ -3081,7 +3087,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (e.target.closest("button") || e.target.closest("input") || e.target.closest("a")) {
         return;
       }
-      
+
       // Toggle play/pause
       if (ScrollEngine.isRunning) {
         ScrollEngine.pause();
@@ -3166,7 +3172,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (prompterContainer) {
         const bgColor = operatorState.isInverted ? "#FFFFFF" : "#000000";
         prompterContainer.style.backgroundColor = bgColor;
-        
+
         // Atualiza também o wrapper pai
         const prompterWrapper = document.getElementById("operator-prompter-wrapper");
         if (prompterWrapper) {
@@ -3996,8 +4002,11 @@ document.addEventListener("DOMContentLoaded", () => {
       barThumb.style.position = 'absolute';
       barThumb.style.width = '100%';
       barThumb.style.height = '30px'; // Um pouco maior para visibilidade
-      // Cor adapta ao estado de inversão
-      barThumb.style.backgroundColor = isInverted ? '#000000' : '#FFFFFF';
+      // Cor adapta: usa progressThumbColor se definido, senão usa inversão
+      const thumbColor = globalPrefs && globalPrefs.progressThumbColor 
+        ? globalPrefs.progressThumbColor 
+        : (isInverted ? '#000000' : '#FFFFFF');
+      barThumb.style.backgroundColor = thumbColor;
       barThumb.style.top = '0px';
       barThumb.style.boxShadow = '2px 2px 5px rgba(0,0,0,0.5)';
 
@@ -4138,7 +4147,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnLeftLabel = document.getElementById("btn-left-label");
   const btnRightLabel = document.getElementById("btn-right-label");
   const btnApplyLabel = document.getElementById("btn-apply-label");
-  
+
   // DEBUG: Verifica se elementos foram encontrados
   console.log('[Timeline] Elementos carregados:', {
     diffLeftPanel: !!diffLeftPanel,
@@ -4207,37 +4216,84 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // --- DOCUMENTOS IMPORTADOS PARA COMPARAÇÃO ---
+  let importedDiffDocuments = [];
+
+  // --- BOTÃO IMPORTAR DOCUMENTO ---
+  const btnImportDiffDoc = document.getElementById('btn-import-diff-doc');
+  if (btnImportDiffDoc) {
+    btnImportDiffDoc.addEventListener('click', async () => {
+      try {
+        // Chama o IPC para abrir diálogo e ler o arquivo
+        const result = await ipcRenderer.invoke('import-diff-document');
+        
+        if (result.canceled) return;
+        
+        if (!result.success) {
+          alert('Erro ao importar documento: ' + (result.error || 'Erro desconhecido'));
+          return;
+        }
+        
+        // Adiciona o documento à lista de importados
+        const importedDoc = {
+          id: `imported-${Date.now()}`,
+          displayName: result.fileName,
+          subInfo: 'Documento Importado',
+          content: result.content,
+          textContent: result.textContent,
+          type: 'imported',
+          timestamp: Date.now() - 50,
+          filePath: result.filePath
+        };
+        
+        importedDiffDocuments.push(importedDoc);
+        
+        // Re-renderiza a lista com o novo documento
+        const doc = getActiveDocument();
+        if (doc) {
+          renderTimelineList(doc);
+        }
+        
+        console.log('[Timeline] Documento importado:', result.fileName);
+        
+      } catch (err) {
+        console.error('Erro ao importar documento:', err);
+        alert('Erro ao importar documento: ' + err.message);
+      }
+    });
+  }
+
   // --- FUNÇÃO PARA DESTACAR TEXTO EM ELEMENTO HTML ---
   // Encontra e marca texto com uma classe CSS, preservando estrutura HTML
   function highlightTextInElement(element, textToFind, className) {
     if (!textToFind || textToFind.trim().length < 2) return;
-    
+
     const walker = document.createTreeWalker(
       element,
       NodeFilter.SHOW_TEXT,
       null,
       false
     );
-    
+
     const textNodes = [];
     let node;
     while (node = walker.nextNode()) {
       textNodes.push(node);
     }
-    
+
     // Escapa caracteres especiais para regex
     const escaped = textToFind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`(${escaped})`, 'gi');
-    
+
     textNodes.forEach(textNode => {
       const text = textNode.textContent;
       if (regex.test(text)) {
         // Reset regex lastIndex
         regex.lastIndex = 0;
-        
+
         const span = document.createElement('span');
         span.innerHTML = text.replace(regex, `<mark class="${className}">$1</mark>`);
-        
+
         // Substitui o nó de texto pelo span com highlights
         if (textNode.parentNode) {
           textNode.parentNode.replaceChild(span, textNode);
@@ -4309,8 +4365,14 @@ document.addEventListener("DOMContentLoaded", () => {
         timestamp: h.id, // Assumindo que o ID do histórico é Date.now()
       }));
 
+    // 4. Documentos Importados (PDF, DOC, DOCX)
+    const imported = importedDiffDocuments.map(doc => ({
+      ...doc,
+      subInfo: `📄 ${doc.subInfo}`
+    }));
+
     // Junta tudo
-    const allItems = [currentItem, ...otherTabs, ...history];
+    const allItems = [currentItem, ...otherTabs, ...imported, ...history];
 
     allItems.forEach((item) => {
       const row = document.createElement("div");
@@ -4331,6 +4393,9 @@ document.addEventListener("DOMContentLoaded", () => {
       else if (item.type === "tab")
         badgeHtml =
           '<span class="badge bg-info text-dark rounded-pill ms-auto">Aba</span>';
+      else if (item.type === "imported")
+        badgeHtml =
+          '<span class="badge bg-warning text-dark rounded-pill ms-auto">Importado</span>';
       else
         badgeHtml =
           '<span class="badge bg-secondary rounded-pill ms-auto">Hist</span>';
@@ -4416,24 +4481,19 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Caso 2: Dois itens selecionados -> COMPARAÇÃO
-    // Lógica: O documento ATUAL (current) é o ORIGINAL (esquerda)
-    // Documentos externos (tabs/history) são o NEW (direita) com mudanças
-    
     // Ordena para que o "current" fique sempre na esquerda como ORIGINAL
     items.sort((a, b) => {
-      // current sempre primeiro (esquerda/original)
       if (a.type === "current") return -1;
       if (b.type === "current") return 1;
-      // Entre outros tipos, ordena por timestamp (mais antigo primeiro)
       return a.timestamp - b.timestamp;
     });
 
-    const oldVer = items[0]; // ORIGINAL - documento atual/formatado
-    const newVer = items[1]; // NEW - documento externo com mudanças
+    const oldVer = items[0]; // REFERÊNCIA - documento da esquerda
+    const newVer = items[1]; // COMPARADO - documento da direita
 
     // Atualiza Títulos
-    diffTitleLeft.innerText = oldVer.displayName;
-    diffTitleRight.innerText = newVer.displayName;
+    diffTitleLeft.innerText = oldVer.displayName + " (Referência)";
+    diffTitleRight.innerText = newVer.displayName + " (Diferenças)";
     diffStatusText.innerText = `Comparando: ${oldVer.displayName} -> ${newVer.displayName}`;
 
     // Roda a biblioteca Diff usando textContent (texto puro para comparação)
@@ -4444,56 +4504,67 @@ document.addEventListener("DOMContentLoaded", () => {
     // Limpa Painéis
     diffLeftPanel.innerHTML = "";
     diffRightPanel.innerHTML = "";
-    
-    // ========================================
-    // MODO DIFF TEXTO - Mostra diferenças lado a lado
-    // ========================================
-    // Vermelho = texto que NÃO existe no outro documento
-    // Verde = texto NOVO/adicionado
-    
-    diff.forEach((part) => {
-      // Se for REMOVIDO: Aparece na Esquerda (Vermelho)
-      if (part.removed) {
-        const span = document.createElement("span");
-        span.className = "diff-removed-highlight";
-        span.innerText = part.value;
-        diffLeftPanel.appendChild(span);
-      }
-      // Se for ADICIONADO: Aparece na Direita (Verde)
-      else if (part.added) {
-        const span = document.createElement("span");
-        span.className = "diff-added-highlight";
-        span.innerText = part.value;
-        diffRightPanel.appendChild(span);
-      }
-      // Se for IGUAL: Aparece nos DOIS (Sem cor)
-      else {
-        const spanLeft = document.createElement("span");
-        spanLeft.innerText = part.value;
-        diffLeftPanel.appendChild(spanLeft);
 
-        const spanRight = document.createElement("span");
-        spanRight.innerText = part.value;
-        diffRightPanel.appendChild(spanRight);
+    // Estatísticas
+    let addedCount = 0;
+    let removedCount = 0;
+
+    // ========================================
+    // PAINEL ESQUERDO: TEXTO REFERÊNCIA LIMPO
+    // Mostra APENAS o texto original, sem NENHUMA marcação
+    // ========================================
+    const leftContainer = document.createElement('div');
+    leftContainer.style.cssText = 'white-space: pre-wrap; padding: 12px; line-height: 1.6;';
+    leftContainer.textContent = oldText;  // Texto puro, sem marcações
+    diffLeftPanel.appendChild(leftContainer);
+
+    // ========================================
+    // PAINEL DIREITO: TEXTO COM DIFERENÇAS INLINE
+    // - VERMELHO TACHADO = texto que foi REMOVIDO (estava em v1, não está em v2)
+    // - VERDE = texto que foi ADICIONADO (não estava em v1, está em v2)
+    // ========================================
+    const rightContainer = document.createElement('div');
+    rightContainer.style.cssText = 'white-space: pre-wrap; padding: 12px; line-height: 1.6;';
+
+    diff.forEach((part) => {
+      const span = document.createElement("span");
+      
+      if (part.removed) {
+        // Texto que existia em v1 mas NÃO existe em v2 = REMOVIDO
+        span.className = "diff-inline-removed";
+        span.innerText = part.value;
+        removedCount++;
+      } else if (part.added) {
+        // Texto que NÃO existia em v1 mas existe em v2 = ADICIONADO
+        span.className = "diff-inline-added";
+        span.innerText = part.value;
+        addedCount++;
+      } else {
+        // Texto igual em ambos
+        span.innerText = part.value;
       }
+      
+      rightContainer.appendChild(span);
     });
+
+    diffRightPanel.appendChild(rightContainer);
 
     // ========================================
     // BOTÕES DE AÇÃO - COM NOMES DINÂMICOS
     // ========================================
-    
+
     // Trunca nome para caber no botão
-    const truncateName = (name, max = 15) => 
+    const truncateName = (name, max = 15) =>
       name.length > max ? name.substring(0, max) + "..." : name;
 
     // Detecta qual documento é o "atual" (onde o usuário está editando)
     const currentDoc = getActiveDocument();
     const currentDocName = currentDoc?.name || currentDoc?.filename || "Current";
-    
+
     // Identifica qual versão é a do documento ATUAL (formatado) vs documento EXTERNO (Word)
     const isOldVerCurrent = oldVer.type === "current";
     const isNewVerCurrent = newVer.type === "current";
-    
+
     // Labels descritivos
     const oldLabel = truncateName(oldVer.displayName);
     const newLabel = truncateName(newVer.displayName);
@@ -4503,34 +4574,34 @@ document.addEventListener("DOMContentLoaded", () => {
     // ========================================
     // Transfere apenas as mudanças de TEXTO para o documento atual, preservando formatação
     console.log('[Timeline] btnApplyChanges encontrado:', !!btnApplyChanges);
-    
+
     if (btnApplyChanges) {
       btnApplyChanges.classList.remove("d-none");
       console.log('[Timeline] Botão Apply Changes tornou visível');
-      
+
       // Label dinâmico explicando a ação
       if (btnApplyLabel) {
         btnApplyLabel.innerText = "Apply Text Changes";
       }
-      
+
       btnApplyChanges.onclick = () => {
         try {
           console.log('[Timeline] Botão Apply Changes clicado!');
-          
+
           const editor = getActiveTextEditorArea();
           if (!editor) {
             alert("Nenhum editor ativo encontrado.");
             return;
           }
-          
+
           // ========================================
           // DETECTA QUAL É O DOCUMENTO COM FORMATAÇÃO
           // ========================================
           // O documento ATUAL (type="current") tem a formatação que queremos manter
           // O outro documento (type="tab") tem as mudanças de texto que queremos aplicar
-          
+
           let formattedDoc, sourceDoc;
-          
+
           if (isNewVerCurrent) {
             // 3 v2.ptq (direita/current) tem formatação, MC.docx (esquerda/tab) tem mudanças
             formattedDoc = newVer;
@@ -4549,61 +4620,61 @@ document.addEventListener("DOMContentLoaded", () => {
             formattedDoc = choice ? newVer : oldVer;
             sourceDoc = choice ? oldVer : newVer;
           }
-          
+
           console.log('[Timeline] Documento formatado:', formattedDoc.displayName);
           console.log('[Timeline] Documento fonte:', sourceDoc.displayName);
-          
+
           // Textos para comparação
           const formattedText = formattedDoc.textContent || formattedDoc.content;
           const sourceText = sourceDoc.textContent || sourceDoc.content;
-          
+
           // Calcula o diff
           const changes = Diff.diffWords(formattedText, sourceText);
-          
+
           // Separa adições e remoções
           const additions = changes.filter(p => p.added);
           const removals = changes.filter(p => p.removed);
-          
+
           if (additions.length === 0 && removals.length === 0) {
             alert("Os textos são idênticos. Nenhuma mudança a aplicar.");
             return;
           }
-          
+
           // Mostra preview
           let preview = `Aplicar mudanças de "${sourceDoc.displayName}" para "${formattedDoc.displayName}"?\n\n`;
-          
+
           if (additions.length > 0) {
             preview += `ADICIONAR (${additions.length} trechos):\n`;
             additions.slice(0, 3).forEach(p => {
               preview += `  ✅ "${p.value.substring(0, 40)}${p.value.length > 40 ? '...' : ''}"\n`;
             });
           }
-          
+
           if (removals.length > 0) {
             preview += `\nREMOVER (${removals.length} trechos):\n`;
             removals.slice(0, 3).forEach(p => {
               preview += `  ❌ "${p.value.substring(0, 40)}${p.value.length > 40 ? '...' : ''}"\n`;
             });
           }
-          
+
           preview += `\nSua formatação ([MC], cores) será PRESERVADA.`;
-          
+
           if (!confirm(preview)) return;
-          
+
           // ========================================
           // MERGE INTELIGENTE - NOVA ABORDAGEM
           // ========================================
           // Estratégia: reconstrói o texto final baseado no diff,
           // depois tenta aplicar a formatação do documento original
-          
+
           let mergedHtml = formattedDoc.content;
-          
+
           // 1. PROCESSA ADIÇÕES
           // Para cada adição, encontra onde inserir baseado no contexto
           changes.forEach((part, idx) => {
             if (part.added) {
               const textToAdd = part.value;
-              
+
               // Encontra o contexto ANTES (última parte não-adicionada/removida)
               let contextBefore = "";
               for (let i = idx - 1; i >= 0; i--) {
@@ -4612,7 +4683,7 @@ document.addEventListener("DOMContentLoaded", () => {
                   break;
                 }
               }
-              
+
               // Encontra o contexto DEPOIS (próxima parte não-adicionada/removida)
               let contextAfter = "";
               for (let i = idx + 1; i < changes.length; i++) {
@@ -4621,40 +4692,40 @@ document.addEventListener("DOMContentLoaded", () => {
                   break;
                 }
               }
-              
+
               console.log('[Merge] Adicionando:', textToAdd.substring(0, 50));
               console.log('[Merge] Contexto antes:', contextBefore.substring(Math.max(0, contextBefore.length - 30)));
               console.log('[Merge] Contexto depois:', contextAfter.substring(0, 30));
-              
+
               // Tenta encontrar o ponto de inserção
               if (contextBefore) {
                 // Pega os últimos N caracteres do contexto para localização mais precisa
                 const searchContext = contextBefore.slice(-30);
-                
+
                 // Encontra a posição no HTML (ignora tags)
                 // Cria regex que ignora tags HTML entre os caracteres
                 const flexibleSearch = searchContext
                   .split('')
                   .map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
                   .join('(?:<[^>]*>)*\\s*');
-                
+
                 try {
                   const regex = new RegExp(flexibleSearch, 'i');
                   const match = regex.exec(mergedHtml);
-                  
+
                   if (match) {
                     let insertPos = match.index + match[0].length;
-                    
+
                     // CORREÇÃO: Avança até sair de qualquer tag span aberta
                     // Procura a próxima tag de fechamento </span> ou </div> ou quebra de linha
                     const afterMatch = mergedHtml.slice(insertPos);
                     const closeTagMatch = afterMatch.match(/^[^<]*(<\/span>|<\/div>|<br\s*\/?>|<\/p>)/i);
-                    
+
                     if (closeTagMatch) {
                       // Insere DEPOIS da tag de fechamento para não herdar estilo
                       insertPos += closeTagMatch.index + closeTagMatch[0].length;
                     }
-                    
+
                     // Insere o texto - agora fora de tags de formatação
                     mergedHtml = mergedHtml.slice(0, insertPos) + textToAdd + mergedHtml.slice(insertPos);
                     console.log('[Merge] Texto inserido na posição:', insertPos);
@@ -4681,21 +4752,21 @@ document.addEventListener("DOMContentLoaded", () => {
               }
             }
           });
-          
+
           // 2. PROCESSA REMOÇÕES (remove texto do HTML)
           removals.forEach(part => {
             const textToRemove = part.value;
-            
+
             // Escapa caracteres especiais
             const escaped = textToRemove.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            
+
             // Remove preservando tags ao redor
             // Regex que captura o texto mesmo com tags no meio
             const flexibleRemove = escaped
               .split(/\s+/)
               .filter(w => w.length > 0)
               .join('(?:<[^>]*>)*\\s*(?:<[^>]*>)*');
-            
+
             try {
               const regex = new RegExp(flexibleRemove, 'gi');
               mergedHtml = mergedHtml.replace(regex, '');
@@ -4704,22 +4775,22 @@ document.addEventListener("DOMContentLoaded", () => {
               mergedHtml = mergedHtml.replace(textToRemove, '');
             }
           });
-          
+
           // 3. Limpa espaços extras
           mergedHtml = mergedHtml
             .replace(/(<[^>]*>)\s+(<)/g, '$1$2')
             .replace(/\s{2,}/g, ' ')
             .replace(/>\s+</g, '><')
             .trim();
-          
+
           // 4. Aplica ao editor
           editor.innerHTML = mergedHtml;
           editor.dispatchEvent(new Event('input', { bubbles: true }));
-          
+
           console.log('[Timeline] Merge aplicado com sucesso');
           alert('Mudanças aplicadas! Verifique o resultado.');
           timelineModal.hide();
-          
+
         } catch (error) {
           console.error('[Timeline] Erro no Apply Changes:', error);
           alert('Erro ao aplicar mudanças: ' + error.message);
@@ -4730,12 +4801,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // ========================================
     // BOTÕES "USE LEFT/RIGHT" - SUBSTITUIÇÃO COMPLETA
     // ========================================
-    
+
     // Botão Usar Versão Esquerda (versão antiga) - substitui TUDO
     if (btnRestoreLeft) {
       btnRestoreLeft.classList.remove("d-none");
       if (btnLeftLabel) btnLeftLabel.innerText = `Use: ${oldLabel}`;
-      
+
       btnRestoreLeft.onclick = () => {
         if (confirm(`Substituir TODO o conteúdo pelo documento "${oldVer.displayName}"?\n\n⚠️ Isso substituirá completamente o texto E a formatação.`)) {
           const editor = getActiveTextEditorArea();
@@ -4752,7 +4823,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnRestoreRight) {
       btnRestoreRight.classList.remove("d-none");
       if (btnRightLabel) btnRightLabel.innerText = `Use: ${newLabel}`;
-      
+
       btnRestoreRight.onclick = () => {
         if (confirm(`Substituir TODO o conteúdo pelo documento "${newVer.displayName}"?\n\n⚠️ Isso substituirá completamente o texto E a formatação.`)) {
           const editor = getActiveTextEditorArea();
@@ -4774,21 +4845,21 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnOpenRemoteModal = document.getElementById("btn-open-remote-modal");
   const statusIndicator = document.getElementById("status-indicator");
   const statusAlert = document.getElementById("server-status-alert");
-  
+
   // Novos elementos - Modo Local
   const btnToggleLocal = document.getElementById("btn-toggle-local");
   const localStatusBadge = document.getElementById("local-status-badge");
   const localConnectionPanel = document.getElementById("local-connection-panel");
   const localUrlDisplay = document.getElementById("local-url-display");
   const btnCopyLocal = document.getElementById("btn-copy-local");
-  
+
   // Novos elementos - Modo Internet
   const btnToggleInternet = document.getElementById("btn-toggle-internet");
   const internetStatusBadge = document.getElementById("internet-status-badge");
   const internetConnectionPanel = document.getElementById("internet-connection-panel");
   const internetUrlDisplay = document.getElementById("internet-url-display");
   const btnCopyInternet = document.getElementById("btn-copy-internet");
-  
+
   // Estado dos servidores
   let isLocalServerActive = false;
   let isInternetServerActive = false;
@@ -4834,7 +4905,7 @@ document.addEventListener("DOMContentLoaded", () => {
         sidebarIcon.classList.add('broadcast-offline');
       }
     }
-    
+
     // Atualiza status alert geral
     if (statusAlert && statusIndicator) {
       if (isLocalServerActive || isInternetServerActive) {
@@ -4880,7 +4951,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (localUrlDisplay) localUrlDisplay.value = "";
     }
   }
-  
+
   function updateInternetUI(active, url = "") {
     if (active) {
       if (internetStatusBadge) {
@@ -4913,7 +4984,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnToggleLocal) {
     btnToggleLocal.addEventListener('click', async () => {
       btnToggleLocal.disabled = true;
-      
+
       if (isLocalServerActive) {
         // Desligar servidor local
         try {
@@ -4934,7 +5005,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Ligar servidor local
         try {
           const result = await ipcRenderer.invoke('toggle-server', 'local');
-          
+
           if (result && result.active) {
             isLocalServerActive = true;
             const textoParaMostrar = `${result.url} | ID: ${result.pin}`;
@@ -4965,22 +5036,22 @@ document.addEventListener("DOMContentLoaded", () => {
           `;
           document.body.appendChild(alertDiv);
           setTimeout(() => alertDiv.remove(), 5000);
-          
+
           isLocalServerActive = false;
           updateLocalUI(false);
           updateSidebarIcon();
         }
       }
-      
+
       btnToggleLocal.disabled = false;
     });
   }
-  
+
   // === BOTÃO TOGGLE INTERNET (WEBRTC) ===
   if (btnToggleInternet) {
     btnToggleInternet.addEventListener('click', async () => {
       btnToggleInternet.disabled = true;
-      
+
       if (isInternetServerActive) {
         // Desligar servidor internet
         addLogEntry({
@@ -4989,12 +5060,12 @@ document.addEventListener("DOMContentLoaded", () => {
           source: 'Internet',
           user: 'You'
         });
-        
+
         ipcRenderer.send('user-disconnected-remote', {
           name: 'You',
           source: 'Internet'
         });
-        
+
         stopWebRTCConnection();
         isInternetServerActive = false;
         updateInternetUI(false);
@@ -5011,11 +5082,11 @@ document.addEventListener("DOMContentLoaded", () => {
           updateSidebarIcon();
         }
       }
-      
+
       btnToggleInternet.disabled = false;
     });
   }
-  
+
   // === BOTÕES DE COPIAR ===
   if (btnCopyLocal) {
     btnCopyLocal.addEventListener("click", () => {
@@ -5031,7 +5102,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
-  
+
   if (btnCopyInternet) {
     btnCopyInternet.addEventListener("click", () => {
       if (internetUrlDisplay) {
@@ -5239,7 +5310,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (typeof syncContentToPrompter === "function") {
         syncContentToPrompter();
       }
-      
+
       // 🔗 PROPAGAÇÃO: Se Internet estiver ativo, envia para os peers WebRTC também
       if (isInternetServerActive && typeof broadcastTextUpdate === "function") {
         broadcastTextUpdate(newText);
@@ -5563,7 +5634,7 @@ document.addEventListener("DOMContentLoaded", () => {
     isInternetServerActive = true;
     updateInternetUI(true, `roteiro.promptiq.com.br | ID: ${myRoomId}`);
     updateSidebarIcon();
-    
+
     addLogEntry({
       msg: 'Internet server started',
       type: 'login',
@@ -5740,7 +5811,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
           // Propaga para outros peers WebRTC
           broadcastTextUpdate(data.content, userId);
-          
+
           // 🔗 PROPAGAÇÃO: Se Local estiver ativo, envia para Wi-Fi também
           if (isLocalServerActive) {
             ipcRenderer.send('send-text-to-remote', data.content);

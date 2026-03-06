@@ -34,7 +34,7 @@ autoUpdater.autoInstallOnAppQuit = true;
 function sanitizeUpdateError(errorMessage) {
   // Remove referências a GitHub, repositório, etc.
   const msg = (errorMessage || '').toLowerCase();
-  
+
   if (msg.includes('404') || msg.includes('not found') || msg.includes('cannot find')) {
     return 'Update server is temporarily unavailable. Please try again later.';
   }
@@ -50,7 +50,7 @@ function sanitizeUpdateError(errorMessage) {
   if (msg.includes('github') || msg.includes('repo') || msg.includes('repository')) {
     return 'Update service is currently unavailable. Please try again later.';
   }
-  
+
   // Mensagem genérica para outros erros
   return 'Unable to check for updates. Please try again later.';
 }
@@ -97,7 +97,9 @@ const defaultSettings = {
   useCustomStandbyImage: false, standbyImagePath: null,
   standbyTimeout: 5,  // Minutos de inatividade antes do modo Standby
   appTheme: 'light',
-  lastUpdateCheck: null  // Data da última verificação de updates
+  lastUpdateCheck: null,  // Data da última verificação de updates
+  progressThumbColor: '#FFFFFF',  // Cor do indicador de progresso
+  showCueMarker: true  // Mostrar seta na aba Operator
 };
 
 /**
@@ -264,7 +266,7 @@ function extractTextFromRtf(rtf) {
 function attachContextMenu(win) {
   win.webContents.on('context-menu', async (event, params) => {
     const menuTemplate = [];
-    
+
     // ========================================
     // SEÇÃO: FREQUENTES (Quick Paste)
     // ========================================
@@ -273,8 +275,8 @@ function attachContextMenu(win) {
       menuTemplate.push({ label: '📋 Frequentes', enabled: false });
       topItems.forEach(item => {
         // Trunca texto longo para exibição no menu
-        const displayText = item.text.length > 30 
-          ? item.text.substring(0, 27) + '...' 
+        const displayText = item.text.length > 30
+          ? item.text.substring(0, 27) + '...'
           : item.text;
         menuTemplate.push({
           label: `   ${displayText}`,
@@ -302,7 +304,7 @@ function attachContextMenu(win) {
       });
       menuTemplate.push({ type: 'separator' });
     }
-    
+
     // Opção "Ir para Operator" quando há texto selecionado
     if (params.selectionText && params.selectionText.trim().length > 0) {
       menuTemplate.push({
@@ -312,24 +314,24 @@ function attachContextMenu(win) {
       });
       menuTemplate.push({ type: 'separator' });
     }
-    
+
     if (params.misspelledWord) {
       if (params.dictionarySuggestions.length > 0) {
         // Detecta o case da palavra original
         const originalWord = params.misspelledWord;
-        
+
         // Conta quantas letras são maiúsculas vs minúsculas
         const letters = originalWord.replace(/[^a-zA-ZÀ-ÿ]/g, '');
         const upperCount = (letters.match(/[A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÈÌÒÙÄËÏÖÜÇ]/g) || []).length;
         const lowerCount = (letters.match(/[a-záéíóúâêîôûãõàèìòùäëïöüç]/g) || []).length;
-        
+
         // Se maioria é maiúscula (>70%), trata como MAIÚSCULA
         const isMostlyUpperCase = letters.length > 0 && (upperCount / letters.length) >= 0.7;
         const isAllUpperCase = originalWord === originalWord.toUpperCase();
-        const isTitleCase = !isMostlyUpperCase && 
-                            originalWord[0] === originalWord[0].toUpperCase() && 
-                            originalWord.slice(1) === originalWord.slice(1).toLowerCase();
-        
+        const isTitleCase = !isMostlyUpperCase &&
+          originalWord[0] === originalWord[0].toUpperCase() &&
+          originalWord.slice(1) === originalWord.slice(1).toLowerCase();
+
         params.dictionarySuggestions.forEach(suggestion => {
           // Aplica o mesmo case da palavra original à sugestão
           let casedSuggestion = suggestion;
@@ -338,10 +340,10 @@ function attachContextMenu(win) {
           } else if (isTitleCase) {
             casedSuggestion = suggestion.charAt(0).toUpperCase() + suggestion.slice(1).toLowerCase();
           }
-          
-          menuTemplate.push({ 
-            label: casedSuggestion, 
-            click: () => win.webContents.replaceMisspelling(casedSuggestion) 
+
+          menuTemplate.push({
+            label: casedSuggestion,
+            click: () => win.webContents.replaceMisspelling(casedSuggestion)
           });
         });
       } else { menuTemplate.push({ label: '(Sem sugestões)', enabled: false }); }
@@ -425,7 +427,7 @@ function initializeApp() {
     controlWindow.webContents.send('settings-updated-globally', currentSettings);
     controlWindow.webContents.send('apply-theme', currentSettings.appTheme || 'light');
     console.log(`🎨 Tema inicial enviado para controlWindow: ${currentSettings.appTheme || 'light'}`);
-    
+
     // Se há um arquivo .ptq para abrir (passado via linha de comando ou duplo clique)
     if (fileToOpen) {
       console.log(`📂 Enviando arquivo para abrir: ${fileToOpen}`);
@@ -509,23 +511,23 @@ if (!gotTheLock) {
   app.quit();
 } else {
   // Esta é a primeira instância
-  
+
   // Evento: Outra instância tentou abrir (com arquivo)
   app.on('second-instance', (event, argv, workingDirectory) => {
     console.log('[SingleInstance] Segunda instância detectada. Argv:', argv);
-    
+
     // Extrai arquivo dos argumentos
     const filePath = getFileFromArgv(argv);
-    
+
     if (filePath) {
       console.log('[SingleInstance] Arquivo para abrir:', filePath);
-      
+
       // Envia para a janela principal
       if (controlWindow) {
         // Restaura a janela se minimizada
         if (controlWindow.isMinimized()) controlWindow.restore();
         controlWindow.focus();
-        
+
         // Envia o arquivo para ser aberto
         controlWindow.webContents.send('open-file-from-system', filePath);
       }
@@ -554,7 +556,7 @@ if (!gotTheLock) {
   app.on('open-file', (event, filePath) => {
     event.preventDefault();
     console.log('[macOS] Arquivo aberto via Finder:', filePath);
-    
+
     if (filePath.toLowerCase().endsWith('.ptq')) {
       if (controlWindow) {
         // App já está rodando - envia para a janela
@@ -824,22 +826,22 @@ ipcMain.on('set-spell-check-language', (event, langCode) => {
 
 ipcMain.on('clipboard-item-copied', (event, text) => {
   if (!text || typeof text !== 'string') return;
-  
+
   // Limita texto a 200 caracteres para evitar itens muito grandes
   const trimmedText = text.trim().substring(0, 200);
   if (trimmedText.length < 2) return;  // Ignora textos muito curtos
-  
+
   // Incrementa contagem ou adiciona novo item
   const currentCount = clipboardHistory.get(trimmedText) || 0;
   clipboardHistory.set(trimmedText, currentCount + 1);
-  
+
   // Limita tamanho do histórico (remove itens menos usados)
   if (clipboardHistory.size > MAX_CLIPBOARD_ITEMS) {
     const sorted = [...clipboardHistory.entries()].sort((a, b) => a[1] - b[1]);
     const toRemove = sorted.slice(0, clipboardHistory.size - MAX_CLIPBOARD_ITEMS);
     toRemove.forEach(([key]) => clipboardHistory.delete(key));
   }
-  
+
   console.log(`[Clipboard] Item registrado: "${trimmedText.substring(0, 20)}..." (${clipboardHistory.get(trimmedText)}x)`);
 });
 
@@ -1207,11 +1209,11 @@ ipcMain.on('open-preferences-window', () => {
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
-  
+
   // Tamanho máximo desejado, com limite baseado na tela
   const preferredWidth = Math.min(830, Math.floor(screenWidth * 0.9));
   const preferredHeight = Math.min(800, Math.floor(screenHeight * 0.9));
-  
+
   const win = new BrowserWindow({
     width: preferredWidth,
     height: preferredHeight,
@@ -1257,7 +1259,7 @@ let currentAppTheme = 'light';
 ipcMain.on('set-app-theme', (event, theme) => {
   currentAppTheme = theme;
   currentSettings.appTheme = theme;
-  
+
   // Salva o tema no disco para persistir entre sessões
   try {
     fs.writeFileSync(configPath, JSON.stringify(currentSettings, null, 2));
@@ -1265,7 +1267,7 @@ ipcMain.on('set-app-theme', (event, theme) => {
   } catch (err) {
     console.error("❌ Erro ao salvar tema:", err);
   }
-  
+
   // Propaga para todas as janelas
   BrowserWindow.getAllWindows().forEach(win => {
     if (!win.isDestroyed()) {
@@ -1381,6 +1383,51 @@ ipcMain.on('read-file-with-history', (event, filePath) => {
   } catch (err) {
     // Se der erro (ex: tentou abrir um .txt normal como histórico), avisa
     event.sender.send('file-history-error', err.message);
+  }
+});
+
+// ============================================================
+// IMPORTAR DOCUMENTO PARA DIFF (PDF, DOC, DOCX, TXT)
+// ============================================================
+// Permite importar documentos externos para comparação no Version History
+
+ipcMain.handle('import-diff-document', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: 'Importar Documento para Comparação',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Documentos', extensions: ['pdf', 'docx', 'doc', 'txt', 'rtf'] },
+      { name: 'PDF', extensions: ['pdf'] },
+      { name: 'Word', extensions: ['docx', 'doc'] },
+      { name: 'Texto', extensions: ['txt', 'rtf'] },
+      { name: 'Todos os Arquivos', extensions: ['*'] }
+    ]
+  });
+  
+  if (canceled || !filePaths[0]) {
+    return { success: false, canceled: true };
+  }
+  
+  try {
+    const filePath = filePaths[0];
+    const fileName = path.basename(filePath);
+    const content = await readFileContent(filePath);
+    
+    // Extrai só o texto para comparação
+    const textContent = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    
+    return {
+      success: true,
+      fileName: fileName,
+      filePath: filePath,
+      content: content,
+      textContent: textContent
+    };
+  } catch (err) {
+    console.error('Erro ao importar documento para diff:', err);
+    return { success: false, error: err.message };
   }
 });
 
@@ -1610,7 +1657,7 @@ ipcMain.on('open-projection-window', () => {
 
 ipcMain.on('show-standby-projection', (event, standbyData) => {
   console.log('[Standby] Comando recebido:', standbyData.enabled ? 'ATIVAR' : 'DESATIVAR');
-  
+
   // Encontra e envia apenas para janelas de projeção (não a principal)
   BrowserWindow.getAllWindows().forEach(win => {
     if (!win.isDestroyed()) {

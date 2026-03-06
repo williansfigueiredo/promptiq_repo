@@ -308,18 +308,37 @@ const TimelineDiffModule = (function() {
      * -----------------
      * Gerencia a seleção de itens para comparação.
      * Limita a 2 itens selecionados simultaneamente.
+     * PRESERVA A ORDEM DE SELEÇÃO: primeiro = esquerda, segundo = direita
      * 
      * @param {array} allItems - Todos os itens disponíveis
      */
+    
+    // Guarda a ordem de seleção
+    let selectionOrder = [];
+    
     function handleSelection(allItems) {
         const checkedBoxes = Array.from(
             document.querySelectorAll("#timeline-list input:checked")
         );
 
+        // Obtém IDs atualmente marcados
+        const currentIds = checkedBoxes.map(cb => cb.value);
+        
+        // Atualiza a ordem de seleção
+        // Remove IDs que foram desmarcados
+        selectionOrder = selectionOrder.filter(id => currentIds.includes(id));
+        // Adiciona novos IDs no final
+        currentIds.forEach(id => {
+            if (!selectionOrder.includes(id)) {
+                selectionOrder.push(id);
+            }
+        });
+
         // Regra: máximo 2 itens. Se marcar 3º, desmarca o 1º
-        if (checkedBoxes.length > 2) {
-            const first = checkedBoxes.shift();
-            first.checked = false;
+        if (selectionOrder.length > 2) {
+            const removedId = selectionOrder.shift();
+            const checkboxToUncheck = document.querySelector(`#timeline-list input[value="${removedId}"]`);
+            if (checkboxToUncheck) checkboxToUncheck.checked = false;
         }
 
         // Atualiza classes CSS (azul quando selecionado)
@@ -329,14 +348,17 @@ const TimelineDiffModule = (function() {
             else el.classList.remove("active");
         });
 
-        // Obtém IDs selecionados
-        const finalChecked = document.querySelectorAll("#timeline-list input:checked");
-        const selectedIds = Array.from(finalChecked).map((cb) => cb.value);
-
-        // Filtra dados originais
-        const selectedData = allItems.filter((i) => selectedIds.includes(i.id));
+        // Filtra dados originais NA ORDEM DE SELEÇÃO
+        const selectedData = selectionOrder
+            .map(id => allItems.find(item => item.id === id))
+            .filter(Boolean);
 
         updateSplitView(selectedData);
+    }
+    
+    // Reseta a ordem de seleção quando o modal abre
+    function resetSelectionOrder() {
+        selectionOrder = [];
     }
 
     // ============================================================
@@ -371,21 +393,18 @@ const TimelineDiffModule = (function() {
         // ========================================
         // CASO 2: DOIS ITENS -> COMPARAÇÃO
         // ========================================
-        // Ordena por timestamp (antigo na esquerda, novo na direita)
-        items.sort((a, b) => a.timestamp - b.timestamp);
+        // USA A ORDEM DE SELEÇÃO (primeiro selecionado = esquerda/referência, segundo = direita/comparado)
 
-        const oldVer = items[0];  // Mais antigo
-        const newVer = items[1];  // Mais recente
+        const oldVer = items[0];  // Primeiro selecionado (v1 - referência)
+        const newVer = items[1];  // Segundo selecionado (v2 - comparado)
 
         // Debug: mostra os itens selecionados
-        console.log('[Timeline] oldVer:', oldVer.displayName, 'type:', oldVer.type);
-        console.log('[Timeline] oldVer.content (primeiros 300 chars):', oldVer.content.substring(0, 300));
-        console.log('[Timeline] newVer:', newVer.displayName, 'type:', newVer.type);
+        console.log('[Timeline] Referência (v1):', oldVer.displayName);
+        console.log('[Timeline] Comparado (v2):', newVer.displayName);
 
         // Atualiza títulos
-        if (diffTitleLeft) diffTitleLeft.innerText = oldVer.displayName;
-        if (diffTitleRight) diffTitleRight.innerText = newVer.displayName;
-        if (diffStatusText) diffStatusText.innerText = `Comparando: ${oldVer.displayName} -> ${newVer.displayName}`;
+        if (diffTitleLeft) diffTitleLeft.innerText = oldVer.displayName + ' (Referência)';
+        if (diffTitleRight) diffTitleRight.innerText = newVer.displayName + ' (Diferenças)';
 
         // ========================================
         // EXECUTA DIFF (biblioteca diff.js)
@@ -398,39 +417,108 @@ const TimelineDiffModule = (function() {
         // Usa textContent para comparação visual (não HTML)
         const oldText = oldVer.textContent || oldVer.content;
         const newText = newVer.textContent || newVer.content;
+        
+        // Usa diffWords para comparação mais granular
         const diff = Diff.diffWords(oldText, newText);
 
         // Limpa painéis
         if (diffLeftPanel) diffLeftPanel.innerHTML = "";
         if (diffRightPanel) diffRightPanel.innerHTML = "";
 
-        // ========================================
-        // LOOP DE RENDERIZAÇÃO DO DIFF
-        // ========================================
-        diff.forEach((part) => {
-            if (part.removed) {
-                // REMOVIDO: aparece na esquerda (vermelho)
-                const span = document.createElement("span");
-                span.className = "diff-removed-highlight";
-                span.innerText = part.value;
-                if (diffLeftPanel) diffLeftPanel.appendChild(span);
-            } else if (part.added) {
-                // ADICIONADO: aparece na direita (verde)
-                const span = document.createElement("span");
-                span.className = "diff-added-highlight";
-                span.innerText = part.value;
-                if (diffRightPanel) diffRightPanel.appendChild(span);
-            } else {
-                // IGUAL: aparece nos dois
-                const spanLeft = document.createElement("span");
-                spanLeft.innerText = part.value;
-                if (diffLeftPanel) diffLeftPanel.appendChild(spanLeft);
+        // Estatísticas
+        let addedCount = 0;
+        let removedCount = 0;
 
-                const spanRight = document.createElement("span");
-                spanRight.innerText = part.value;
-                if (diffRightPanel) diffRightPanel.appendChild(spanRight);
+        // ========================================
+        // PAINEL ESQUERDO: TEXTO V1 (REFERÊNCIA) - COMPLETAMENTE LIMPO
+        // Mostra APENAS o texto original, sem NENHUMA marcação
+        // ========================================
+        const leftContainer = document.createElement('div');
+        leftContainer.className = 'diff-text-clean';
+        leftContainer.style.cssText = 'white-space: pre-wrap; padding: 12px; line-height: 1.6; font-family: inherit;';
+        leftContainer.textContent = oldText;  // Texto puro, sem marcações
+        if (diffLeftPanel) {
+            diffLeftPanel.innerHTML = '';  // Garante que está limpo
+            diffLeftPanel.appendChild(leftContainer);
+        }
+
+        // ========================================
+        // PAINEL DIREITO: TEXTO V2 COM DIFERENÇAS INLINE
+        // 
+        // Lógica do diff.js (comparando v1 -> v2):
+        // - part.removed = existe no v1, NÃO existe no v2 (foi REMOVIDO do script)
+        // - part.added = NÃO existe no v1, existe no v2 (foi ADICIONADO ao script)
+        // 
+        // Exibição no painel direito:
+        // - VERMELHO TACHADO = texto que foi REMOVIDO (estava no v1, não está mais no v2)
+        // - VERDE = texto que foi ADICIONADO (não existia no v1, agora existe no v2)
+        // ========================================
+        const rightContainer = document.createElement('div');
+        rightContainer.className = 'diff-text-marked';
+        rightContainer.style.cssText = 'white-space: pre-wrap; padding: 12px; line-height: 1.6; font-family: inherit;';
+
+        diff.forEach((part) => {
+            const span = document.createElement('span');
+            
+            if (part.removed) {
+                // part.removed = texto que EXISTIA no v1 mas NÃO existe no v2
+                // Significa que foi REMOVIDO do documento
+                // Mostra em VERMELHO TACHADO
+                span.className = 'diff-inline-removed';
+                span.textContent = part.value;
+                removedCount++;
+            } else if (part.added) {
+                // part.added = texto que NÃO existia no v1 mas EXISTE no v2
+                // Significa que foi ADICIONADO ao documento
+                // Mostra em VERDE
+                span.className = 'diff-inline-added';
+                span.textContent = part.value;
+                addedCount++;
+            } else {
+                // IGUAL = texto sem alteração (existe em ambos)
+                span.textContent = part.value;
             }
+            
+            rightContainer.appendChild(span);
         });
+
+        if (diffRightPanel) {
+            diffRightPanel.innerHTML = '';  // Garante que está limpo
+            diffRightPanel.appendChild(rightContainer);
+        }
+
+        // ========================================
+        // SINCRONIZA SCROLL DOS PAINÉIS
+        // ========================================
+        if (diffLeftPanel && diffRightPanel) {
+            let isSyncing = false;
+            
+            diffLeftPanel.addEventListener('scroll', () => {
+                if (isSyncing) return;
+                isSyncing = true;
+                diffRightPanel.scrollTop = diffLeftPanel.scrollTop;
+                isSyncing = false;
+            });
+            
+            diffRightPanel.addEventListener('scroll', () => {
+                if (isSyncing) return;
+                isSyncing = true;
+                diffLeftPanel.scrollTop = diffRightPanel.scrollTop;
+                isSyncing = false;
+            });
+        }
+
+        // Atualiza status com estatísticas
+        if (diffStatusText) {
+            if (addedCount === 0 && removedCount === 0) {
+                diffStatusText.innerHTML = '<span class="text-muted">✓ Textos idênticos</span>';
+            } else {
+                diffStatusText.innerHTML = `
+                    <span class="text-success fw-bold">+${addedCount} adicionado${addedCount !== 1 ? 's' : ''}</span> 
+                    <span class="text-danger fw-bold ms-2">-${removedCount} removido${removedCount !== 1 ? 's' : ''}</span>
+                `;
+            }
+        }
 
         // ========================================
         // BOTÕES RESTAURAR VERSÃO (Esquerda e Direita)
@@ -469,6 +557,45 @@ const TimelineDiffModule = (function() {
     }
 
     // ============================================================
+    // HELPER: Criar Linha de Diff
+    // ============================================================
+    /**
+     * createDiffLine
+     * ---------------
+     * Cria um elemento de linha estilo Git/GitHub
+     * 
+     * @param {number|string} lineNum - Número da linha
+     * @param {string} prefix - '+', '-', ou '' (igual)
+     * @param {string} text - Conteúdo da linha
+     * @param {string} type - 'added', 'removed', 'unchanged', 'placeholder'
+     */
+    function createDiffLine(lineNum, prefix, text, type) {
+        const line = document.createElement('div');
+        line.className = `diff-line diff-line-${type}`;
+        
+        // Número da linha
+        const lineNumSpan = document.createElement('span');
+        lineNumSpan.className = 'diff-line-num';
+        lineNumSpan.textContent = lineNum;
+        
+        // Prefixo (+/-)
+        const prefixSpan = document.createElement('span');
+        prefixSpan.className = 'diff-line-prefix';
+        prefixSpan.textContent = prefix;
+        
+        // Conteúdo
+        const contentSpan = document.createElement('span');
+        contentSpan.className = 'diff-line-content';
+        contentSpan.textContent = text || (type === 'placeholder' ? '' : ' ');
+        
+        line.appendChild(lineNumSpan);
+        line.appendChild(prefixSpan);
+        line.appendChild(contentSpan);
+        
+        return line;
+    }
+
+    // ============================================================
     // CONFIGURAÇÃO DE EVENT LISTENERS
     // ============================================================
     function setupEventListeners() {
@@ -480,6 +607,8 @@ const TimelineDiffModule = (function() {
                     return;
                 }
 
+                // Reseta a ordem de seleção ao abrir o modal
+                resetSelectionOrder();
                 renderTimelineList(doc);
                 resetDiffView();
                 if (timelineModal) timelineModal.show();
@@ -493,6 +622,7 @@ const TimelineDiffModule = (function() {
     return {
         init,
         resetDiffView,
+        resetSelectionOrder,
         renderTimelineList,
         handleSelection,
         updateSplitView,

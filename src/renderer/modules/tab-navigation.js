@@ -58,15 +58,14 @@ const TabNavigationManager = {
     // EVENTOS DE TROCA DE ABA
     // =========================================
 
-    // Ao sair do Operator -> Edit (salva posição)
+    // Ao sair do Operator -> Edit (salva posição e para scroll)
     if (tabEditTrigger) {
       tabEditTrigger.addEventListener('show.bs.tab', () => {
-        this.saveOperatorScrollPosition();
+        // Para o scroll e salva posição ANTES de sair da aba Operator
+        this.stopScrollIfRunning();
       });
 
       tabEditTrigger.addEventListener('shown.bs.tab', () => {
-        // Pausa o scroll ao sair do Operator
-        this.pauseScrollIfRunning();
 
         // Força reflow completo da aba Edit
         requestAnimationFrame(() => {
@@ -88,15 +87,14 @@ const TabNavigationManager = {
       });
     }
 
-    // Ao sair do Operator -> Home (salva posição)
+    // Ao sair do Operator -> Home (salva posição e para scroll)
     if (tabHomeTrigger) {
       tabHomeTrigger.addEventListener('show.bs.tab', () => {
-        this.saveOperatorScrollPosition();
+        // Para o scroll e salva posição ANTES de sair da aba Operator
+        this.stopScrollIfRunning();
       });
 
       tabHomeTrigger.addEventListener('shown.bs.tab', () => {
-        // Pausa o scroll ao sair do Operator
-        this.pauseScrollIfRunning();
 
         // Força reflow da aba Home
         requestAnimationFrame(() => {
@@ -361,11 +359,11 @@ const TabNavigationManager = {
         for (let i = 0; i < words.length; i++) {
           const word = words[i];
           const cleanWord = word.toLowerCase().replace(/[.,!?;:"'()]/g, '');
-          
+
           if (cleanWord === cleanSearch || word.toLowerCase() === cleanSearch) {
             const wordStart = text.indexOf(word, offset);
             const wordEnd = wordStart + word.length;
-            
+
             matches.push({
               node: node,
               startOffset: wordStart,
@@ -451,6 +449,71 @@ const TabNavigationManager = {
     }
   },
 
+  /**
+   * stopScrollIfRunning
+   * ---------------------
+   * Para completamente o scroll ao sair do Operator (sem resetar posição).
+   * Sempre salva a posição atual, independente de estar rodando ou não.
+   */
+  stopScrollIfRunning: function () {
+    const container = document.querySelector('.prompter-in-control');
+    const textControl = document.getElementById('prompterText-control');
+    
+    // ============================================
+    // DETECTA A POSIÇÃO CORRETA
+    // ============================================
+    // Quando scroll automático está ativo: posição está em decimalScroll (transform)
+    // Quando scroll manual: posição está em container.scrollTop
+    
+    let currentPosition = 0;
+    
+    if (typeof ScrollEngine !== 'undefined' && ScrollEngine.isRunning) {
+      // Scroll automático ativo - usa decimalScroll
+      currentPosition = ScrollEngine.decimalScroll || 0;
+      console.log('📍 Modo automático - posição via decimalScroll:', currentPosition);
+    } else if (typeof ScrollEngine !== 'undefined' && ScrollEngine.decimalScroll > 0) {
+      // Scroll foi pausado mas tem posição salva - usa decimalScroll
+      currentPosition = ScrollEngine.decimalScroll;
+      console.log('📍 Scroll pausado - posição via decimalScroll:', currentPosition);
+    } else if (container) {
+      // Scroll manual - usa scrollTop
+      currentPosition = container.scrollTop;
+      console.log('📍 Modo manual - posição via scrollTop:', currentPosition);
+    }
+    
+    // Salva a posição apenas se for maior que 0
+    if (currentPosition > 0) {
+      this.operatorSavedScrollPosition = currentPosition;
+    }
+    
+    // ============================================
+    // PARA O SCROLL SE ESTIVER RODANDO
+    // ============================================
+    if (typeof ScrollEngine !== 'undefined' && ScrollEngine.isRunning) {
+      // Para o scroll MAS preserva a posição
+      ScrollEngine.isRunning = false;
+      ScrollEngine.setSpeed(0);
+      
+      // Restaura o scroll nativo com a posição atual
+      if (container && textControl) {
+        container.style.overflowY = 'auto';
+        textControl.style.transform = 'none';
+        container.scrollTop = currentPosition;
+        ScrollEngine.decimalScroll = currentPosition;
+      }
+      
+      // Atualiza botões
+      const playBtn = document.getElementById('play-btn');
+      const pauseBtn = document.getElementById('pause-btn');
+      if (playBtn) playBtn.classList.remove('d-none');
+      if (pauseBtn) pauseBtn.classList.add('d-none');
+      
+      ipcRenderer.send('control-prompter', 'pause');
+    }
+    
+    console.log('⏹️ Mudou de aba: Posição salva =', this.operatorSavedScrollPosition);
+  },
+
   // ============================================================
   // FUNÇÃO: Pré-aplicar posição antes da aba aparecer
   // ============================================================
@@ -469,13 +532,17 @@ const TabNavigationManager = {
     // Se há navegação pendente, não pré-aplica (será calculado depois)
     if (this.pendingWordIndex !== null) return;
 
-    // Aplica a posição salva
+    // Aplica a posição salva usando scroll nativo (não transform)
     if (this.operatorSavedScrollPosition > 0) {
+      container.style.overflowY = 'auto';
+      textControl.style.transform = 'none';
+      container.scrollTop = this.operatorSavedScrollPosition;
+      
       if (typeof ScrollEngine !== 'undefined') {
         ScrollEngine.decimalScroll = this.operatorSavedScrollPosition;
-        textControl.style.transform = `translate3d(0, -${this.operatorSavedScrollPosition}px, 0)`;
       }
-      container.scrollTop = this.operatorSavedScrollPosition;
+      
+      console.log('🔄 preApplyScrollPosition:', this.operatorSavedScrollPosition);
     }
   },
 
@@ -607,16 +674,16 @@ const TabNavigationManager = {
       // Limpa para não repetir
       this.pendingWordIndex = null;
       this.pendingNavigationContext = null;
-      
+
       // Tenta encontrar a palavra no Operator pelo índice
       let wordLocation = this.findWordByIndex(textControl, targetIndex);
-      
+
       // Se não encontrou pelo índice, tenta buscar pelo texto
       if (!wordLocation && context && context.text) {
         console.log(`⚠️ Palavra #${targetIndex} não encontrada por índice, tentando por texto...`);
         wordLocation = this.findWordByText(textControl, context.text, targetIndex);
       }
-      
+
       if (wordLocation) {
         // Cria um range para obter a posição Y exata
         const range = document.createRange();
@@ -682,11 +749,18 @@ const TabNavigationManager = {
     // RESTAURAÇÃO DE POSIÇÃO SALVA
     // =========================================
     if (this.operatorSavedScrollPosition > 0) {
+      // Garante que está em modo scroll manual (não transform)
+      container.style.overflowY = 'auto';
+      textControl.style.transform = 'none';
+      
+      // Aplica a posição
+      container.scrollTop = this.operatorSavedScrollPosition;
+      
+      // Sincroniza o ScrollEngine
       if (typeof ScrollEngine !== 'undefined') {
         ScrollEngine.decimalScroll = this.operatorSavedScrollPosition;
-        textControl.style.transform = `translate3d(0, -${this.operatorSavedScrollPosition}px, 0)`;
+        ScrollEngine.isRunning = false;
       }
-      container.scrollTop = this.operatorSavedScrollPosition;
 
       console.log('♻️ Posição do Operator restaurada:', this.operatorSavedScrollPosition);
     }

@@ -47,6 +47,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Playback Settings
   const playbackTimerSelect = document.getElementById('playback-timer');
   const progressIndicatorCheck = document.getElementById('progress-indicator-check');
+  const progressThumbColorInput = document.getElementById('progress-thumb-color');
+  const showCueMarkerCheck = document.getElementById('show-cue-marker-check');
   const continuousLoopCheck = document.getElementById('continuous-loop-check');
   const accelerationLevelInput = document.getElementById('acceleration-level');
   const accelerationValueSpan = document.getElementById('acceleration-value');
@@ -257,6 +259,8 @@ document.addEventListener('DOMContentLoaded', () => {
         overallSpeed: overallSpeedInput ? parseInt(overallSpeedInput.value) : 50,
         playbackTimer: playbackTimerSelect ? playbackTimerSelect.value : 'off',
         showProgressIndicator: progressCheck ? progressCheck.checked : false,
+        progressThumbColor: document.getElementById('progress-thumb-color')?.value || '#FFFFFF',
+        showCueMarker: document.getElementById('show-cue-marker-check')?.checked !== false,
         continuousLoop: loopCheck ? loopCheck.checked : false,
         accelerationLevel: accelerationLevelInput ? parseInt(accelerationLevelInput.value) : 50,
 
@@ -370,6 +374,19 @@ document.addEventListener('DOMContentLoaded', () => {
       progressCheck.dispatchEvent(new Event('change', { bubbles: true }));
       console.log("✅ Progress Indicator setado para:", progressCheck.checked, "(valor recebido:", settings.showProgressIndicator, ")");
     }
+
+    // Progress Thumb Color
+    const progressThumbColor = document.getElementById('progress-thumb-color');
+    if (progressThumbColor) {
+      progressThumbColor.value = settings.progressThumbColor || '#FFFFFF';
+    }
+
+    // Show Cue Marker checkbox
+    const showCueMarkerCheckbox = document.getElementById('show-cue-marker-check');
+    if (showCueMarkerCheckbox) {
+      showCueMarkerCheckbox.checked = settings.showCueMarker !== false;
+    }
+
     if (loopCheck) {
       const shouldBeChecked = settings.continuousLoop === true;
       // Primeiro, desmarca

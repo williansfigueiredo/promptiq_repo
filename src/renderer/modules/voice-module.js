@@ -16,11 +16,13 @@ const VoiceModule = (function () {
   let isActive = false;
   let isReady = false;
   let currentIndex = 0;  // Posição atual no texto do roteiro
-  const LOOKAHEAD_CHARS = 300;  // Janela de busca (reduzida para precisão)
+  const LOOKAHEAD_CHARS = 500;  // Janela de busca aumentada
 
   // Cache do roteiro indexado
   let roteiroTexto = '';  // Texto completo limpo do roteiro
   let roteiroElementos = [];  // Mapeamento de posições para elementos DOM
+  let roteiroPalavras = [];  // NOVO: Array de palavras com posições
+  let palavrasIndex = new Map();  // Índice invertido para busca O(1)
 
   // VOSK Browser
   let voskModel = null;
@@ -35,7 +37,7 @@ const VoiceModule = (function () {
 
   // Controle de interação manual vs voz
   let ultimaRolagemManual = 0;  // Timestamp da última rolagem manual
-  const PAUSA_APOS_MANUAL = 800;  // Reduzido para 0.8s - retoma mais rápido
+  const PAUSA_APOS_MANUAL = 400;  // Reduzido para 0.4s - retoma mais rápido
 
   // ============================================================
   // FUNÇÕES DE NOTIFICAÇÃO
@@ -74,7 +76,8 @@ const VoiceModule = (function () {
 
   /**
    * Prepara o roteiro para busca por voz
-   * Cria um cache com texto limpo e mapeamento para elementos DOM
+   * Cria um cache com texto limpo, mapeamento para elementos DOM
+   * e ÍNDICE DE PALAVRAS para busca rápida
    */
   function prepararRoteiro() {
     const container = document.getElementById('prompterText-control');
@@ -85,6 +88,7 @@ const VoiceModule = (function () {
 
     roteiroTexto = '';
     roteiroElementos = [];
+    roteiroPalavras = [];  // NOVO: índice de palavras
     currentIndex = 0;
     ultimaPosicaoEncontrada = -1;
     ultimoTextoProcessado = '';
@@ -96,6 +100,8 @@ const VoiceModule = (function () {
     );
 
     let node;
+    let palavraIndex = 0;
+    
     while ((node = treeWalker.nextNode())) {
       const textoOriginal = node.nodeValue;
       if (textoOriginal && textoOriginal.trim().length > 0) {
@@ -109,12 +115,41 @@ const VoiceModule = (function () {
           inicio: posInicio,
           fim: roteiroTexto.length - 1,
           elemento: node.parentElement,
+          node: node,  // NOVO: referência ao nó de texto
           textoOriginal: textoOriginal.trim()
         });
+
+        // NOVO: Indexa cada palavra individualmente
+        const palavras = textoLimpo.split(/\s+/);
+        let posLocal = posInicio;
+        
+        for (const palavra of palavras) {
+          if (palavra.length >= 2) {
+            roteiroPalavras.push({
+              palavra: palavra,
+              posicao: posLocal,
+              tamanho: palavra.length,
+              elemento: node.parentElement,
+              node: node,
+              index: palavraIndex++
+            });
+          }
+          posLocal += palavra.length + 1;
+        }
       }
     }
 
-    console.log(`🎤 Roteiro indexado: ${roteiroTexto.length} caracteres, ${roteiroElementos.length} segmentos`);
+    // Cria índice invertido para busca O(1)
+    palavrasIndex = new Map();
+    roteiroPalavras.forEach((item, idx) => {
+      const chave = item.palavra.substring(0, 3);  // Primeiros 3 chars como chave
+      if (!palavrasIndex.has(chave)) {
+        palavrasIndex.set(chave, []);
+      }
+      palavrasIndex.get(chave).push(idx);
+    });
+
+    console.log(`🎤 Roteiro indexado: ${roteiroTexto.length} chars, ${roteiroPalavras.length} palavras`);
   }
 
   // ============================================================
@@ -125,11 +160,12 @@ const VoiceModule = (function () {
   let ultimaPosicaoEncontrada = -1;
   let ultimoTextoProcessado = '';
   let ultimoSegmentoIndex = -1;  // Índice do último segmento/parágrafo encontrado
+  let ultimaPalavraIndex = -1;   // NOVO: índice da última palavra encontrada
 
-  // Configurações de precisão - CONSERVADORAS para evitar pulos prematuros
-  const MAX_PULO = 150;  // Janela de busca reduzida
-  const MIN_PALAVRAS_PARA_PULAR_SEGMENTO = 2;  // Precisa de 2+ palavras para pular parágrafo
-  const MIN_CHARS_BUSCA = 3;  // Mínimo de caracteres para buscar
+  // Configurações de precisão - OTIMIZADAS para resposta rápida
+  const MAX_PULO = 300;  // Janela de busca aumentada
+  const MIN_PALAVRAS_PARA_PULAR_SEGMENTO = 1;  // Reduzido - mais responsivo
+  const MIN_CHARS_BUSCA = 2;  // Reduzido para detectar mais rápido
 
   /**
    * Calcula similaridade entre duas strings (0 a 1)
@@ -156,120 +192,67 @@ const VoiceModule = (function () {
   }
 
   /**
-   * Busca uma frase dentro da janela de lookahead
-   * OTIMIZADO: Usa matching fuzzy para maior tolerância a erros do VOSK
+   * Busca a posição do texto falado no roteiro
+   * SIMPLIFICADO: busca sequencial na janela atual
    * @param {string} fraseFalada - Texto reconhecido pela voz
    * @returns {Object|null} Elemento encontrado ou null
    */
   function buscarNaJanela(fraseFalada) {
-    if (!fraseFalada || roteiroTexto.length === 0) return null;
+    if (!fraseFalada || roteiroTexto.length === 0) {
+      console.log('🎤 buscarNaJanela: roteiro vazio ou frase nula');
+      return null;
+    }
 
     const fraseLimpa = normalizarTexto(fraseFalada);
+    if (fraseLimpa.length < MIN_CHARS_BUSCA) {
+      console.log('🎤 buscarNaJanela: frase muito curta:', fraseLimpa.length);
+      return null;
+    }
 
-    // Precisa de pelo menos 3 caracteres
-    if (fraseLimpa.length < MIN_CHARS_BUSCA) return null;
-
-    // Define a janela de busca: um pouco antes e à frente
-    const inicioJanela = Math.max(0, currentIndex - 20);  // Pequeno lookbehind
-    const fimJanela = Math.min(currentIndex + MAX_PULO, roteiroTexto.length);
-    const janelaTexto = roteiroTexto.substring(inicioJanela, fimJanela);
-
-    // Pega as palavras da frase reconhecida
+    // Pega as últimas palavras faladas
     const palavras = fraseLimpa.split(/\s+/).filter(p => p.length >= 2);
-
-    if (palavras.length === 0) return null;
-
-    let melhorMatch = null;
-    let melhorScore = 0;
-    let melhorPosicao = -1;
-
-    // Estratégia 1: Busca exata com as últimas 2-3 palavras
-    for (let numPalavras = Math.min(3, palavras.length); numPalavras >= 1; numPalavras--) {
-      const termoBusca = palavras.slice(-numPalavras).join(' ');
-      const posicaoRelativa = janelaTexto.indexOf(termoBusca);
-
-      if (posicaoRelativa !== -1) {
-        const posicaoAbsoluta = inicioJanela + posicaoRelativa;
-        const score = numPalavras * 10;  // Mais palavras = maior score
-
-        if (score > melhorScore) {
-          melhorScore = score;
-          melhorPosicao = posicaoAbsoluta;
-          melhorMatch = termoBusca;
-        }
-      }
+    if (palavras.length === 0) {
+      console.log('🎤 buscarNaJanela: sem palavras válidas');
+      return null;
     }
 
-    // Estratégia 2: Busca fuzzy se exata falhou
-    if (!melhorMatch && palavras.length >= 1) {
-      const ultimaPalavra = palavras[palavras.length - 1];
+    // Busca a partir da posição atual
+    const inicioJanela = Math.max(0, currentIndex - 20);
+    const fimJanela = Math.min(roteiroTexto.length, currentIndex + LOOKAHEAD_CHARS);
+    const janela = roteiroTexto.substring(inicioJanela, fimJanela);
+    
+    console.log('🎤 buscarNaJanela: buscando palavras:', palavras.slice(-3).join(', '), 'em janela de', inicioJanela, 'a', fimJanela);
 
-      // Procura palavras similares na janela
-      const palavrasJanela = janelaTexto.split(/\s+/);
-      let posicaoAcumulada = 0;
-
-      for (const palavraJanela of palavrasJanela) {
-        const similaridade = calcularSimilaridade(ultimaPalavra, palavraJanela);
-
-        if (similaridade >= 0.7) {  // 70% de similaridade
-          const posicaoAbsoluta = inicioJanela + janelaTexto.indexOf(palavraJanela, posicaoAcumulada);
-          const score = similaridade * 5;
-
-          if (score > melhorScore && posicaoAbsoluta > ultimaPosicaoEncontrada) {
-            melhorScore = score;
-            melhorPosicao = posicaoAbsoluta;
-            melhorMatch = palavraJanela;
+    // Tenta encontrar cada palavra na janela (da mais recente para trás)
+    for (let i = palavras.length - 1; i >= 0; i--) {
+      const palavra = palavras[i];
+      const posNaJanela = janela.indexOf(palavra);
+      
+      if (posNaJanela !== -1) {
+        const posAbsoluta = inicioJanela + posNaJanela;
+        
+        // Só avança se for para frente
+        if (posAbsoluta > ultimaPosicaoEncontrada || ultimaPosicaoEncontrada === -1) {
+          // Encontra o elemento DOM correspondente
+          const segmento = roteiroElementos.find(s => 
+            posAbsoluta >= s.inicio && posAbsoluta <= s.fim
+          );
+          
+          if (segmento) {
+            console.log('🎤 buscarNaJanela: encontrou "' + palavra + '" na posição', posAbsoluta);
+            ultimaPosicaoEncontrada = posAbsoluta;
+            currentIndex = posAbsoluta + palavra.length;
+            
+            return {
+              elemento: segmento.elemento,
+              posicao: posAbsoluta,
+              termo: palavra
+            };
+          } else {
+            console.log('🎤 buscarNaJanela: palavra encontrada mas sem elemento DOM correspondente');
           }
-        }
-        posicaoAcumulada += palavraJanela.length + 1;
-      }
-    }
-
-    if (melhorMatch && melhorPosicao !== -1) {
-      // VALIDAÇÃO: Verifica se é um avanço válido
-      const avanco = melhorPosicao - ultimaPosicaoEncontrada;
-
-      // Aceita pequenas voltas (até 20 chars) para correções
-      if (avanco < -20) {
-        return null;  // Volta muito grande, ignora
-      }
-
-      // Encontra o elemento DOM correspondente
-      for (let segIndex = 0; segIndex < roteiroElementos.length; segIndex++) {
-        const segmento = roteiroElementos[segIndex];
-        if (melhorPosicao >= segmento.inicio && melhorPosicao <= segmento.fim) {
-
-          // PROTEÇÃO CONTRA PULOS PREMATUROS:
-          // Se está tentando pular para outro segmento/parágrafo,
-          // exige mais palavras para confirmar
-          if (ultimoSegmentoIndex !== -1 && segIndex > ultimoSegmentoIndex) {
-            // Está tentando pular para o próximo parágrafo
-            if (palavras.length < MIN_PALAVRAS_PARA_PULAR_SEGMENTO) {
-              // Poucas palavras - não pula ainda, fica no parágrafo atual
-              return null;
-            }
-
-            // Verifica se as palavras realmente pertencem ao novo parágrafo
-            const textoNovoSegmento = roteiroTexto.substring(segmento.inicio, segmento.fim);
-            const palavrasEncontradas = palavras.filter(p => textoNovoSegmento.includes(p));
-
-            if (palavrasEncontradas.length < MIN_PALAVRAS_PARA_PULAR_SEGMENTO) {
-              // As palavras não estão claramente no novo parágrafo
-              return null;
-            }
-          }
-
-          // Atualiza o índice para a posição encontrada
-          currentIndex = melhorPosicao + melhorMatch.length;
-          ultimaPosicaoEncontrada = melhorPosicao;
-          ultimoTextoProcessado = fraseLimpa;
-          ultimoSegmentoIndex = segIndex;
-
-          return {
-            elemento: segmento.elemento,
-            posicao: melhorPosicao,
-            termo: melhorMatch
-          };
+        } else {
+          console.log('🎤 buscarNaJanela: palavra "' + palavra + '" ignorada (posição', posAbsoluta, '<= última', ultimaPosicaoEncontrada, ')');
         }
       }
     }
@@ -279,6 +262,7 @@ const VoiceModule = (function () {
 
   /**
    * Processa o texto reconhecido e rola o prompter se necessário
+   * OTIMIZADO: Processa imediatamente sem esperas
    * @param {string} textoReconhecido - Texto reconhecido
    * @param {boolean} isFinal - Se é resultado final ou parcial
    */
@@ -291,17 +275,26 @@ const VoiceModule = (function () {
       return; // Usuário está rolando manualmente, não interfere
     }
 
+    // Mostra feedback visual de que está detectando fala
+    notificarRenderer('partial', textoReconhecido);
+    
+    // DEBUG: Log do texto reconhecido
+    console.log('🎤 Texto reconhecido:', textoReconhecido, isFinal ? '(final)' : '(parcial)');
+
     const resultado = buscarNaJanela(textoReconhecido);
 
     if (resultado) {
       // Encontrou! Rola o prompter para o elemento
-      rolarParaElemento(resultado.elemento, resultado.posicao);
+      console.log('🎤 MATCH encontrado:', resultado.termo, 'pos:', resultado.posicao);
+      rolarParaElemento(resultado.elemento, resultado.posicao, resultado.termo);
       notificarRenderer('match', {
         texto: textoReconhecido,
+        termo: resultado.termo,
         posicao: resultado.posicao
       });
-    } else if (isFinal) {
-      // Improviso - apenas loga
+    } else if (isFinal && textoReconhecido.trim().length > 5) {
+      // Improviso - apenas loga (ignora frases muito curtas)
+      console.log('🎤 Nenhum match encontrado para:', textoReconhecido);
       notificarRenderer('improviso', textoReconhecido);
     }
   }
@@ -310,26 +303,48 @@ const VoiceModule = (function () {
   let scrollAtualVosk = 0;
   let scrollAlvoVosk = 0;
   let animacaoScrollVosk = null;
+  let ultimaPalavraDestacada = null;  // NOVO: referência à última palavra destacada
 
   /**
    * Rola o prompter suavemente até um elemento específico
    * SEMPRE PARA FRENTE - nunca volta
+   * NOVO: Destaca a palavra específica sendo falada
    * @param {HTMLElement} elemento - Elemento alvo
    * @param {number} posicaoTexto - Posição no texto (para cálculo de progresso)
+   * @param {string} palavraFalada - Palavra que está sendo falada (para destaque)
    */
-  function rolarParaElemento(elemento, posicaoTexto) {
-    if (!elemento) return;
+  function rolarParaElemento(elemento, posicaoTexto, palavraFalada) {
+    if (!elemento) {
+      console.log('🎤 rolarParaElemento: elemento nulo');
+      return;
+    }
 
     const container = document.querySelector('.prompter-in-control');
-    if (!container) return;
+    if (!container) {
+      console.log('🎤 rolarParaElemento: container não encontrado');
+      return;
+    }
+
+    console.log('🎤 rolarParaElemento: rolando para elemento, palavra:', palavraFalada);
 
     // Remove destaque anterior
     document.querySelectorAll('.lendo-agora').forEach(el => {
       el.classList.remove('lendo-agora');
     });
+    
+    // Remove destaque de palavra anterior
+    if (ultimaPalavraDestacada) {
+      ultimaPalavraDestacada.remove();
+      ultimaPalavraDestacada = null;
+    }
 
-    // Adiciona destaque ao elemento atual (sempre mostra onde está lendo)
+    // Adiciona destaque ao elemento atual
     elemento.classList.add('lendo-agora');
+    
+    // NOVO: Tenta destacar a palavra específica
+    if (palavraFalada && palavraFalada.length >= 2) {
+      destacarPalavraNoElemento(elemento, palavraFalada);
+    }
 
     // Calcula posição alvo para scroll
     const containerRect = container.getBoundingClientRect();
@@ -341,20 +356,101 @@ const VoiceModule = (function () {
       scrollAtualVosk -
       containerRect.height * 0.3;
 
+    console.log('🎤 rolarParaElemento: scrollAtual:', scrollAtualVosk, 'novoAlvo:', novoAlvo, 'scrollAlvo atual:', scrollAlvoVosk);
+
     // SÓ ATUALIZA SE FOR PARA FRENTE (nunca volta)
     if (novoAlvo > scrollAlvoVosk) {
       scrollAlvoVosk = novoAlvo;
+      console.log('🎤 rolarParaElemento: atualizou scrollAlvoVosk para:', scrollAlvoVosk);
     }
 
     // Inicia animação suave se não estiver rodando
     if (!animacaoScrollVosk) {
+      console.log('🎤 rolarParaElemento: iniciando animação de scroll');
       animarScrollVosk(container);
+    }
+  }
+
+  /**
+   * NOVO: Destaca uma palavra específica dentro de um elemento
+   */
+  function destacarPalavraNoElemento(elemento, palavra) {
+    if (!elemento || !palavra) return;
+
+    const textoElemento = elemento.textContent;
+    const palavraNormalizada = normalizarTexto(palavra);
+    const textoNormalizado = normalizarTexto(textoElemento);
+
+    // Encontra a posição da palavra no texto normalizado
+    const posNormalizada = textoNormalizado.indexOf(palavraNormalizada);
+    if (posNormalizada === -1) return;
+
+    // Mapeia de volta para o texto original
+    // Conta caracteres ignorando acentos/pontuação
+    let posOriginal = 0;
+    let contadorNormalizado = 0;
+
+    for (let i = 0; i < textoElemento.length && contadorNormalizado < posNormalizada; i++) {
+      const charNorm = normalizarTexto(textoElemento[i]);
+      if (charNorm) contadorNormalizado += charNorm.length;
+      posOriginal = i + 1;
+    }
+
+    // Encontra o fim da palavra
+    let fimOriginal = posOriginal;
+    let tamanhoPalavra = 0;
+    while (fimOriginal < textoElemento.length && tamanhoPalavra < palavra.length + 2) {
+      const char = textoElemento[fimOriginal];
+      if (/\s/.test(char)) break;
+      fimOriginal++;
+      tamanhoPalavra++;
+    }
+
+    // Cria o highlight visual usando um span overlay
+    try {
+      const range = document.createRange();
+      const treeWalker = document.createTreeWalker(elemento, NodeFilter.SHOW_TEXT);
+      let node;
+      let charCount = 0;
+
+      while ((node = treeWalker.nextNode())) {
+        const nodeLen = node.nodeValue.length;
+        if (charCount + nodeLen > posOriginal) {
+          const offsetInicio = posOriginal - charCount;
+          const offsetFim = Math.min(offsetInicio + palavra.length + 2, nodeLen);
+
+          range.setStart(node, offsetInicio);
+          range.setEnd(node, offsetFim);
+
+          // Cria span de destaque
+          const highlight = document.createElement('span');
+          highlight.className = 'palavra-atual-vosk';
+          highlight.style.cssText = `
+            background: linear-gradient(180deg, transparent 60%, rgba(255, 215, 0, 0.5) 60%);
+            border-radius: 2px;
+            padding: 0 2px;
+            margin: 0 -2px;
+          `;
+
+          try {
+            range.surroundContents(highlight);
+            ultimaPalavraDestacada = highlight;
+          } catch (e) {
+            // Range cruza nós - ignora destaque
+          }
+          break;
+        }
+        charCount += nodeLen;
+      }
+    } catch (e) {
+      // Erro ao criar range - ignora
     }
   }
 
   /**
    * Anima o scroll de forma CONTÍNUA E SUAVE
    * Movimento sempre para frente, sem pulos ou trepidações
+   * OTIMIZADO: Velocidade aumentada para acompanhar fala
    * @param {HTMLElement} container - Container do scroll
    */
   function animarScrollVosk(container) {
@@ -376,10 +472,10 @@ const VoiceModule = (function () {
 
     // SÓ MOVE PARA FRENTE (diferença positiva)
     if (diferenca > 0) {
-      // Velocidade ADAPTATIVA: mais rápido se estiver longe, mais lento se perto
-      // Isso cria um efeito de "ease-out" natural
-      const velocidadeBase = Math.min(diferenca * 0.12, 4);  // Aumentado para resposta mais rápida
-      const velocidadeMinima = 1;  // Garante movimento mínimo
+      // Velocidade ADAPTATIVA RÁPIDA: responde mais rápido à fala
+      // Fator aumentado de 0.12 para 0.18 e máximo de 4 para 8
+      const velocidadeBase = Math.min(diferenca * 0.18, 8);
+      const velocidadeMinima = 1.5;  // Aumentado de 1 para 1.5
       const velocidadePixels = Math.max(velocidadeBase, velocidadeMinima);
 
       scrollAtualVosk += velocidadePixels;
@@ -617,11 +713,19 @@ const VoiceModule = (function () {
         // Prepara o roteiro antes de iniciar
         prepararRoteiro();
 
+        // IMPORTANTE: Sincroniza posição do VOSK com scroll atual
+        if (typeof ScrollEngine !== 'undefined') {
+          scrollAtualVosk = ScrollEngine.decimalScroll || 0;
+          scrollAlvoVosk = scrollAtualVosk;
+          console.log('🎤 Sincronizado com scroll atual:', scrollAtualVosk);
+        }
+
         // Inicia o reconhecimento VOSK
         const sucesso = await iniciarReconhecimento();
         if (sucesso) {
           isActive = true;
           console.log('🎤 Voice Tracking INICIADO (VOSK Browser)');
+          console.log('🎤 Roteiro:', roteiroTexto.length, 'chars,', roteiroElementos.length, 'elementos');
           return true;
         }
 
@@ -638,11 +742,23 @@ const VoiceModule = (function () {
 
       isActive = false;
       currentIndex = 0;
+      ultimaPalavraIndex = -1;  // NOVO: reseta índice de palavras
 
       // Remove destaques
       document.querySelectorAll('.lendo-agora').forEach(el => {
         el.classList.remove('lendo-agora');
       });
+      
+      // Remove destaque de palavra
+      document.querySelectorAll('.palavra-atual-vosk').forEach(el => {
+        // Restaura o texto original
+        const parent = el.parentNode;
+        if (parent) {
+          parent.replaceChild(document.createTextNode(el.textContent), el);
+          parent.normalize();  // Junta nós de texto adjacentes
+        }
+      });
+      ultimaPalavraDestacada = null;
 
       notificarRenderer('status', '🎤 Microfone DESATIVADO');
       console.log('🎤 Voice Tracking PARADO');
@@ -659,8 +775,16 @@ const VoiceModule = (function () {
     ultimaPosicaoEncontrada = -1;
     ultimoTextoProcessado = '';
     ultimoSegmentoIndex = -1;
+    ultimaPalavraIndex = -1;  // NOVO
     scrollAtualVosk = 0;
     scrollAlvoVosk = 0;
+    
+    // Remove destaque de palavra
+    if (ultimaPalavraDestacada) {
+      ultimaPalavraDestacada.remove();
+      ultimaPalavraDestacada = null;
+    }
+    
     prepararRoteiro();
     console.log('🎤 Posição resetada para o início');
   }

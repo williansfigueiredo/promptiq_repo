@@ -456,27 +456,40 @@
                         </div>
                         <div class="list-group list-group-flush flex-grow-1 scroll-y-auto" id="timeline-list">
                             </div>
+                        <!-- Botão para importar documento externo -->
+                        <div class="p-2 border-top bg-white">
+                            <button id="btn-import-diff-doc" class="btn btn-outline-primary btn-sm w-100" title="Importar PDF, DOC ou DOCX para comparar">
+                                <i class="bi bi-file-earmark-plus"></i> Importar Documento
+                            </button>
+                        </div>
                     </div>
 
                     <div class="col-9 d-flex flex-column h-100 bg-white">
                         
+                        <!-- Legenda explicativa -->
+                        <div class="d-flex justify-content-center align-items-center py-1 px-2 bg-white border-bottom" style="font-size: 11px;">
+                            <span class="text-muted me-3"><i class="bi bi-info-circle"></i> Painel esquerdo = referência limpa | Painel direito = diferenças:</span>
+                            <span class="diff-legend-added me-3">█ Adicionado no 2º</span>
+                            <span class="diff-legend-removed">█ Removido do 1º</span>
+                        </div>
+                        
                         <div class="d-flex justify-content-between align-items-center p-2 border-bottom bg-light" style="height: 50px;">
                             <div class="w-50 text-center border-end">
-                                <span class="badge bg-danger me-2">ORIGINAL</span>
+                                <span class="badge bg-secondary me-2">1º</span>
                                 <span id="diff-title-left" class="fw-bold small text-truncate">Select...</span>
                             </div>
                             <div class="w-50 text-center">
-                                <span class="badge bg-success me-2">NEW / CURRENT</span>
+                                <span class="badge bg-primary me-2">2º</span>
                                 <span id="diff-title-right" class="fw-bold small text-truncate">Select...</span>
                             </div>
                         </div>
 
                         <div class="d-flex flex-grow-1 overflow-hidden">
-                            <div id="diff-left-panel" class="w-50 p-3 border-end diff-panel diff-panel-left">
-                                <p class="text-muted text-center diff-placeholder">Select the first item in the list..</p>
+                            <div id="diff-left-panel" class="w-50 border-end diff-panel diff-panel-left">
+                                <p class="text-muted text-center mt-5 diff-placeholder">Select the first item in the list..</p>
                             </div>
-                            <div id="diff-right-panel" class="w-50 p-3 diff-panel diff-panel-right">
-                                <p class="text-muted text-center diff-placeholder">Select the second item to compare.</p>
+                            <div id="diff-right-panel" class="w-50 diff-panel diff-panel-right">
+                                <p class="text-muted text-center mt-5 diff-placeholder">Select the second item to compare.</p>
                             </div>
                         </div>
 
@@ -632,13 +645,10 @@
 <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
 <script src="../../src/renderer/modules/hotkey-handler.js"></script>
 <script src="../../src/renderer/modules/tab-navigation.js"></script>
-<script type="module" src="../../src/renderer/app.js"></script>
 <script src="../../src/renderer/lib/diff.min.js"></script>
-
-<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-
 <script src="../../src/renderer/modules/keyboard-handler.js"></script>
-<script type="module" src="../../src/renderer/modules/voice-module.js"></script>
+<script src="../../src/renderer/modules/voice-module.js"></script>
+<script type="module" src="../../src/renderer/app.js"></script>
 
 </body>
 </html>    
