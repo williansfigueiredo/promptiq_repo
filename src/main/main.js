@@ -14,14 +14,32 @@ const { app, BrowserWindow, ipcMain, dialog, shell, screen, Menu } = require('el
 const path = require('path');
 const fs = require('fs');
 const APP_ICON = path.join(__dirname, '../../public/assets/icon.ico');
+const ACTIVATION_HTML = path.join(__dirname, '../../public/html/activation.html');
+
+function loadLicenseHandlersModule() {
+  if (app.isPackaged) {
+    const bytecode = path.join(__dirname, 'license-dist/gate.jsc');
+    if (fs.existsSync(bytecode)) {
+      require('bytenode');
+      return require(bytecode);
+    }
+    const bundled = path.join(__dirname, 'license-dist/gate.cjs');
+    if (fs.existsSync(bundled)) {
+      return require(bundled);
+    }
+  }
+  return require('./license/license-handlers');
+}
+
+// LICENSE: módulo de licenciamento por hardware fingerprint (machine-bound)
+const { initLicenseHandlers, LicenseGate } = loadLicenseHandlersModule();
+initLicenseHandlers();
+const { autoUpdater } = require('electron-updater');
+const log = require('electron-log');
 
 // ============================================================
 // AUTO-UPDATER: Sistema de Atualização Automática
 // ============================================================
-const { autoUpdater } = require('electron-updater');
-const log = require('electron-log');
-
-// Configura electron-log para debug em produção
 log.transports.file.level = 'info';
 log.transports.file.maxSize = 5 * 1024 * 1024; // 5MB máximo
 autoUpdater.logger = log;
@@ -69,10 +87,6 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding');
 const mammoth = require('mammoth');       // Leitura de arquivos .docx
 const { PDFParse } = require('pdf-parse');    // Leitura de arquivos .pdf (v2.x)
 const WordExtractor = require("word-extractor"); // Leitura de arquivos .doc
-
-// LICENSE: módulo de licenciamento por hardware fingerprint (machine-bound)
-const { initLicenseHandlers, LicenseGate } = require('./license/license-handlers');
-initLicenseHandlers();
 
 
 // ============================================================
@@ -417,7 +431,8 @@ function initializeApp() {
       nodeIntegration: true, contextIsolation: false,
       spellcheck: true,
       backgroundThrottling: true,  // Economiza CPU/memória quando em background
-      v8CacheOptions: 'none'       // Reduz cache de código V8 (~10-20MB)
+      v8CacheOptions: 'none',       // Reduz cache de código V8 (~10-20MB)
+      devTools: !app.isPackaged
     },
   });
   controlWindow.setMenuBarVisibility(false);
@@ -479,7 +494,7 @@ function createSplashWindow() {
     // app.on('window-all-closed') encerra o processo no Windows — o usuário vê
     // só o log do AutoUpdater e o app "some".
     try {
-      const licenseOk = await LicenseGate.ensureValid(APP_ICON);
+      const licenseOk = await LicenseGate.ensureValid(APP_ICON, splashWindow, ACTIVATION_HTML);
       if (licenseOk) initializeApp();
     } catch (err) {
       console.error('[License] Erro na verificação de licença:', err);

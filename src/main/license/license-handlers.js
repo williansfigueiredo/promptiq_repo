@@ -85,7 +85,12 @@ function initLicenseHandlers() {
  *   if (ok) initializeApp();
  */
 const LicenseGate = {
-  async ensureValid(APP_ICON) {
+  /**
+   * @param {string} APP_ICON - ícone da janela
+   * @param {Electron.BrowserWindow|null} splashRef - splash a ocultar durante o gate (evita segunda janela clicável)
+   * @param {string|null} activationHtmlPath - caminho absoluto para activation.html (main process)
+   */
+  async ensureValid(APP_ICON, splashRef = null, activationHtmlPath = null) {
     // ------------------------------------------------------------------
     // DEV: não bloquear o desenvolvedor em `npm start` (app não empacotado).
     // Em produção (electron-builder), app.isPackaged === true → sempre exige.
@@ -104,7 +109,7 @@ const LicenseGate = {
     }
 
     console.log(`[License] Bloqueio: ${check.reason}. Abrindo janela de ativação...`);
-    return await openActivationWindow(APP_ICON);
+    return await openActivationWindow(APP_ICON, splashRef, activationHtmlPath);
   }
 };
 
@@ -115,8 +120,48 @@ const LicenseGate = {
  * Promise que resolve TRUE quando o usuário ativa com sucesso,
  * ou FALSE se ele fechar sem ativar (e nesse caso o app é encerrado).
  */
-function openActivationWindow(APP_ICON) {
+function hardenActivationWebContents(wc) {
+  if (!app.isPackaged) return;
+
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  wc.on('will-navigate', (event, url) => {
+    if (url && /^https?:/i.test(url)) {
+      event.preventDefault();
+    }
+  });
+
+  wc.on('before-input-event', (event, input) => {
+    const key = (input.key || '').toLowerCase();
+    const mod = input.control || input.meta;
+    if (key === 'f12' || key === 'f5') {
+      event.preventDefault();
+      return;
+    }
+    if (mod && input.shift && (key === 'i' || key === 'j' || key === 'c')) {
+      event.preventDefault();
+      return;
+    }
+    if (mod && key === 'u') {
+      event.preventDefault();
+    }
+  });
+}
+
+function openActivationWindow(APP_ICON, splashRef, activationHtmlPath) {
   return new Promise((resolve) => {
+    // Evita que o splash fique por baixo como "segunda superfície" enquanto o gate roda.
+    if (splashRef && !splashRef.isDestroyed()) {
+      try {
+        splashRef.hide();
+      } catch (_) { /* ignore */ }
+    }
+
+    const htmlPath = activationHtmlPath
+      || path.join(__dirname, '../../../public/html/activation.html');
+
+    const packaged = app.isPackaged;
+
     const win = new BrowserWindow({
       width: 480,
       height: 580,
@@ -126,20 +171,26 @@ function openActivationWindow(APP_ICON) {
       titleBarStyle: 'hidden',
       resizable: false,
       maximizable: false,
+      fullscreenable: false,
       minimizable: false,
       alwaysOnTop: true,
       center: true,
+      focusable: true,
       backgroundColor: '#1a1a1a',
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
-        v8CacheOptions: 'none'
+        v8CacheOptions: 'none',
+        devTools: !packaged,
+        spellcheck: false
       }
     });
 
+    hardenActivationWebContents(win.webContents);
+
     win.setMenuBarVisibility(false);
     win.removeMenu();
-    win.loadFile(path.join(__dirname, '../../../public/html/activation.html'));
+    win.loadFile(htmlPath);
 
     let activatedOk = false;
 

@@ -196,6 +196,8 @@
 
     const { ipcRenderer } = require('electron');
 
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
+
     const $input  = document.getElementById('key-input');
     const $btn    = document.getElementById('activate-btn');
     const $status = document.getElementById('status');
