@@ -1563,6 +1563,64 @@ document.addEventListener("DOMContentLoaded", () => {
 
   console.log('🎹 Verificando HotkeyHandler:', typeof HotkeyHandler, HotkeyHandler);
 
+  // ------------------------------------------------------------
+  // Helpers de navegação por asterisco "*" (bookmarks)
+  // ------------------------------------------------------------
+  // Varre os nós de texto do prompter e devolve a posição Y (em pixels
+  // relativos ao topo do textEl) de CADA asterisco encontrado. As
+  // posições já vêm em ordem crescente.
+  function getAsteriskYPositions(textEl) {
+    if (!textEl) return [];
+    const out = [];
+    const textRect = textEl.getBoundingClientRect();
+    const walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, null);
+    const range = document.createRange();
+    let node;
+    while ((node = walker.nextNode())) {
+      const txt = node.nodeValue || '';
+      let idx = txt.indexOf('*');
+      while (idx !== -1) {
+        try {
+          range.setStart(node, idx);
+          range.setEnd(node, idx + 1);
+          const rect = range.getBoundingClientRect();
+          if (rect.width || rect.height) {
+            out.push(rect.top - textRect.top);
+          }
+        } catch (_) { /* nó inválido — ignora */ }
+        idx = txt.indexOf('*', idx + 1);
+      }
+    }
+    out.sort((a, b) => a - b);
+    return out;
+  }
+
+  // Aplica scroll para uma posição Y respeitando o modo (rodando ou parado).
+  function applyScroll(container, textEl, target) {
+    if (!container || !textEl) return;
+    if (ScrollEngine.isRunning) {
+      ScrollEngine.decimalScroll = target;
+      textEl.style.transform = `translate3d(0, -${target}px, 0)`;
+    } else {
+      // Em modo parado: garante que não há transform residual e usa o scroll
+      // nativo do container (que é o que o usuário vê de fato).
+      textEl.style.transform = "none";
+      container.scrollTop = target;
+      ScrollEngine.decimalScroll = target;
+    }
+  }
+
+  // Lê a posição vertical "real" da rolagem atual, cobrindo os 3 cenários:
+  //   1) ScrollEngine rodando → usa decimalScroll (transform ativo)
+  //   2) Texto parado, rolado por scroll nativo → usa container.scrollTop
+  //   3) Texto parado mas com transform residual → usa decimalScroll
+  function readCurrentScrollY(container, textEl) {
+    if (ScrollEngine.isRunning) return ScrollEngine.decimalScroll || 0;
+    const scrollTop = container.scrollTop || 0;
+    const decimal  = ScrollEngine.decimalScroll || 0;
+    return Math.max(scrollTop, decimal);
+  }
+
   // Inicializa com as ações do prompter (se módulo carregou)
   if (typeof HotkeyHandler !== 'undefined' && HotkeyHandler) {
     console.log('🎹 Inicializando HotkeyHandler...');
@@ -1596,49 +1654,81 @@ document.addEventListener("DOMContentLoaded", () => {
           ScrollEngine.setSpeed(-currentSpeed);
         },
         previousLine: () => {
-          // Volta uma linha (funciona tanto parado quanto rodando)
+          // Volta UMA linha (parado ou rodando).
           const container = document.querySelector(".prompter-in-control");
           const textEl = document.getElementById("prompterText-control");
           if (!container || !textEl) return;
 
           const lineHeight = parseInt(getComputedStyle(textEl).lineHeight) || 30;
-
           if (ScrollEngine.isRunning) {
-            // Se está rodando, ajusta o decimalScroll e atualiza o transform
             ScrollEngine.decimalScroll = Math.max(0, ScrollEngine.decimalScroll - lineHeight);
             textEl.style.transform = `translate3d(0, -${ScrollEngine.decimalScroll}px, 0)`;
           } else {
-            // Se está parado, usa scrollTop normal
             container.scrollTop = Math.max(0, container.scrollTop - lineHeight);
             ScrollEngine.decimalScroll = container.scrollTop;
           }
         },
         nextLine: () => {
-          // Avança uma linha (funciona tanto parado quanto rodando)
+          // Avança UMA linha (parado ou rodando).
           const container = document.querySelector(".prompter-in-control");
           const textEl = document.getElementById("prompterText-control");
           if (!container || !textEl) return;
 
           const lineHeight = parseInt(getComputedStyle(textEl).lineHeight) || 30;
-          const maxScroll = textEl.offsetHeight - container.clientHeight;
-
+          const maxScroll = Math.max(0, textEl.offsetHeight - container.clientHeight);
           if (ScrollEngine.isRunning) {
-            // Se está rodando, ajusta o decimalScroll e atualiza o transform
             ScrollEngine.decimalScroll = Math.min(maxScroll, ScrollEngine.decimalScroll + lineHeight);
             textEl.style.transform = `translate3d(0, -${ScrollEngine.decimalScroll}px, 0)`;
           } else {
-            // Se está parado, usa scrollTop normal
             container.scrollTop = Math.min(maxScroll, container.scrollTop + lineHeight);
             ScrollEngine.decimalScroll = container.scrollTop;
           }
         },
         previousCue: () => {
-          // Implementar navegação de cue markers
-          console.log("Previous Cue - TODO");
+          // Salta para o ASTERISCO (*) anterior (bookmark). Loopa para o último
+          // se já estiver no primeiro. Funciona parado ou rodando.
+          const container = document.querySelector(".prompter-in-control");
+          const textEl = document.getElementById("prompterText-control");
+          if (!container || !textEl) return;
+
+          const positions = getAsteriskYPositions(textEl);
+          if (positions.length === 0) return;
+
+          const maxScroll = Math.max(0, textEl.offsetHeight - container.clientHeight);
+          // Posição de scroll alvo para cada asterisco (mostra o * a 20px do topo).
+          const targets = positions.map((y) => Math.min(maxScroll, Math.max(0, y - 20)));
+          const currentY = readCurrentScrollY(container, textEl);
+
+          // Procura o último target ESTRITAMENTE menor que currentY.
+          // Pequena tolerância (1px) absorve arredondamentos de subpixel.
+          let target = [...targets].reverse().find((t) => t < currentY - 1);
+          if (target === undefined) {
+            // Loop: vai para o último cue do texto.
+            target = targets[targets.length - 1];
+          }
+          applyScroll(container, textEl, target);
         },
         nextCue: () => {
-          // Implementar navegação de cue markers
-          console.log("Next Cue - TODO");
+          // Salta para o PRÓXIMO ASTERISCO (*) (bookmark). Loopa para o
+          // primeiro se já estiver no último. Funciona parado ou rodando.
+          const container = document.querySelector(".prompter-in-control");
+          const textEl = document.getElementById("prompterText-control");
+          if (!container || !textEl) return;
+
+          const positions = getAsteriskYPositions(textEl);
+          if (positions.length === 0) return;
+
+          const maxScroll = Math.max(0, textEl.offsetHeight - container.clientHeight);
+          const targets = positions.map((y) => Math.min(maxScroll, Math.max(0, y - 20)));
+          const currentY = readCurrentScrollY(container, textEl);
+
+          // Procura o primeiro target ESTRITAMENTE maior que currentY.
+          let target = targets.find((t) => t > currentY + 1);
+          if (target === undefined) {
+            // Loop: vai para o primeiro cue do texto.
+            target = targets[0];
+          }
+          applyScroll(container, textEl, target);
         },
         jumpStart: () => {
           // Volta ao início

@@ -1308,7 +1308,7 @@ mark.diff-added-highlight {
   padding: 0 16px !important;
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--border-light) !important;
+  border-bottom: none !important;
 }
 
 .preferences-window #window-title-display {
@@ -1337,6 +1337,12 @@ mark.diff-added-highlight {
   display: flex;
   gap: 0;
   box-shadow: var(--shadow-sm);
+}
+
+/* Na janela Preferences: sem a segunda “barra” sob as abas (só separação visual limpa) */
+.preferences-window #pref-tabs {
+  border-bottom: none !important;
+  box-shadow: none !important;
 }
 
 #pref-tabs .nav-item {
@@ -1393,6 +1399,15 @@ mark.diff-added-highlight {
 #pref-standby,
 #pref-auto-update {
   padding-top: 24px !important;
+}
+
+/* Permite rolar o conteúdo da aba quando a janela é menor que o necessário —
+   garante que Previous Cue-Point / Next Cue-Point / Jump to Start / Show-Hide
+   Cue continuem acessíveis em telas pequenas. */
+#pref-controls {
+  overflow-y: auto;
+  max-height: calc(100vh - 180px);
+  padding-bottom: 24px !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -3412,4 +3427,70 @@ body.dark-mode #btn-toggle-internet.btn-danger {
   background-color: #dc3545;
   border-color: #dc3545;
   color: #fff;
+}
+
+
+/* ==========================================================================
+   KEY CAPTURE MODAL (Aba Controls — Preferences)
+   ==========================================================================
+   Modal que abre ao clicar em qualquer campo de tecla. Captura a tecla
+   pressionada pelo usuário e grava no input correspondente. */
+
+.key-capture-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  -webkit-app-region: no-drag;
+}
+
+.key-capture-modal[hidden] {
+  display: none;
+}
+
+.key-capture-box {
+  background: #ffffff;
+  color: #1a1a1a;
+  padding: 28px 36px;
+  border-radius: 10px;
+  min-width: 320px;
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  animation: keyCapturePop 0.18s ease-out;
+}
+
+@keyframes keyCapturePop {
+  from { transform: scale(0.92); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+
+.key-capture-display {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #0d6efd;
+  padding: 14px;
+  margin-top: 6px;
+  border: 2px dashed #0d6efd;
+  border-radius: 6px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  letter-spacing: 1px;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+[data-theme="dark"] .key-capture-box,
+body.dark-mode .key-capture-box {
+  background: #1f2330;
+  color: #e8e8e8;
+}
+
+/* Indica visualmente que o campo de tecla é clicável para capturar */
+.preferences-window input[id^="key-"] {
+  cursor: pointer;
+  caret-color: transparent;
 }

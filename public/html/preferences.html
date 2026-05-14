@@ -583,34 +583,19 @@
           </div>
         </div>
 
-        <!-- Aba Activate -->
+        <!-- Aba Activate — só exibe status (ativação ocorre na janela dedicada / ERP) -->
         <div class="tab-pane fade" id="pref-activate" role="tabpanel">
           <div class="mb-3 px-5 mt-5">
             <h5 class="text-muted mb-3">Product Activation</h5>
             <p class="text-muted small mb-4">
-              Enter your activation code below to unlock all features.
+              Status da licença neste computador. Para ativar ou trocar de máquina, use o fluxo de ativação do aplicativo.
             </p>
-            
-            <div class="d-flex justify-content-center align-items-center gap-2 mb-4">
-              <input type="text" class="form-control form-control-sm text-center activation-code-input" id="activation-code-1" maxlength="5" style="width: 70px; font-size: 1.1rem; letter-spacing: 2px; font-weight: bold;" />
-              <span class="text-muted fw-bold">-</span>
-              <input type="text" class="form-control form-control-sm text-center activation-code-input" id="activation-code-2" maxlength="5" style="width: 70px; font-size: 1.1rem; letter-spacing: 2px; font-weight: bold;" />
-              <span class="text-muted fw-bold">-</span>
-              <input type="text" class="form-control form-control-sm text-center activation-code-input" id="activation-code-3" maxlength="5" style="width: 70px; font-size: 1.1rem; letter-spacing: 2px; font-weight: bold;" />
-              <span class="text-muted fw-bold">-</span>
-              <input type="text" class="form-control form-control-sm text-center activation-code-input" id="activation-code-4" maxlength="5" style="width: 70px; font-size: 1.1rem; letter-spacing: 2px; font-weight: bold;" />
-              <span class="text-muted fw-bold">-</span>
-              <input type="text" class="form-control form-control-sm text-center activation-code-input" id="activation-code-5" maxlength="5" style="width: 70px; font-size: 1.1rem; letter-spacing: 2px; font-weight: bold;" />
-              <span class="text-muted fw-bold">-</span>
-              <input type="text" class="form-control form-control-sm text-center activation-code-input" id="activation-code-6" maxlength="5" style="width: 70px; font-size: 1.1rem; letter-spacing: 2px; font-weight: bold;" />
-            </div>
-
-            <div class="text-center">
-              <button class="btn btn-primary" id="activate-btn">Activate</button>
-            </div>
-
-            <div id="activation-status" class="mt-4 text-center" style="display: none;">
-              <p class="mb-0"></p>
+            <div id="license-status-panel" class="border rounded p-4 bg-light">
+              <div class="d-flex align-items-center gap-3 mb-2">
+                <span id="license-status-badge" class="badge rounded-pill bg-secondary">…</span>
+                <strong id="license-status-title" class="mb-0">Carregando…</strong>
+              </div>
+              <p id="license-status-detail" class="text-muted small mb-0"></p>
             </div>
           </div>
         </div>
@@ -626,6 +611,20 @@
           <button id="cancel-btn" class="btn btn-secondary me-4">Cancelar</button>
           <button id="ok-btn" class="btn btn-primary me-4">OK</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Modal: captura de tecla para campos da aba Controls -->
+    <div id="key-capture-modal" class="key-capture-modal" hidden>
+      <div class="key-capture-box">
+        <h5 class="mb-2">Press a Key</h5>
+        <p class="text-muted small mb-3">
+          Pressione a tecla que deseja usar para esta ação.
+        </p>
+        <div class="key-capture-display" id="key-capture-display">…</div>
+        <p class="text-muted small mt-3 mb-0">
+          <kbd>Esc</kbd> cancela &nbsp;·&nbsp; <kbd>Delete</kbd> limpa
+        </p>
       </div>
     </div>
 

@@ -116,6 +116,11 @@
   max-width: none;
   width: 97%;
   margin-bottom: 200px;
+  /* Quebra de palavras longas (ex.: digitação contínua sem espaços vinda do
+     roteirista em tempo real) — impede que o texto escape da margem direita.
+     Não altera nada do fluxo de sincronização nem da margem configurada. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Esconde a barra de rolagem */
@@ -186,16 +191,9 @@ body.operator-fullscreen-mode #operator-tab-pane {
   }
 }
 
-/* Botão de Voice Tracking - Estado Desligado (Vermelho) */
+/* Botão de Voice Tracking — oculto na UI; voice-module e eventos permanecem */
 #btn-voice-tracking {
-  background-color: #dc3545 !important;
-  color: white !important;
-  border-color: #dc3545 !important;
-  transition: all 0.3s;
-  margin-left: 10px;
-  height: 32px;
-  display: flex;
-  align-items: center;
+  display: none !important;
 }
 
 /* Botão de Voice Tracking - Estado Ligado (Verde) */

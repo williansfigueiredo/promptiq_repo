@@ -70,6 +70,10 @@ const mammoth = require('mammoth');       // Leitura de arquivos .docx
 const { PDFParse } = require('pdf-parse');    // Leitura de arquivos .pdf (v2.x)
 const WordExtractor = require("word-extractor"); // Leitura de arquivos .doc
 
+// LICENSE: módulo de licenciamento por hardware fingerprint (machine-bound)
+const { initLicenseHandlers, LicenseGate } = require('./license/license-handlers');
+initLicenseHandlers();
+
 
 // ============================================================
 // SEÇÃO 2: DEPENDÊNCIAS DO SERVIDOR REMOTO (WI-FI)
@@ -469,9 +473,20 @@ function createSplashWindow() {
     }
   });
   splashWindow.loadFile(path.join(__dirname, '../../public/html/splash.html'));
-  setTimeout(() => {
-    if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
-    initializeApp();
+  setTimeout(async () => {
+    // IMPORTANTE: não fechar o splash antes do gate de licença nem antes do
+    // initializeApp(). Se fecharmos o splash sozinho, fica 0 janelas abertas e
+    // app.on('window-all-closed') encerra o processo no Windows — o usuário vê
+    // só o log do AutoUpdater e o app "some".
+    try {
+      const licenseOk = await LicenseGate.ensureValid(APP_ICON);
+      if (licenseOk) initializeApp();
+    } catch (err) {
+      console.error('[License] Erro na verificação de licença:', err);
+      dialog.showErrorBox('Licença', err.message || String(err));
+    } finally {
+      if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
+    }
   }, 5000);
 }
 
@@ -1212,13 +1227,13 @@ ipcMain.on('open-preferences-window', () => {
 
   // Tamanho máximo desejado, com limite baseado na tela
   const preferredWidth = Math.min(830, Math.floor(screenWidth * 0.9));
-  const preferredHeight = Math.min(800, Math.floor(screenHeight * 0.9));
+  const preferredHeight = Math.min(880, Math.floor(screenHeight * 0.92));
 
   const win = new BrowserWindow({
     width: preferredWidth,
     height: preferredHeight,
     minWidth: 600,
-    minHeight: 400,
+    minHeight: 500,
     title: "Preferences",
     icon: APP_ICON,
     parent: controlWindow,

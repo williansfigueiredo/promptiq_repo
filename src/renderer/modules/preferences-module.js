@@ -143,6 +143,140 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ============================================================
+  // KEY CAPTURE — Modal de captura de tecla para a aba Controls
+  // ============================================================
+  // Ao clicar num input cujo id começa com "key-", abre um modal
+  // que captura a próxima tecla pressionada e grava no input.
+  // Esc cancela. Delete limpa (grava [None]).
+  // ============================================================
+  (function setupKeyCapture() {
+    const modal   = document.getElementById('key-capture-modal');
+    const display = document.getElementById('key-capture-display');
+    if (!modal || !display) return;
+
+    let targetInput = null;
+
+    // Converte um KeyboardEvent em nome amigável compatível com hotkey-handler.js
+    function eventToFriendlyName(ev) {
+      const code = ev.code;
+      const key  = ev.key;
+
+      // Ignora teclas só de modificador pressionadas sozinhas
+      if (key === 'Shift' || key === 'Control' || key === 'Alt' || key === 'Meta') {
+        return null;
+      }
+
+      const map = {
+        Escape:      'Esc',
+        Space:       'Space',
+        Enter:       'Enter',
+        Tab:         'Tab',
+        Backspace:   'Backspace',
+        Delete:      'Delete',
+        Home:        'Home',
+        End:         'End',
+        PageUp:      'PageUp',
+        PageDown:    'PageDown',
+        ArrowUp:     'Up',
+        ArrowDown:   'Down',
+        ArrowLeft:   'Left',
+        ArrowRight:  'Right',
+        BracketLeft: '[',
+        BracketRight:']',
+        Semicolon:   ';',
+        Quote:       "'",
+        Comma:       ',',
+        Period:      '.',
+        Slash:       '/',
+        Backslash:   '\\',
+        Minus:       '-',
+        Equal:       '=',
+        Backquote:   '`'
+      };
+      if (map[code]) return map[code];
+      if (/^F\d{1,2}$/.test(code)) return code;           // F1..F12
+      if (/^Key[A-Z]$/.test(code))   return code.slice(3); // KeyA -> A
+      if (/^Digit\d$/.test(code))    return code.slice(5); // Digit1 -> 1
+      if (/^Numpad\d$/.test(code))   return 'Num' + code.slice(6);
+      // Fallback: usa event.key em maiúscula
+      return key.length === 1 ? key.toUpperCase() : key;
+    }
+
+    function captureKeyHandler(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      // Cancelar
+      if (ev.key === 'Escape') {
+        closeCapture();
+        return;
+      }
+
+      // Limpar (Delete = [None])
+      if (ev.key === 'Delete') {
+        if (targetInput) {
+          targetInput.value = '[None]';
+          targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        display.textContent = '[None]';
+        setTimeout(closeCapture, 220);
+        return;
+      }
+
+      const name = eventToFriendlyName(ev);
+      if (!name) return;
+
+      if (targetInput) {
+        targetInput.value = name;
+        targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      display.textContent = name;
+      setTimeout(closeCapture, 220);
+    }
+
+    function openCapture(input) {
+      targetInput = input;
+      display.textContent = '…';
+      modal.hidden = false;
+      document.addEventListener('keydown', captureKeyHandler, true);
+    }
+
+    function closeCapture() {
+      modal.hidden = true;
+      document.removeEventListener('keydown', captureKeyHandler, true);
+      if (targetInput) {
+        targetInput.blur();
+        targetInput = null;
+      }
+    }
+
+    // Delegação: qualquer clique/focus em input cujo id começa com "key-"
+    function isKeyField(el) {
+      return el && el.tagName === 'INPUT'
+          && typeof el.id === 'string'
+          && el.id.startsWith('key-');
+    }
+
+    document.addEventListener('mousedown', (e) => {
+      if (isKeyField(e.target)) {
+        e.preventDefault();
+        openCapture(e.target);
+      }
+    });
+
+    document.addEventListener('focusin', (e) => {
+      if (isKeyField(e.target) && modal.hidden) {
+        openCapture(e.target);
+      }
+    });
+
+    // Clique no fundo escuro cancela
+    modal.addEventListener('mousedown', (e) => {
+      if (e.target === modal) closeCapture();
+    });
+  })();
+
+  // ============================================================
   // LISTENERS DE SLIDERS (APENAS ATUALIZAM O VALOR VISUAL)
   // ❌ NÃO SALVAM (ipcRenderer.send foi removido)
   // ============================================================
@@ -554,6 +688,66 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ============================================================
+  // Aba Activate — apenas status (dados via Main: license:status)
+  // ============================================================
+  const licenseStatusBadge = document.getElementById('license-status-badge');
+  const licenseStatusTitle = document.getElementById('license-status-title');
+  const licenseStatusDetail = document.getElementById('license-status-detail');
+  const activateTabBtn = document.getElementById('activate-tab-btn');
+
+  async function refreshLicenseStatusPanel() {
+    if (!licenseStatusTitle) return;
+    try {
+      const s = await ipcRenderer.invoke('license:status');
+      if (s.activated) {
+        if (licenseStatusBadge) {
+          licenseStatusBadge.textContent = 'Activated';
+          licenseStatusBadge.className = 'badge rounded-pill bg-success';
+        }
+        licenseStatusTitle.textContent = 'This copy is licensed.';
+        const parts = [];
+        if (s.customer) parts.push(`Registered to: ${s.customer}`);
+        if (s.keyMasked) parts.push(`Key: ${s.keyMasked}`);
+        if (s.activatedAt) parts.push(`Activated: ${new Date(s.activatedAt).toLocaleString()}`);
+        if (licenseStatusDetail) licenseStatusDetail.textContent = parts.join(' · ');
+      } else if (s.devLicenseOptional) {
+        if (licenseStatusBadge) {
+          licenseStatusBadge.textContent = 'Development';
+          licenseStatusBadge.className = 'badge rounded-pill bg-warning text-dark';
+        }
+        licenseStatusTitle.textContent = 'No license on disk (OK for local dev)';
+        if (licenseStatusDetail) {
+          licenseStatusDetail.textContent =
+            'Unpacked builds (npm start) skip the license gate. Use npm run start:enforce to test activation. Release builds require a valid license.';
+        }
+      } else {
+        if (licenseStatusBadge) {
+          licenseStatusBadge.textContent = 'Not activated';
+          licenseStatusBadge.className = 'badge rounded-pill bg-danger';
+        }
+        licenseStatusTitle.textContent = 'This copy is not activated.';
+        if (licenseStatusDetail) {
+          licenseStatusDetail.textContent = s.reason
+            ? `Reason: ${s.reason}. Complete activation when the app starts.`
+            : 'Complete activation when the app starts.';
+        }
+      }
+    } catch (e) {
+      if (licenseStatusBadge) {
+        licenseStatusBadge.textContent = 'Error';
+        licenseStatusBadge.className = 'badge rounded-pill bg-secondary';
+      }
+      licenseStatusTitle.textContent = 'Could not read license status.';
+      if (licenseStatusDetail) licenseStatusDetail.textContent = String(e.message || e);
+    }
+  }
+
+  if (activateTabBtn) {
+    activateTabBtn.addEventListener('shown.bs.tab', refreshLicenseStatusPanel);
+  }
+  refreshLicenseStatusPanel();
+
   // Listener para resultado da verificação de updates
   ipcRenderer.on('update-check-result', (event, result) => {
     console.log('[AutoUpdater] Resultado:', result);
@@ -629,6 +823,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       console.log("✅ Settings carregadas com sucesso");
+      refreshLicenseStatusPanel();
     }, 100);
   });
 

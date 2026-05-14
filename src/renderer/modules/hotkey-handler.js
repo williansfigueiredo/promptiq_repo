@@ -60,7 +60,8 @@ const HotkeyHandler = (function() {
     // ============================================================
     // MAPEAMENTO DE TECLAS
     // ============================================================
-    // Converte nomes amigáveis para códigos de tecla
+    // Converte nomes amigáveis (como gravados na UI/Preferences) em
+    // event.code do KeyboardEvent.
     const keyNameToCode = {
         'Esc': 'Escape',
         'Escape': 'Escape',
@@ -79,6 +80,15 @@ const HotkeyHandler = (function() {
         'Right': 'ArrowRight',
         '[': 'BracketLeft',
         ']': 'BracketRight',
+        ';': 'Semicolon',
+        "'": 'Quote',
+        ',': 'Comma',
+        '.': 'Period',
+        '/': 'Slash',
+        '\\': 'Backslash',
+        '-': 'Minus',
+        '=': 'Equal',
+        '`': 'Backquote',
         '[None]': '',
         'None': ''
     };
@@ -92,7 +102,16 @@ const HotkeyHandler = (function() {
         'ArrowLeft': 'Left',
         'ArrowRight': 'Right',
         'BracketLeft': '[',
-        'BracketRight': ']'
+        'BracketRight': ']',
+        'Semicolon': ';',
+        'Quote': "'",
+        'Comma': ',',
+        'Period': '.',
+        'Slash': '/',
+        'Backslash': '\\',
+        'Minus': '-',
+        'Equal': '=',
+        'Backquote': '`'
     };
 
     // Mapeamento de botões do mouse
@@ -116,22 +135,32 @@ const HotkeyHandler = (function() {
      */
     function normalizeKeyName(name) {
         if (!name || name === '[None]' || name === 'None') return '';
-        
-        // Se já é uma letra/número simples
-        if (name.length === 1) {
-            return 'Key' + name.toUpperCase();
-        }
-        
-        // Verifica no mapa
+
+        // Mapa primeiro (cobre teclas especiais e símbolos)
         if (keyNameToCode[name]) {
             return keyNameToCode[name];
         }
-        
+
+        // Letra única → KeyA, KeyB, ...
+        if (/^[A-Za-z]$/.test(name)) {
+            return 'Key' + name.toUpperCase();
+        }
+
+        // Dígito único → Digit0..Digit9
+        if (/^\d$/.test(name)) {
+            return 'Digit' + name;
+        }
+
+        // Numpad ex.: "Num1"
+        if (/^Num\d$/.test(name)) {
+            return 'Numpad' + name.slice(3);
+        }
+
         // Teclas de função F1-F12
         if (/^F\d+$/i.test(name)) {
             return name.toUpperCase();
         }
-        
+
         return name;
     }
 

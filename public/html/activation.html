@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Promptiq — Activate License</title>
+  <style>
+    /* ========================================
+       Estilo escuro que combina com o app
+       ======================================== */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1a1a1a;
+      color: #e8e8e8;
+      /* Só arrastar pela faixa do título — drag no body inteiro rouba clique do botão no Windows */
+      -webkit-app-region: no-drag;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .drag-strip {
+      -webkit-app-region: drag;
+      position: absolute;
+      left: 0;
+      right: 40px;
+      top: 0;
+      height: 44px;
+      z-index: 0;
+    }
+
+    .wrap {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: 36px 32px 24px 32px;
+      position: relative;
+      z-index: 1;
+      -webkit-app-region: no-drag;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      letter-spacing: 0.3px;
+    }
+    .brand { color: #2a9d6e; }
+
+    .subtitle {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 28px;
+      line-height: 1.5;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      color: #999;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      font-weight: 600;
+    }
+
+    input[type="text"] {
+      -webkit-app-region: no-drag;
+      width: 100%;
+      padding: 13px 14px;
+      background: #0f0f0f;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #fff;
+      font-size: 14px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      letter-spacing: 1px;
+      outline: none;
+      margin-bottom: 18px;
+      transition: border-color 0.15s;
+      user-select: text;
+    }
+    input[type="text"]:focus { border-color: #2a9d6e; }
+    input[type="text"]::placeholder { color: #444; }
+
+    button#activate-btn {
+      -webkit-app-region: no-drag;
+      width: 100%;
+      padding: 13px;
+      background: #2a9d6e;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      letter-spacing: 0.3px;
+    }
+    button#activate-btn:hover { background: #34b87f; }
+    button#activate-btn:disabled { background: #444; cursor: not-allowed; color: #888; }
+
+    .status {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border-radius: 4px;
+      font-size: 12.5px;
+      display: none;
+      line-height: 1.4;
+    }
+    .status.error {
+      background: rgba(180, 60, 60, 0.12);
+      color: #f88;
+      border: 1px solid rgba(180, 60, 60, 0.3);
+      display: block;
+    }
+    .status.success {
+      background: rgba(42, 157, 110, 0.12);
+      color: #8fd8b3;
+      border: 1px solid rgba(42, 157, 110, 0.4);
+      display: block;
+    }
+
+    .fingerprint-box {
+      margin-top: auto;
+      padding-top: 18px;
+      border-top: 1px solid #2a2a2a;
+    }
+    .fp-label {
+      color: #777;
+      font-size: 10.5px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+    .fp-value {
+      font-size: 10.5px;
+      color: #555;
+      font-family: 'Consolas', monospace;
+      word-break: break-all;
+      -webkit-app-region: no-drag;
+      user-select: text;
+      cursor: text;
+      line-height: 1.4;
+    }
+
+    .close-btn {
+      -webkit-app-region: no-drag;
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 28px;
+      height: 28px;
+      background: transparent;
+      color: #666;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      border-radius: 4px;
+      transition: background 0.15s, color 0.15s;
+      z-index: 2;
+    }
+    .close-btn:hover { background: #2a2a2a; color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="drag-strip" title="Arraste para mover a janela"></div>
+  <button class="close-btn" onclick="window.close()" title="Close">✕</button>
+
+  <div class="wrap">
+    <h1><span class="brand">Promptiq</span></h1>
+    <p class="subtitle">Enter your license key to activate this machine. This activation is permanent and bound to this computer's hardware.</p>
+
+    <label for="key-input">License Key</label>
+    <input type="text" id="key-input" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" autofocus>
+
+    <button id="activate-btn">Activate</button>
+
+    <div class="status" id="status"></div>
+
+    <div class="fingerprint-box">
+      <div class="fp-label">Machine ID (send to support if needed)</div>
+      <div class="fp-value" id="fp">loading...</div>
+    </div>
+  </div>
+
+  <script>
+    // ============================================================
+    // Lógica da janela de ativação (Renderer Process)
+    // ============================================================
+    // Como nodeIntegration:true e contextIsolation:false estão
+    // habilitados no projeto, podemos usar require() diretamente,
+    // seguindo o mesmo padrão de app.js / preload.js.
+    // ============================================================
+
+    const { ipcRenderer } = require('electron');
+
+    const $input  = document.getElementById('key-input');
+    const $btn    = document.getElementById('activate-btn');
+    const $status = document.getElementById('status');
+    const $fp     = document.getElementById('fp');
+
+    // Ao abrir a janela, mostra o fingerprint da máquina (útil
+    // pro usuário enviar pro suporte caso a ativação falhe).
+    ipcRenderer.invoke('license:fingerprint').then(fp => {
+      $fp.textContent = fp;
+    }).catch(() => {
+      $fp.textContent = '(unavailable)';
+    });
+
+    function showStatus(msg, type) {
+      $status.textContent = msg;
+      $status.className = 'status ' + type;
+    }
+
+    async function doActivate() {
+      const key = $input.value.trim();
+      if (!key) {
+        showStatus('Please enter your license key.', 'error');
+        $input.focus();
+        return;
+      }
+
+      $btn.disabled = true;
+      $btn.textContent = 'Activating...';
+      $status.style.display = 'none';
+
+      try {
+        const result = await ipcRenderer.invoke('license:activate', key);
+
+        if (result && result.ok) {
+          showStatus('License activated! Opening Promptiq...', 'success');
+          setTimeout(() => {
+            ipcRenderer.send('license:activated-ok');
+          }, 900);
+        } else {
+          showStatus((result && result.error) || 'Activation failed.', 'error');
+          $btn.disabled = false;
+          $btn.textContent = 'Activate';
+          $input.focus();
+          $input.select();
+        }
+      } catch (err) {
+        const msg = (err && err.message) ? err.message : String(err);
+        showStatus('Erro ao ativar: ' + msg, 'error');
+        $btn.disabled = false;
+        $btn.textContent = 'Activate';
+        $input.focus();
+        $input.select();
+      }
+    }
+
+    $btn.addEventListener('click', doActivate);
+
+    $input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') doActivate();
+    });
+
+    // Atalho: Esc fecha a janela (= não ativar = app encerra)
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') window.close();
+    });
+  </script>
+</body>
+</html>
