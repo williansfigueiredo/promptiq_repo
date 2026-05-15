@@ -1,6 +1,6 @@
 {
   "name": "promptiq",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Software Teleprompter PromptIQ",
   "main": "src/main/main.js",
   "scripts": {
@@ -68,7 +68,9 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "runAfterFinish": true
+      "runAfterFinish": false,
+      "deleteAppDataOnUninstall": false,
+      "perMachine": false
     },
     "files": [
       "**/*",

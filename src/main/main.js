@@ -677,7 +677,10 @@ function initAutoUpdater() {
 // Handler IPC: Usuário clicou em "Reiniciar Agora"
 ipcMain.on('restart_app', () => {
   log.info('[AutoUpdater] Usuário solicitou reinício para atualização');
-  autoUpdater.quitAndInstall(false, true);
+  // isSilent=true → NSIS roda sem janela visível
+  // isForceRunAfter=false → não abre o app imediatamente após instalar
+  //   (o autoUpdater reinicia o app depois da instalação silenciosa)
+  autoUpdater.quitAndInstall(true, true);
 });
 
 // Handler IPC: Usuário clicou em "Check Now" nas Preferences
