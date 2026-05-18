@@ -1695,8 +1695,9 @@ document.addEventListener("DOMContentLoaded", () => {
           if (positions.length === 0) return;
 
           const maxScroll = Math.max(0, textEl.offsetHeight - container.clientHeight);
-          // Posição de scroll alvo para cada asterisco (mostra o * a 20px do topo).
-          const targets = positions.map((y) => Math.min(maxScroll, Math.max(0, y - 20)));
+          // Centraliza o * no meio da tela (metade da altura visível).
+          const half = Math.floor(container.clientHeight / 2);
+          const targets = positions.map((y) => Math.min(maxScroll, Math.max(0, y - half)));
           const currentY = readCurrentScrollY(container, textEl);
 
           // Procura o último target ESTRITAMENTE menor que currentY.
@@ -1719,7 +1720,9 @@ document.addEventListener("DOMContentLoaded", () => {
           if (positions.length === 0) return;
 
           const maxScroll = Math.max(0, textEl.offsetHeight - container.clientHeight);
-          const targets = positions.map((y) => Math.min(maxScroll, Math.max(0, y - 20)));
+          // Centraliza o * no meio da tela (metade da altura visível).
+          const half = Math.floor(container.clientHeight / 2);
+          const targets = positions.map((y) => Math.min(maxScroll, Math.max(0, y - half)));
           const currentY = readCurrentScrollY(container, textEl);
 
           // Procura o primeiro target ESTRITAMENTE maior que currentY.
@@ -6435,6 +6438,28 @@ document.addEventListener("DOMContentLoaded", () => {
     updateFontUIState(null, sizeInPt);
   }
 
+  /**
+   * Altera o tamanho da fonte diretamente na aba Operator (Ctrl +/−/0).
+   * Não usa execCommand — apenas CSS direto para evitar interferir no
+   * conteúdo do editor ou alterar espaçamento de linhas.
+   * @param {number} sizeInPt
+   */
+  function applyOperatorFontSize(sizeInPt) {
+    if (!sizeInPt || sizeInPt <= 0) return;
+    currentFontSizePT = sizeInPt;
+
+    const prompterText = document.getElementById('prompterText-control');
+    if (prompterText) {
+      prompterText.style.fontSize = `${sizeInPt}pt`;
+    }
+
+    // Sincroniza com janela de projeção externa
+    ipcRenderer.send('sync-projection-font-size', sizeInPt);
+
+    // Atualiza o número na barra de ferramentas
+    updateFontUIState(null, sizeInPt);
+  }
+
   // ============================================================
   // SEÇÃO 58: INPUT DE TAMANHO NA TOOLBAR
   // ============================================================
@@ -7268,6 +7293,36 @@ document.addEventListener("DOMContentLoaded", () => {
           if (btnTimeline) btnTimeline.click();
           else console.warn("Botão Timeline não encontrado!");
           break;
+      }
+
+      // ── Ctrl + = / Ctrl + +  →  aumenta fonte (Operator) ──────────────
+      if (e.key === '=' || e.key === '+') {
+        const opTab = document.getElementById('operator-tab-pane');
+        if (opTab && opTab.classList.contains('active')) {
+          e.preventDefault();
+          const newSize = Math.min(120, (currentFontSizePT || 24) + 2);
+          applyOperatorFontSize(newSize);
+        }
+      }
+
+      // ── Ctrl + -  →  diminui fonte (Operator) ──────────────────────────
+      if (e.key === '-') {
+        const opTab = document.getElementById('operator-tab-pane');
+        if (opTab && opTab.classList.contains('active')) {
+          e.preventDefault();
+          const newSize = Math.max(8, (currentFontSizePT || 24) - 2);
+          applyOperatorFontSize(newSize);
+        }
+      }
+
+      // ── Ctrl + 0  →  volta ao tamanho padrão (Operator) ───────────────
+      if (e.key === '0') {
+        const opTab = document.getElementById('operator-tab-pane');
+        if (opTab && opTab.classList.contains('active')) {
+          e.preventDefault();
+          const defaultSize = (globalPrefs && globalPrefs.defaultFontSize) || 24;
+          applyOperatorFontSize(defaultSize);
+        }
       }
     }
   });
