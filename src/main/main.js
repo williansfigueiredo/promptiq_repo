@@ -1187,9 +1187,9 @@ ipcMain.on('open-backup-file', async (event) => {
 // HANDLER: Shadow Backup (Redundância de Segurança)
 // ============================================================
 /**
- * Salva arquivos de backup (.txt e .html) na pasta Documentos/Promptiq_Backups.
+ * Salva arquivos de backup (.txt e .ptq) na pasta Documentos/Promptiq_Backups.
  * Recebe: { plainText, htmlContent, timestamp }
- * Formato dos arquivos: backup_YYYY-MM-DD_HH-mm.txt e .html
+ * Formato dos arquivos: backup_YYYY-MM-DD_HH-mm.txt e .ptq
  */
 ipcMain.on('save-backup-files', async (event, backupData) => {
   const fsPromises = require('fs').promises;
@@ -1216,15 +1216,27 @@ ipcMain.on('save-backup-files', async (event, backupData) => {
 
     const baseFileName = `backup_${timestamp}`;
     const txtFilePath = path.join(backupDir, `${baseFileName}.txt`);
-    const htmlFilePath = path.join(backupDir, `${baseFileName}.html`);
+    const ptqFilePath = path.join(backupDir, `${baseFileName}.ptq`);
 
-    // 4. Salva os arquivos de forma assíncrona
+    // 4. Monta o conteúdo .ptq no mesmo formato nativo do app
+    const ptqData = {
+      content: backupData.htmlContent,
+      metadata: {
+        version: '1.0',
+        createdAt: new Date().toISOString(),
+        app: 'PromptIQ',
+        format: 'rich-text-html',
+        source: 'shadow-backup'
+      }
+    };
+
+    // 5. Salva os arquivos de forma assíncrona
     await Promise.all([
       fsPromises.writeFile(txtFilePath, backupData.plainText, 'utf-8'),
-      fsPromises.writeFile(htmlFilePath, backupData.htmlContent, 'utf-8')
+      fsPromises.writeFile(ptqFilePath, JSON.stringify(ptqData, null, 2), 'utf-8')
     ]);
 
-    console.log(`[Shadow Backup] Salvos com sucesso: ${baseFileName}.txt e .html`);
+    console.log(`[Shadow Backup] Salvos com sucesso: ${baseFileName}.txt e .ptq`);
 
   } catch (error) {
     // CRÍTICO: Apenas loga o erro, NÃO exibe diálogo ao usuário

@@ -35,14 +35,30 @@ async function collectRawHardwareIds() {
   // 2) Serial do processador — alguns Intel/AMD não expõem; usa brand+family como fallback
   const cpu = await si.cpu();
 
-  // 3) Serial do disco principal — pega o primeiro disco físico
+  // 3) Disco principal — NÃO usa disks[0] pois a ordem pode mudar com pen drives / HDs externos.
+  //    Estratégia: filtra removíveis, ordena por tamanho desc → disco maior = disco do sistema.
   const disks = await si.diskLayout();
-  const primaryDisk = (disks && disks[0]) || {};
+  const fixedDisks = (disks || [])
+    .filter(d => !d.removable)                         // descarta pen drives / removíveis
+    .sort((a, b) => (b.size || 0) - (a.size || 0));   // maior primeiro = disco principal
+  const primaryDisk = fixedDisks[0] || (disks && disks[0]) || {};
+
+  // 4) MAC da interface de rede física principal — estabiliza em casos onde o disco
+  //    não tem serial exposto (VMs, alguns NVMe sem serial no WMI).
+  let mac = 'NO-MAC';
+  try {
+    const ifaces = await si.networkInterfaces();
+    const physical = (Array.isArray(ifaces) ? ifaces : [])
+      .filter(i => i && !i.virtual && i.mac && i.mac !== '00:00:00:00:00:00')
+      .sort((a, b) => (a.iface || '').localeCompare(b.iface || ''));  // ordem alfabética → estável
+    if (physical.length > 0) mac = physical[0].mac;
+  } catch (_) { /* ignora — continua sem MAC */ }
 
   return {
     board: String(baseboard.serial || baseboard.assetTag || 'NO-BOARD-SERIAL'),
     cpu: String(cpu.serial || `${cpu.manufacturer || ''}-${cpu.brand || ''}-${cpu.family || ''}`),
-    disk: String(primaryDisk.serialNum || primaryDisk.name || 'NO-DISK-SERIAL')
+    disk: String(primaryDisk.serialNum || primaryDisk.name || 'NO-DISK-SERIAL'),
+    mac
   };
 }
 
@@ -61,7 +77,7 @@ async function generateFingerprint() {
 
   // Concatena na ORDEM FIXA com separador único.
   // A ordem fixa é crítica: troca = hash diferente = licença inválida.
-  const concatenated = `${ids.board}::${ids.cpu}::${ids.disk}`;
+  const concatenated = `${ids.board}::${ids.cpu}::${ids.disk}::${ids.mac}`;
 
   // SHA-256 hex (64 chars). Após esta linha, a variável `ids` sai de escopo
   // e o GC limpa os seriais brutos da memória.
@@ -79,12 +95,13 @@ async function generateFingerprint() {
  */
 async function generateFingerprintDebug() {
   const ids = await collectRawHardwareIds();
-  const concatenated = `${ids.board}::${ids.cpu}::${ids.disk}`;
+  const concatenated = `${ids.board}::${ids.cpu}::${ids.disk}::${ids.mac}`;
   const hash = crypto.createHash('sha256').update(concatenated).digest('hex');
   return {
     board: ids.board,
     cpu: ids.cpu,
     disk: ids.disk,
+    mac: ids.mac,
     concatenated,
     fingerprint: hash
   };
