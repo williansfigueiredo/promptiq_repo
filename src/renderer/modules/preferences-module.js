@@ -676,22 +676,43 @@ document.addEventListener('DOMContentLoaded', () => {
   const checkNowBtn = document.getElementById('check-now-btn');
   // lastCheckSpan já declarado no topo do arquivo (linha 101)
 
+  // Resposta do main ao Check Now
+  ipcRenderer.on('update-check-result', (_, result) => {
+    if (checkNowBtn) {
+      checkNowBtn.disabled = false;
+      checkNowBtn.textContent = 'Check Now';
+    }
+
+    if (result.status === 'available') {
+      // Abre o painel de progresso (definido em app.js)
+      if (typeof window._showUpdateAvailablePanel === 'function') {
+        window._showUpdateAvailablePanel(result.version);
+      }
+    } else if (result.status === 'up-to-date') {
+      // Mostra feedback sutil no botão
+      if (checkNowBtn) {
+        checkNowBtn.textContent = '✓ Up to date';
+        setTimeout(() => { checkNowBtn.textContent = 'Check Now'; }, 3000);
+      }
+    } else if (result.status === 'error') {
+      if (checkNowBtn) {
+        checkNowBtn.textContent = '✗ Error';
+        checkNowBtn.title = result.message;
+        setTimeout(() => { checkNowBtn.textContent = 'Check Now'; checkNowBtn.title = ''; }, 4000);
+      }
+    }
+  });
+
   if (checkNowBtn) {
     checkNowBtn.addEventListener('click', () => {
-      // Feedback visual - botão em loading
-      const originalText = checkNowBtn.textContent;
       checkNowBtn.disabled = true;
       checkNowBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Checking...';
 
-      // Envia comando para main process
       ipcRenderer.send('check-for-updates');
 
       // Atualiza data do último check e salva
       const now = new Date().toISOString();
-      if (lastCheckSpan) {
-        lastCheckSpan.textContent = new Date(now).toLocaleString('pt-BR');
-      }
-      // Salva a data nas configurações
+      if (lastCheckSpan) lastCheckSpan.textContent = new Date(now).toLocaleString('pt-BR');
       ipcRenderer.send('save-setting', { key: 'lastUpdateCheck', value: now });
     });
   }

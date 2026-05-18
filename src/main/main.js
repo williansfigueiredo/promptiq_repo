@@ -638,10 +638,14 @@ function initAutoUpdater() {
     log.info('[AutoUpdater] Verificando atualizações...');
   });
 
-  // Evento: Atualização disponível (apenas loga, não mostra nada)
+  // Evento: Atualização disponível — notifica renderer para mostrar modal de progresso
   autoUpdater.on('update-available', (info) => {
     log.info('[AutoUpdater] Nova versão disponível:', info.version);
-    log.info('[AutoUpdater] Download iniciando silenciosamente...');
+    BrowserWindow.getAllWindows().forEach((win) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send('update-available-silent', { version: info.version });
+      }
+    });
   });
 
   // Evento: Nenhuma atualização disponível
@@ -649,9 +653,18 @@ function initAutoUpdater() {
     log.info('[AutoUpdater] App já está na versão mais recente:', info.version);
   });
 
-  // Evento: Progresso do download (apenas log)
+  // Evento: Progresso do download — encaminha para todas as janelas
   autoUpdater.on('download-progress', (progress) => {
     log.info(`[AutoUpdater] Download: ${Math.round(progress.percent)}%`);
+    BrowserWindow.getAllWindows().forEach((win) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send('update-download-progress', {
+          percent: progress.percent,
+          transferred: progress.transferred,
+          total: progress.total
+        });
+      }
+    });
   });
 
   // Evento: Download concluído - NOTIFICA O USUÁRIO
@@ -691,7 +704,8 @@ ipcMain.on('restart_app', () => {
   // isSilent=true → NSIS roda sem janela visível
   // isForceRunAfter=false → não abre o app imediatamente após instalar
   //   (o autoUpdater reinicia o app depois da instalação silenciosa)
-  autoUpdater.quitAndInstall(true, true);
+  // isSilent=false → mostra o installer NSIS visualmente (como reinstalar)
+  autoUpdater.quitAndInstall(false, true);
 });
 
 // Handler IPC: Usuário clicou em "Check Now" nas Preferences

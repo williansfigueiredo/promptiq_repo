@@ -345,116 +345,186 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // ============================================================
-  // AUTO-UPDATER: Notificação discreta de atualização disponível
+  // AUTO-UPDATER: Modal de progresso de download (canto inferior direito)
   // ============================================================
-  ipcRenderer.on('update_downloaded', (event, info) => {
-    console.log('[AutoUpdater] Nova versão pronta para instalar:', info.version);
-
-    // Cria snackbar de notificação discreta
-    const snackbar = document.createElement('div');
-    snackbar.id = 'update-snackbar';
-    snackbar.innerHTML = `
-      <div class="update-snackbar-content">
-        <i class="bi bi-arrow-repeat update-icon"></i>
-        <span class="update-text">Nova versão ${info.version} baixada.</span>
-        <button id="update-restart-btn" class="update-btn">Reiniciar Agora</button>
-        <button id="update-dismiss-btn" class="update-dismiss">&times;</button>
-      </div>
-    `;
-
-    // Estilos inline para garantir que funcione independente do CSS principal
-    snackbar.style.cssText = `
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      color: #ffffff;
-      padding: 12px 16px;
-      border-radius: 8px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-      z-index: 99999;
-      font-family: 'Segoe UI', Arial, sans-serif;
-      font-size: 14px;
-      animation: slideInRight 0.3s ease-out;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    `;
-
-    // Adiciona animação CSS dinamicamente
+  (function setupUpdateModal() {
+    // Injeta estilos uma única vez
     const style = document.createElement('style');
     style.textContent = `
-      @keyframes slideInRight {
-        from { transform: translateX(100%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
+      @keyframes uSlideIn {
+        from { transform: translateX(110%); opacity: 0; }
+        to   { transform: translateX(0);    opacity: 1; }
       }
-      @keyframes slideOutRight {
-        from { transform: translateX(0); opacity: 1; }
-        to { transform: translateX(100%); opacity: 0; }
+      @keyframes uSlideOut {
+        from { transform: translateX(0);    opacity: 1; }
+        to   { transform: translateX(110%); opacity: 0; }
       }
-      #update-snackbar .update-snackbar-content {
+      #update-progress-panel {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        width: 320px;
+        background: #1e1e2e;
+        color: #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        border: 1px solid rgba(255,255,255,0.08);
+        padding: 16px 18px 14px;
+        z-index: 99999;
+        font-family: 'Segoe UI', Arial, sans-serif;
+        font-size: 13px;
+        animation: uSlideIn 0.35s cubic-bezier(.22,.68,0,1.2) forwards;
+      }
+      #update-progress-panel.hiding {
+        animation: uSlideOut 0.3s ease-in forwards;
+      }
+      #update-progress-panel .upp-header {
         display: flex;
         align-items: center;
-        gap: 12px;
+        justify-content: space-between;
+        margin-bottom: 10px;
       }
-      #update-snackbar .update-icon {
-        font-size: 18px;
-        color: #4ade80;
-        animation: spin 2s linear infinite;
-      }
-      @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-      }
-      #update-snackbar .update-text {
-        flex: 1;
-      }
-      #update-snackbar .update-btn {
-        background: #4ade80;
-        color: #1a1a2e;
-        border: none;
-        padding: 8px 16px;
-        border-radius: 6px;
-        cursor: pointer;
+      #update-progress-panel .upp-title {
         font-weight: 600;
         font-size: 13px;
-        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        color: #a5f3fc;
       }
-      #update-snackbar .update-btn:hover {
-        background: #22c55e;
-        transform: scale(1.02);
+      #update-progress-panel .upp-title i {
+        font-size: 15px;
       }
-      #update-snackbar .update-dismiss {
-        background: transparent;
-        color: #9ca3af;
+      #update-progress-panel .upp-close {
+        background: none;
         border: none;
-        font-size: 20px;
+        color: #64748b;
+        font-size: 18px;
         cursor: pointer;
-        padding: 0 4px;
         line-height: 1;
-        transition: color 0.2s ease;
+        padding: 0;
+        transition: color .2s;
       }
-      #update-snackbar .update-dismiss:hover {
-        color: #ffffff;
+      #update-progress-panel .upp-close:hover { color: #e2e8f0; }
+      #update-progress-panel .upp-version {
+        font-size: 12px;
+        color: #94a3b8;
+        margin-bottom: 10px;
+      }
+      #update-progress-panel .upp-status {
+        font-size: 12px;
+        color: #94a3b8;
+        margin-bottom: 8px;
+      }
+      #update-progress-panel .upp-bar-track {
+        background: #2d3748;
+        border-radius: 99px;
+        height: 6px;
+        overflow: hidden;
+        margin-bottom: 12px;
+      }
+      #update-progress-panel .upp-bar-fill {
+        height: 100%;
+        border-radius: 99px;
+        background: linear-gradient(90deg, #38bdf8, #818cf8);
+        width: 0%;
+        transition: width 0.4s ease;
+      }
+      #update-progress-panel .upp-restart-btn {
+        display: none;
+        width: 100%;
+        background: linear-gradient(90deg, #38bdf8, #818cf8);
+        color: #0f172a;
+        border: none;
+        border-radius: 8px;
+        padding: 9px 0;
+        font-weight: 700;
+        font-size: 13px;
+        cursor: pointer;
+        transition: opacity .2s, transform .1s;
+      }
+      #update-progress-panel .upp-restart-btn:hover {
+        opacity: .9;
+        transform: scale(1.01);
       }
     `;
     document.head.appendChild(style);
 
-    // Remove snackbar existente se houver
-    const existingSnackbar = document.getElementById('update-snackbar');
-    if (existingSnackbar) existingSnackbar.remove();
+    let panel = null;
 
-    document.body.appendChild(snackbar);
+    function getOrCreatePanel() {
+      if (panel && document.body.contains(panel)) return panel;
+      panel = document.createElement('div');
+      panel.id = 'update-progress-panel';
+      panel.innerHTML = `
+        <div class="upp-header">
+          <span class="upp-title"><i class="bi bi-arrow-repeat"></i> Atualização</span>
+          <button class="upp-close" title="Fechar">&times;</button>
+        </div>
+        <div class="upp-version"></div>
+        <div class="upp-status">Iniciando download…</div>
+        <div class="upp-bar-track"><div class="upp-bar-fill"></div></div>
+        <button class="upp-restart-btn">Reiniciar e Instalar</button>
+      `;
+      document.body.appendChild(panel);
 
-    // Handler: Reiniciar aplicação
-    document.getElementById('update-restart-btn').addEventListener('click', () => {
-      ipcRenderer.send('restart_app');
+      panel.querySelector('.upp-close').addEventListener('click', () => {
+        panel.classList.add('hiding');
+        setTimeout(() => { if (panel) panel.remove(); panel = null; }, 300);
+      });
+
+      panel.querySelector('.upp-restart-btn').addEventListener('click', () => {
+        ipcRenderer.send('restart_app');
+      });
+
+      return panel;
+    }
+
+    function hidePanel() {
+      if (panel && document.body.contains(panel)) {
+        panel.classList.add('hiding');
+        setTimeout(() => { if (panel) panel.remove(); panel = null; }, 300);
+      }
+    }
+
+    // Disparado pelo auto-check silencioso OU pelo Check Now quando available
+    ipcRenderer.on('update-available-silent', (_, info) => {
+      const p = getOrCreatePanel();
+      p.querySelector('.upp-version').textContent = `Nova versão: ${info.version}`;
+      p.querySelector('.upp-status').textContent = 'Baixando atualização…';
+      p.querySelector('.upp-bar-fill').style.width = '0%';
+      p.querySelector('.upp-restart-btn').style.display = 'none';
     });
 
-    // Handler: Dispensar notificação
-    document.getElementById('update-dismiss-btn').addEventListener('click', () => {
-      snackbar.style.animation = 'slideOutRight 0.3s ease-in forwards';
-      setTimeout(() => snackbar.remove(), 300);
+    // Progresso do download
+    ipcRenderer.on('update-download-progress', (_, data) => {
+      const p = getOrCreatePanel();
+      const pct = Math.round(data.percent || 0);
+      p.querySelector('.upp-bar-fill').style.width = `${pct}%`;
+      const mb = (v) => (v / 1024 / 1024).toFixed(1);
+      p.querySelector('.upp-status').textContent =
+        `Baixando… ${pct}%  (${mb(data.transferred)} / ${mb(data.total)} MB)`;
     });
-  });
+
+    // Download completo — mostra botão de reiniciar
+    ipcRenderer.on('update_downloaded', (_, info) => {
+      const p = getOrCreatePanel();
+      p.querySelector('.upp-version').textContent = `Versão ${info.version} pronta!`;
+      p.querySelector('.upp-bar-fill').style.width = '100%';
+      p.querySelector('.upp-status').textContent = 'Download concluído. Clique para instalar.';
+      p.querySelector('.upp-restart-btn').style.display = 'block';
+    });
+
+    // Expõe para o preferences-module poder acionar o painel ao clicar Check Now
+    window._showUpdateAvailablePanel = (version) => {
+      const p = getOrCreatePanel();
+      p.querySelector('.upp-version').textContent = `Nova versão: ${version}`;
+      p.querySelector('.upp-status').textContent = 'Baixando atualização…';
+      p.querySelector('.upp-bar-fill').style.width = '0%';
+      p.querySelector('.upp-restart-btn').style.display = 'none';
+    };
+    window._hideUpdatePanel = hidePanel;
+  })();
 
 
   // Solicita configurações iniciais ao carregar (com pequeno delay para garantir IPC pronto)
