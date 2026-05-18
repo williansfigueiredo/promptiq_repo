@@ -610,10 +610,19 @@ if (!gotTheLock) {
  * - Recheca a cada 1 hora
  * - Notifica o usuário apenas quando download estiver pronto
  */
+let autoUpdateIntervalId = null;
+
 function initAutoUpdater() {
   // Só executa em produção (builds empacotados)
   if (!app.isPackaged) {
     log.info('[AutoUpdater] Modo desenvolvimento - auto-update desativado');
+    return;
+  }
+
+  // Respeita o checkbox "Automatically check for product updates"
+  const autoCheckEnabled = currentSettings.autoCheckForUpdates !== false; // padrão: true
+  if (!autoCheckEnabled) {
+    log.info('[AutoUpdater] Verificação automática desativada pelo usuário.');
     return;
   }
 
@@ -666,7 +675,9 @@ function initAutoUpdater() {
   });
 
   // Recheca a cada 1 hora (3600000ms)
-  setInterval(() => {
+  if (autoUpdateIntervalId) clearInterval(autoUpdateIntervalId);
+  autoUpdateIntervalId = setInterval(() => {
+    if (currentSettings.autoCheckForUpdates === false) return;
     log.info('[AutoUpdater] Scheduled check...');
     autoUpdater.checkForUpdates().catch((err) => {
       log.error('[AutoUpdater] Scheduled check failed:', err.message);
@@ -1376,6 +1387,9 @@ ipcMain.on('save-settings', (event, settings) => {
 
 // Solicita configurações iniciais ao carregar
 ipcMain.on('request-initial-settings', (e) => e.sender.send('settings-updated-globally', currentSettings));
+
+// Retorna a versão atual do app (usada na aba Activate das Preferências)
+ipcMain.handle('get-app-version', () => app.getVersion());
 
 // Salva uma configuração individual (para updates parciais como lastUpdateCheck)
 ipcMain.on('save-setting', (event, { key, value }) => {

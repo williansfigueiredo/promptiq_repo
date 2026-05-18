@@ -115,6 +115,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const autoUpdateCheck = document.getElementById('auto-update-check');
   const lastCheckSpan = document.getElementById('last-check-span');
 
+  // Versão do app na aba Activate
+  const appVersionSpan = document.getElementById('app-version-span');
+  if (appVersionSpan) {
+    ipcRenderer.invoke('get-app-version').then(v => {
+      appVersionSpan.textContent = v || '—';
+    }).catch(() => {});
+  }
+
   const defaultValuesBtn = document.getElementById('default-values-btn');
   const okBtn = document.getElementById('ok-btn');
   const cancelBtn = document.getElementById('cancel-btn');
