@@ -676,33 +676,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const checkNowBtn = document.getElementById('check-now-btn');
   // lastCheckSpan já declarado no topo do arquivo (linha 101)
 
-  // Resposta do main ao Check Now
-  ipcRenderer.on('update-check-result', (_, result) => {
-    if (checkNowBtn) {
-      checkNowBtn.disabled = false;
-      checkNowBtn.textContent = 'Check Now';
-    }
-
-    if (result.status === 'available') {
-      // Abre o painel de progresso (definido em app.js)
-      if (typeof window._showUpdateAvailablePanel === 'function') {
-        window._showUpdateAvailablePanel(result.version);
-      }
-    } else if (result.status === 'up-to-date') {
-      // Mostra feedback sutil no botão
-      if (checkNowBtn) {
-        checkNowBtn.textContent = '✓ Up to date';
-        setTimeout(() => { checkNowBtn.textContent = 'Check Now'; }, 3000);
-      }
-    } else if (result.status === 'error') {
-      if (checkNowBtn) {
-        checkNowBtn.textContent = '✗ Error';
-        checkNowBtn.title = result.message;
-        setTimeout(() => { checkNowBtn.textContent = 'Check Now'; checkNowBtn.title = ''; }, 4000);
-      }
-    }
-  });
-
   if (checkNowBtn) {
     checkNowBtn.addEventListener('click', () => {
       checkNowBtn.disabled = true;
@@ -777,54 +750,137 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   refreshLicenseStatusPanel();
 
-  // Listener para resultado da verificação de updates
+  // ----------------------------------------------------------------
+  // AUTO-UPDATE: painel de progresso + botão Reiniciar (aba Auto Update)
+  // ----------------------------------------------------------------
+  // Helpers para criar/atualizar o painel embutido na aba Auto Update.
+  function removeUpdateAlert() {
+    const existing = document.getElementById('update-result-alert');
+    if (existing) existing.remove();
+  }
+
+  function buildSimpleAlert(alertClass, icon, message) {
+    removeUpdateAlert();
+    const alertDiv = document.createElement('div');
+    alertDiv.id = 'update-result-alert';
+    alertDiv.className = `alert ${alertClass} d-flex align-items-center mx-5 mt-3`;
+    alertDiv.innerHTML = `<i class="bi ${icon} me-2"></i><span>${message}</span>`;
+    const checkNowContainer = checkNowBtn?.parentElement;
+    if (checkNowContainer) {
+      checkNowContainer.parentElement.insertBefore(alertDiv, checkNowContainer.nextSibling);
+    }
+    return alertDiv;
+  }
+
+  function buildUpdateAvailablePanel(version, initialMessage) {
+    removeUpdateAlert();
+    const panel = document.createElement('div');
+    panel.id = 'update-result-alert';
+    panel.className = 'alert alert-success mx-5 mt-3';
+    panel.innerHTML = `
+      <div class="d-flex align-items-center mb-2">
+        <i class="bi bi-arrow-down-circle me-2"></i>
+        <span id="update-progress-text">${initialMessage || `Nova versão ${version} disponível! Baixando…`}</span>
+      </div>
+      <div class="progress mb-2" style="height: 6px;">
+        <div id="update-progress-bar"
+             class="progress-bar progress-bar-striped progress-bar-animated"
+             role="progressbar"
+             style="width: 0%;"
+             aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+      </div>
+      <div class="text-end">
+        <button id="update-restart-btn" type="button" class="btn btn-sm btn-success" disabled>
+          <i class="bi bi-arrow-clockwise me-1"></i> Reiniciar
+        </button>
+      </div>
+    `;
+    const checkNowContainer = checkNowBtn?.parentElement;
+    if (checkNowContainer) {
+      checkNowContainer.parentElement.insertBefore(panel, checkNowContainer.nextSibling);
+    }
+
+    const restartBtn = panel.querySelector('#update-restart-btn');
+    if (restartBtn) {
+      restartBtn.addEventListener('click', () => {
+        restartBtn.disabled = true;
+        restartBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Reiniciando…';
+        ipcRenderer.send('restart_app');
+      });
+    }
+    return panel;
+  }
+
+  // Listener para resultado da verificação de updates (Check Now)
   ipcRenderer.on('update-check-result', (event, result) => {
     console.log('[AutoUpdater] Resultado:', result);
 
-    // Restaura botão
     if (checkNowBtn) {
       checkNowBtn.disabled = false;
       checkNowBtn.textContent = 'Check Now';
     }
 
-    // Exibe resultado com alert colorido
-    let alertClass = 'alert-info';
-    let icon = 'bi-info-circle';
-
     if (result.status === 'available') {
-      alertClass = 'alert-success';
-      icon = 'bi-arrow-down-circle';
-    } else if (result.status === 'up-to-date') {
-      alertClass = 'alert-primary';
-      icon = 'bi-check-circle';
-    } else if (result.status === 'error') {
-      alertClass = 'alert-danger';
-      icon = 'bi-exclamation-triangle';
-    } else if (result.status === 'dev-mode') {
-      alertClass = 'alert-warning';
-      icon = 'bi-tools';
+      buildUpdateAvailablePanel(result.version, result.message);
+      return;
     }
 
-    // Remove alert anterior se existir
-    const existingAlert = document.getElementById('update-result-alert');
-    if (existingAlert) existingAlert.remove();
+    let alertClass = 'alert-info';
+    let icon = 'bi-info-circle';
+    if (result.status === 'up-to-date') { alertClass = 'alert-primary'; icon = 'bi-check-circle'; }
+    else if (result.status === 'error') { alertClass = 'alert-danger'; icon = 'bi-exclamation-triangle'; }
+    else if (result.status === 'dev-mode') { alertClass = 'alert-warning'; icon = 'bi-tools'; }
 
-    // Cria novo alert
-    const alertDiv = document.createElement('div');
-    alertDiv.id = 'update-result-alert';
-    alertDiv.className = `alert ${alertClass} d-flex align-items-center mx-5 mt-3`;
-    alertDiv.innerHTML = `
-            <i class="bi ${icon} me-2"></i>
-            <span>${result.message}</span>
-        `;
+    const alertDiv = buildSimpleAlert(alertClass, icon, result.message);
+    if (alertDiv) setTimeout(() => alertDiv.remove(), 8000);
+  });
 
-    // Insere após o botão Check Now
-    const checkNowContainer = checkNowBtn?.parentElement;
-    if (checkNowContainer) {
-      checkNowContainer.parentElement.insertBefore(alertDiv, checkNowContainer.nextSibling);
+  // Progresso do download — atualiza barra e texto em tempo real
+  ipcRenderer.on('update-download-progress', (_, data) => {
+    let panel = document.getElementById('update-result-alert');
+    // Se ainda não houver painel (caso o auto-check tenha disparado antes do Check Now)
+    if (!panel || !panel.querySelector('#update-progress-bar')) {
+      panel = buildUpdateAvailablePanel('', 'Baixando atualização…');
+    }
+    const bar = panel.querySelector('#update-progress-bar');
+    const txt = panel.querySelector('#update-progress-text');
+    const pct = Math.max(0, Math.min(100, Math.round(data.percent || 0)));
+    if (bar) {
+      bar.style.width = `${pct}%`;
+      bar.setAttribute('aria-valuenow', pct);
+    }
+    if (txt) {
+      const mb = (v) => (v / 1024 / 1024).toFixed(1);
+      txt.textContent = `Baixando atualização… ${pct}% (${mb(data.transferred)} / ${mb(data.total)} MB)`;
+    }
+  });
 
-      // Remove após 8 segundos
-      setTimeout(() => alertDiv.remove(), 8000);
+  // Download concluído — habilita o botão Reiniciar
+  ipcRenderer.on('update_downloaded', (_, info) => {
+    let panel = document.getElementById('update-result-alert');
+    if (!panel || !panel.querySelector('#update-progress-bar')) {
+      panel = buildUpdateAvailablePanel(info?.version || '', 'Atualização baixada.');
+    }
+    const bar = panel.querySelector('#update-progress-bar');
+    const txt = panel.querySelector('#update-progress-text');
+    const btn = panel.querySelector('#update-restart-btn');
+    if (bar) {
+      bar.style.width = '100%';
+      bar.setAttribute('aria-valuenow', 100);
+      bar.classList.remove('progress-bar-animated');
+    }
+    if (txt) {
+      txt.textContent = info?.version
+        ? `Versão ${info.version} pronta. Clique em Reiniciar para instalar.`
+        : 'Atualização pronta. Clique em Reiniciar para instalar.';
+    }
+    if (btn) btn.disabled = false;
+  });
+
+  // Detecção silenciosa (auto-check do startup) também monta o painel.
+  ipcRenderer.on('update-available-silent', (_, info) => {
+    if (!document.getElementById('update-result-alert')) {
+      buildUpdateAvailablePanel(info?.version || '', `Nova versão ${info?.version || ''} disponível! Baixando…`);
     }
   });
 

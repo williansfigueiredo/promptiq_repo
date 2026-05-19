@@ -3517,6 +3517,47 @@ document.addEventListener("DOMContentLoaded", () => {
         ipcRenderer.send("control-window", "exit");
         break;
 
+      // === MENU EDIT (Undo / Redo / Cut / Copy / Paste / Delete / Select All) ===
+      case "edit-undo":
+        if (editor) editor.focus();
+        document.execCommand("undo");
+        break;
+      case "edit-redo":
+        if (editor) editor.focus();
+        document.execCommand("redo");
+        break;
+      case "edit-cut":
+        if (editor) editor.focus();
+        document.execCommand("cut");
+        break;
+      case "edit-copy":
+        if (editor) editor.focus();
+        document.execCommand("copy");
+        break;
+      case "edit-paste":
+        if (editor) editor.focus();
+        // Tenta usar a Clipboard API (mais robusta no Electron moderno) e cai no execCommand
+        try {
+          if (navigator.clipboard && navigator.clipboard.readText) {
+            navigator.clipboard.readText().then((text) => {
+              document.execCommand("insertText", false, text);
+            }).catch(() => document.execCommand("paste"));
+          } else {
+            document.execCommand("paste");
+          }
+        } catch (_) {
+          document.execCommand("paste");
+        }
+        break;
+      case "edit-delete":
+        if (editor) editor.focus();
+        document.execCommand("delete");
+        break;
+      case "edit-select-all":
+        if (editor) editor.focus();
+        document.execCommand("selectAll");
+        break;
+
       case "about":
         // Corrigido: Apenas um https://
         require('electron').shell.openExternal("https://roteiro.promptiq.com.br/");
@@ -5314,6 +5355,12 @@ document.addEventListener("DOMContentLoaded", () => {
       // 🔴 FEEDBACK VISUAL: Borda vermelha piscando
       flashRedBorder(editor);
 
+      // Marca documento como modificado (bolinha laranja na aba + autosave)
+      if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
+        markDocumentAsUnsaved(activeDocumentId);
+      }
+      if (typeof scheduleAutoSave === "function") scheduleAutoSave();
+
       if (typeof syncContentToPrompter === "function") syncContentToPrompter();
     }
   });
@@ -5468,6 +5515,12 @@ document.addEventListener("DOMContentLoaded", () => {
         setTimeout(() => (container.style.boxShadow = "none"), 400);
       }
       flashRedBorderMultiple(editor, 2);
+
+      // Marca documento como modificado (bolinha laranja na aba + autosave + Ctrl+S)
+      if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
+        markDocumentAsUnsaved(activeDocumentId);
+      }
+      if (typeof scheduleAutoSave === "function") scheduleAutoSave();
 
       // 🔥 O PASSO CRUCIAL: Manda atualizar a janela do Operador IMEDIATAMENTE
       if (typeof syncContentToPrompter === "function") {
