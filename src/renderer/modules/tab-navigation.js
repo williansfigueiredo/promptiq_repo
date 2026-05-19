@@ -29,6 +29,13 @@ const TabNavigationManager = {
   pendingNavigationContext: null,     // Contexto adicional da navegação
   isInitialized: false,               // Flag de inicialização
 
+  // Última posição do caret no editor (cursor piscando) — usada para
+  // navegação direta ao Operator quando o usuário só posiciona o cursor
+  // e troca de aba (sem precisar do menu de contexto).
+  lastCaretEditor: null,
+  lastCaretNode: null,
+  lastCaretOffset: 0,
+
   // ============================================================
   // FUNÇÃO: Inicializar o módulo
   // ============================================================
@@ -52,6 +59,26 @@ const TabNavigationManager = {
     const { ipcRenderer } = require('electron');
     ipcRenderer.on('go-to-operator-at-selection', () => {
       this.goToOperatorAtCurrentSelection();
+    });
+
+    // =========================================
+    // RASTREIO DO CARET (CURSOR PISCANDO) NO EDITOR
+    // =========================================
+    // Sempre que o usuário move o cursor dentro de um .text-editor-area,
+    // guardamos a posição. Quando ele trocar para a aba Operator,
+    // navegamos automaticamente para esse ponto.
+    document.addEventListener('selectionchange', () => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      const node = range.startContainer;
+      const parent = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      const editor = parent && parent.closest ? parent.closest('.text-editor-area') : null;
+      if (editor) {
+        this.lastCaretEditor = editor;
+        this.lastCaretNode = node;
+        this.lastCaretOffset = range.startOffset;
+      }
     });
 
     // =========================================
@@ -118,6 +145,10 @@ const TabNavigationManager = {
     if (tabOperatorTrigger) {
       // Pré-aplica posição ANTES da aba aparecer (evita salto visual)
       tabOperatorTrigger.addEventListener('show.bs.tab', () => {
+        // Se o usuário deixou o cursor (caret) num ponto do editor e não
+        // havia uma navegação por menu de contexto pendente, usa a posição
+        // do caret como destino no Operator.
+        this.tryUseCaretAsPendingNavigation();
         this.preApplyScrollPosition();
       });
 
@@ -210,6 +241,48 @@ const TabNavigationManager = {
 
       // Muda para a aba Operator
       this.switchToOperatorTab();
+    }
+  },
+
+  // ============================================================
+  // FUNÇÃO: Usar caret (cursor) atual do editor como destino
+  // ============================================================
+  /**
+   * tryUseCaretAsPendingNavigation
+   * -------------------------------
+   * Se o usuário deixou o caret (barrinha piscando) num ponto do
+   * editor e está mudando para a aba Operator SEM ter pendingWordIndex
+   * (ou seja, sem ter usado o menu "Go to Operator"), calcula o índice
+   * da palavra naquela posição e marca para navegação automática.
+   */
+  tryUseCaretAsPendingNavigation: function () {
+    // Se já há navegação pendente (vinda do menu de contexto), respeita.
+    if (this.pendingWordIndex !== null) return;
+    if (!this.lastCaretEditor || !this.lastCaretNode) return;
+    // Confirma que o caret ainda está num elemento existente no DOM.
+    if (!document.contains(this.lastCaretEditor) || !document.contains(this.lastCaretNode)) {
+      this.lastCaretEditor = null;
+      this.lastCaretNode = null;
+      return;
+    }
+    try {
+      const fakeRange = document.createRange();
+      fakeRange.setStart(this.lastCaretNode, this.lastCaretOffset);
+      fakeRange.collapse(true);
+      const wordIndex = this.calculateWordIndex(this.lastCaretEditor, fakeRange);
+      if (wordIndex !== null && wordIndex >= 0) {
+        // Pega um texto de contexto perto do caret (até 30 chars) para
+        // fallback em findWordByText caso o índice não bata.
+        const contextText = (this.lastCaretNode.textContent || '')
+          .substr(Math.max(0, this.lastCaretOffset - 15), 30)
+          .trim()
+          .split(/\s+/)[0] || '';
+        this.pendingWordIndex = wordIndex;
+        this.pendingNavigationContext = { text: contextText, timestamp: Date.now() };
+        console.log(`📍 Caret detectado no editor — navegando para palavra #${wordIndex} ("${contextText}")`);
+      }
+    } catch (err) {
+      console.warn('tryUseCaretAsPendingNavigation: range inválido', err);
     }
   },
 
