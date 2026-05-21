@@ -277,6 +277,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   ipcRenderer.on('settings-updated-globally', (event, settings) => {
     console.log("⚙️ Settings recebidas:", settings);
+
+    // Guarda o defaultFontSize anterior ANTES de sobrescrever globalPrefs,
+    // para detectar se o usuário realmente alterou o tamanho nas Preferences.
+    const prevDefaultFontSize = globalPrefs ? globalPrefs.defaultFontSize : null;
+
     globalPrefs = settings;
 
     // Aplica o tema salvo
@@ -296,16 +301,22 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.classList.toggle("font-boost", boost);
 
     if (settings.defaultFontSize) {
-      currentFontSizePT = settings.defaultFontSize;
+      // Só aplica o tamanho no Operator se o usuário realmente alterou o valor
+      // em Preferences, ou se é a carga inicial (prevDefaultFontSize === null).
+      // Isso evita que salvar qualquer outra opção (ex.: reforço de fonte)
+      // resete o tamanho que estava ativo na sessão.
+      const fontSizeChanged = prevDefaultFontSize === null
+        || settings.defaultFontSize !== prevDefaultFontSize;
 
-      // Atualiza todos os inputs
       const fontSizePreset = document.getElementById('font-size-preset');
       const fontSizeCustom = document.getElementById('font-size-custom');
 
-      if (fontSizePreset) fontSizePreset.value = settings.defaultFontSize;
-      if (fontSizeCustom) fontSizeCustom.value = settings.defaultFontSize;
-
-      applyExactFontSizeToOperator(settings.defaultFontSize);
+      if (fontSizeChanged) {
+        currentFontSizePT = settings.defaultFontSize;
+        if (fontSizePreset) fontSizePreset.value = settings.defaultFontSize;
+        if (fontSizeCustom) fontSizeCustom.value = settings.defaultFontSize;
+        applyExactFontSizeToOperator(settings.defaultFontSize);
+      }
     }
 
     // Atualiza atalhos de teclado/mouse se HotkeyHandler existir
@@ -6592,6 +6603,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Atualiza o número na barra de ferramentas
     updateFontUIState(null, sizeInPt);
+
+    // Marca o documento como modificado e agenda autosave
+    if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
+      markDocumentAsUnsaved(activeDocumentId);
+    }
+    if (typeof scheduleAutoSave === "function") scheduleAutoSave();
   }
 
   // ============================================================
@@ -6629,6 +6646,12 @@ document.addEventListener("DOMContentLoaded", () => {
         value: valor,
         name: 'Host'
       });
+
+      // 7. Marca como não salvo e agenda autosave
+      if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
+        markDocumentAsUnsaved(activeDocumentId);
+      }
+      if (typeof scheduleAutoSave === "function") scheduleAutoSave();
     });
 
     // Devolve foco ao editor quando apertar Enter
@@ -6789,6 +6812,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // Limpa e sincroniza o input customizado com o mesmo valor
         if (fontSizeCustom) fontSizeCustom.value = val;
 
+        // Marca como não salvo e agenda autosave
+        if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
+          markDocumentAsUnsaved(activeDocumentId);
+        }
+        if (typeof scheduleAutoSave === "function") scheduleAutoSave();
+
         // Foco no editor
         getActiveTextEditorArea()?.focus();
       }
@@ -6807,10 +6836,11 @@ document.addEventListener("DOMContentLoaded", () => {
           applyExactFontSizeToEditor(val);
           applyExactFontSizeToOperator(val);
           updateFontUIState(null, val);
-
-          // Limpa o select pré-definido
           if (fontSizePreset) fontSizePreset.value = "";
-
+          if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
+            markDocumentAsUnsaved(activeDocumentId);
+          }
+          if (typeof scheduleAutoSave === "function") scheduleAutoSave();
           getActiveTextEditorArea()?.focus();
         }
       }
@@ -6825,9 +6855,11 @@ document.addEventListener("DOMContentLoaded", () => {
         applyExactFontSizeToEditor(val);
         applyExactFontSizeToOperator(val);
         updateFontUIState(null, val);
-
-        // Limpa o select pré-definido
         if (fontSizePreset) fontSizePreset.value = "";
+        if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
+          markDocumentAsUnsaved(activeDocumentId);
+        }
+        if (typeof scheduleAutoSave === "function") scheduleAutoSave();
       } else if (val < 8) {
         fontSizeCustom.value = "8";
         applyExactFontSizeToEditor(8);

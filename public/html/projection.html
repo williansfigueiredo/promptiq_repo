@@ -403,6 +403,8 @@
         }, 4000);
       });
 
+      let projPrevDefaultFontSize = null;
+
       ipcRenderer.on("settings-updated-globally", (e, settings) => {
         // 1. Configurações Básicas de Cor e Fonte
         if (settings.backgroundColor)
@@ -425,8 +427,14 @@
         }
 
         if (settings.defaultFontSize) {
-          // Aplica o tamanho da fonte
-          textoDiv.style.fontSize = settings.defaultFontSize + "pt";
+          // Só aplica se o defaultFontSize mudou em Preferences (ou é carga inicial).
+          // Evita resetar a fonte ativa ao salvar outras opções (ex.: reforço de fonte).
+          const fontSizeChanged = projPrevDefaultFontSize === null
+            || settings.defaultFontSize !== projPrevDefaultFontSize;
+          if (fontSizeChanged) {
+            textoDiv.style.fontSize = settings.defaultFontSize + "pt";
+          }
+          projPrevDefaultFontSize = settings.defaultFontSize;
         }
         if (settings.defaultFont)
           textoDiv.style.fontFamily = settings.defaultFont;
