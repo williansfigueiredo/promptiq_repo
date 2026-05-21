@@ -43,11 +43,26 @@
         text-align: center;
         line-height: 1.7;
         font-weight: bold;
+        text-rendering: optimizeLegibility;
         word-wrap: break-word;
         overflow-wrap: break-word;
         white-space: pre-wrap;
         will-change: transform;
         transform: translate3d(0, 0, 0);
+      }
+
+      /* Reforço de peso da fonte (Arial "extra bold") — controlado por
+         Preferences > Style > "Reforço de peso de fonte". Pinta um stroke
+         do mesmo tom da letra ANTES do fill, deixando os traços mais grossos
+         sem distorcer espaçamento nem mudar layout. currentColor garante
+         que acompanha cores aplicadas (amarelo, ciano, etc.). */
+      body.font-boost #texto-limpo,
+      body.font-boost #texto-limpo *,
+      body.font-boost #texto-limpo span,
+      body.font-boost #texto-limpo p,
+      body.font-boost #texto-limpo font {
+        -webkit-text-stroke: 1.2px currentColor;
+        paint-order: stroke fill;
       }
 
       #texto-limpo p {
@@ -394,6 +409,11 @@
           document.body.style.backgroundColor = settings.backgroundColor;
         if (settings.defaultFontColor)
           textoDiv.style.color = settings.defaultFontColor;
+
+        // Reforço de peso de fonte (Preferences > Style > "Reforço de peso de fonte")
+        // Default true: se a chave não existir ainda, ativa.
+        const boost = (settings.fontWeightBoost !== false);
+        document.body.classList.toggle("font-boost", boost);
 
         // === 1.1 BARRA DE PROGRESSO - Adapta cores ao tema ===
         // A barra de fundo segue o backgroundColor, o thumb segue a cor do texto

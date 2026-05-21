@@ -72,6 +72,8 @@ const RemoteConnectionModule = (function() {
     let ipcRenderer = null;
     let ioClient = null;
     let activeDocumentId = null;
+    let markDocumentAsUnsaved = null;
+    let scheduleAutoSave = null;
 
     // ============================================================
     // INICIALIZAÇÃO DO MÓDULO
@@ -113,6 +115,8 @@ const RemoteConnectionModule = (function() {
         flashRedBorderMultiple = options.flashRedBorderMultiple;
         ipcRenderer = options.ipcRenderer;
         ioClient = options.ioClient;
+        markDocumentAsUnsaved = options.markDocumentAsUnsaved;
+        scheduleAutoSave = options.scheduleAutoSave;
         
         // Estado inicial do ícone (vermelho/offline)
         if (sidebarIcon) {
@@ -603,6 +607,11 @@ const RemoteConnectionModule = (function() {
                     if (container && flashRedBorder) {
                         flashRedBorder(container);
                     }
+
+                    if (markDocumentAsUnsaved && activeDocumentId != null) {
+                        markDocumentAsUnsaved(activeDocumentId);
+                    }
+                    if (scheduleAutoSave) scheduleAutoSave();
 
                     if (syncContentToPrompter) syncContentToPrompter();
                     

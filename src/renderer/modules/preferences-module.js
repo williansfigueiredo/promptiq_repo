@@ -40,6 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const prompterScaleValueSpan = document.getElementById('prompter-scale-value');
   const prompterMarginInput = document.getElementById('prompter-margin');
   const lineSpacingInput = document.getElementById('line-spacing');
+  const fontWeightBoostCheck = document.getElementById('font-weight-boost-check');
   const backgroundColorInput = document.getElementById('background-color');
   const cueColorInput = document.getElementById('cue-color');
   const cueTypeSelect = document.getElementById('cue-type');
@@ -393,6 +394,7 @@ document.addEventListener('DOMContentLoaded', () => {
         prompterFontScale: prompterFontScaleInput ? parseInt(prompterFontScaleInput.value) : 30,
         prompterMargin: prompterMarginInput ? parseInt(prompterMarginInput.value) : 40,
         lineSpacing: lineSpacingInput ? parseFloat(lineSpacingInput.value) : 1.5,
+        fontWeightBoost: fontWeightBoostCheck ? fontWeightBoostCheck.checked : true,
         backgroundColor: backgroundColorInput ? backgroundColorInput.value : '#000000',
         cueColor: cueColorInput ? cueColorInput.value : '#00FF00',
         cueType: cueTypeSelect ? cueTypeSelect.value : 'arrow',
@@ -473,6 +475,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (prompterMarginInput) prompterMarginInput.value = settings.prompterMargin || 40;
     if (lineSpacingInput) lineSpacingInput.value = settings.lineSpacing || 1.5;
+    if (fontWeightBoostCheck) {
+      fontWeightBoostCheck.checked = settings.fontWeightBoost !== false;
+    }
     if (backgroundColorInput) backgroundColorInput.value = settings.backgroundColor || '#000000';
     if (cueColorInput) cueColorInput.value = settings.cueColor || '#00FF00';
     if (cueTypeSelect) cueTypeSelect.value = settings.cueType || 'arrow';

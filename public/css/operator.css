@@ -121,6 +121,18 @@
      Não altera nada do fluxo de sincronização nem da margem configurada. */
   overflow-wrap: anywhere;
   word-break: break-word;
+  text-rendering: optimizeLegibility;
+}
+
+/* Reforço de peso na Arial — controlado por Preferences > Style.
+   Versão mais leve (0.6px) por se tratar do preview da aba Operator. */
+body.font-boost #prompterText-control,
+body.font-boost #prompterText-control *,
+body.font-boost #prompterText-control span,
+body.font-boost #prompterText-control p,
+body.font-boost #prompterText-control font {
+  -webkit-text-stroke: 0.6px currentColor;
+  paint-order: stroke fill;
 }
 
 /* Esconde a barra de rolagem */

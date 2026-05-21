@@ -109,6 +109,7 @@ const configPath = path.join(app.getPath('userData'), 'user-settings.json');
 const defaultSettings = {
   defaultFont: 'Arial', defaultFontSize: 12, defaultFontColor: '#FFFFFF',
   prompterFontScale: 30, prompterMargin: 40, lineSpacing: 1.5,
+  fontWeightBoost: true,
   backgroundColor: '#000000', cueColor: '#00FF00', cueType: 'arrow',
   overallSpeed: 50, mirrorMode: 'none', autoCheckForUpdates: true,
   flipHorizontal: false, flipVertical: false,  // Espelhamento para broadcast

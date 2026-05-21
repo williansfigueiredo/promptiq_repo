@@ -615,6 +615,62 @@
 
             <div class="toolbar-separator"></div>
 
+            <!-- Grupo: Transformar texto (case) -->
+            <div class="toolbar-group" style="position: relative;">
+                <button type="button" id="remote-case-btn" class="toolbar-btn"
+                        title="Alterar capitalização do texto" style="font-weight: 700;">
+                    Aa
+                </button>
+                <div id="remote-case-menu"
+                     style="display:none; position:absolute; top:38px; left:0; z-index:1000;
+                            background: var(--background-primary); border: 1px solid var(--border-color);
+                            border-radius: var(--radius-sm); box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                            min-width: 140px; padding: 4px 0;">
+                    <button type="button" class="remote-case-option" data-case="upper"
+                            style="display:block; width:100%; padding:8px 14px; text-align:left;
+                                   background:transparent; border:none; cursor:pointer; font-size:0.9rem; color: var(--text-primary);">
+                        UPPERCASE
+                    </button>
+                    <button type="button" class="remote-case-option" data-case="lower"
+                            style="display:block; width:100%; padding:8px 14px; text-align:left;
+                                   background:transparent; border:none; cursor:pointer; font-size:0.9rem; color: var(--text-primary);">
+                        lowercase
+                    </button>
+                    <button type="button" class="remote-case-option" data-case="title"
+                            style="display:block; width:100%; padding:8px 14px; text-align:left;
+                                   background:transparent; border:none; cursor:pointer; font-size:0.9rem; color: var(--text-primary);">
+                        Title Case
+                    </button>
+                </div>
+            </div>
+
+            <div class="toolbar-separator"></div>
+
+            <!-- Grupo: Tamanho da fonte do roteirista (local) -->
+            <div class="toolbar-group">
+                <button type="button" id="remote-size-decrease" class="toolbar-btn" title="Diminuir tamanho da fonte (-2pt)">
+                    <i class="bi bi-dash-lg" style="font-size: 14px;"></i>
+                </button>
+                <input type="number" id="remote-size-input" min="8" max="200" step="1" value="24"
+                       class="toolbar-select" style="width: 60px; text-align: center;"
+                       title="Tamanho da fonte (pt)">
+                <button type="button" id="remote-size-increase" class="toolbar-btn" title="Aumentar tamanho da fonte (+2pt)">
+                    <i class="bi bi-plus-lg" style="font-size: 14px;"></i>
+                </button>
+            </div>
+
+            <div class="toolbar-separator"></div>
+
+            <!-- Grupo: Cadeado de Fonte (Font Lock) -->
+            <div class="toolbar-group">
+                <button type="button" id="remote-font-lock" class="toolbar-btn"
+                        title="Travar fonte (ignora alterações do operador e não envia as suas)">
+                    <i class="bi bi-unlock" id="remote-font-lock-icon" style="font-size: 14px;"></i>
+                </button>
+            </div>
+
+            <div class="toolbar-separator"></div>
+
             <!-- Grupo: Alinhamento -->
             <div class="toolbar-group align-group">
                 <button id="remote-align-left" class="toolbar-btn active" title="Alinhar à Esquerda">
@@ -771,16 +827,16 @@
             
             console.log('📥 Recebido estado inicial:', state.fontSize + 'pt');
             
-            // 1. Aplica o HTML
+            // 1. Aplica o HTML (sanitiza fontSize/fontFamily inline se cadeado fechado)
             if (state.htmlContent && !isTyping) {
                 lastReceivedContent = state.htmlContent;
                 ignoreNextInput = true;
-                editor.innerHTML = state.htmlContent;
+                editor.innerHTML = sanitizeHtmlIfFontLocked(state.htmlContent);
                 setTimeout(() => { ignoreNextInput = false; }, 100);
             }
             
-            // 2. Aplica o fontSize
-            if (state.fontSize) {
+            // 2. Aplica o fontSize (respeita cadeado: se fechado, NÃO sobrescreve)
+            if (state.fontSize && !window.fontSizeLocked) {
                 const size = parseInt(state.fontSize);
                 if (size >= 8 && size <= 200) {
                     editor.style.fontSize = size + 'pt';
@@ -788,8 +844,8 @@
                 }
             }
             
-            // 3. Aplica a fontFamily
-            if (state.fontFamily) {
+            // 3. Aplica a fontFamily (respeita cadeado)
+            if (state.fontFamily && !window.fontSizeLocked) {
                 editor.style.fontFamily = state.fontFamily;
                 updateFontUI(state.fontFamily);
             }
@@ -817,7 +873,7 @@
                 lastReceivedContent = content;
                 ignoreNextInput = true;
                 const hadFocus = document.activeElement === editor;
-                editor.innerHTML = content;
+                editor.innerHTML = sanitizeHtmlIfFontLocked(content);
                 flashSyncIndicator();
                 updateLastSync();
                 if (hadFocus) editor.focus();
@@ -832,7 +888,7 @@
             if (data.content && data.content.html && !isTyping) {
                 lastReceivedContent = data.content.html;
                 ignoreNextInput = true;
-                editor.innerHTML = data.content.html;
+                editor.innerHTML = sanitizeHtmlIfFontLocked(data.content.html);
                 setTimeout(() => { ignoreNextInput = false; }, 100);
             }
             
@@ -844,15 +900,259 @@
             updateLastSync();
         });
         
+        // ============================================================
+        // CADEADO DE FONTE (Font Lock) — botão da toolbar
+        // ============================================================
+        // Persistência simples em localStorage para lembrar a escolha
+        // entre sessões. Quando true, ignora mudanças de fontSize do operador.
+        try {
+            window.fontSizeLocked = localStorage.getItem('promptiq:fontSizeLocked') === '1';
+        } catch (_) { window.fontSizeLocked = false; }
+
+        function refreshFontLockUI() {
+            const btn = document.getElementById('remote-font-lock');
+            const icon = document.getElementById('remote-font-lock-icon');
+            if (!btn || !icon) return;
+            if (window.fontSizeLocked) {
+                btn.classList.add('active');
+                btn.title = 'Cadeado fechado: alterações de tamanho do operador são ignoradas. Clique para destravar.';
+                icon.className = 'bi bi-lock-fill';
+            } else {
+                btn.classList.remove('active');
+                btn.title = 'Cadeado aberto: tamanho da fonte sincroniza com o operador. Clique para travar.';
+                icon.className = 'bi bi-unlock';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const btn = document.getElementById('remote-font-lock');
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    window.fontSizeLocked = !window.fontSizeLocked;
+                    try { localStorage.setItem('promptiq:fontSizeLocked', window.fontSizeLocked ? '1' : '0'); } catch (_) {}
+                    refreshFontLockUI();
+                });
+                refreshFontLockUI();
+            }
+
+            // Tamanho da fonte local do roteirista (botões − / + / input)
+            const sizeInput = document.getElementById('remote-size-input');
+            const decBtn = document.getElementById('remote-size-decrease');
+            const incBtn = document.getElementById('remote-size-increase');
+
+            function clampSize(n) { return Math.max(8, Math.min(200, parseInt(n, 10) || 24)); }
+
+            // Aplica o tamanho localmente no editor do roteirista. Se houver
+            // texto selecionado (seleção viva ou última seleção salva), aplica
+            // SOMENTE na seleção; caso contrário, no editor inteiro.
+            // Sincroniza com o operador através do mesmo caminho de digitação
+            // (dispatch de evento 'input').
+            window.applyLocalFontSize = function (size) {
+                const clean = clampSize(size);
+                if (sizeInput) sizeInput.value = clean;
+
+                // Decide se há uma seleção real dentro do editor
+                const liveSel = window.getSelection();
+                let range = null;
+                if (liveSel && liveSel.rangeCount > 0 && !liveSel.isCollapsed
+                    && editor.contains(liveSel.anchorNode) && editor.contains(liveSel.focusNode)) {
+                    range = liveSel.getRangeAt(0);
+                } else if (window.lastEditorRange
+                           && editor.contains(window.lastEditorRange.startContainer)
+                           && editor.contains(window.lastEditorRange.endContainer)
+                           && !window.lastEditorRange.collapsed) {
+                    range = window.lastEditorRange;
+                }
+
+                if (range) {
+                    // ---- APLICA SOMENTE NA SELEÇÃO ----
+                    editor.focus();
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    try {
+                        document.execCommand('styleWithCSS', false, true);
+                        document.execCommand('fontSize', false, '7');
+                    } catch (_) { /* fallback abaixo */ }
+                    // execCommand cria <font size="7"> ou <span style="font-size: xxx-large">.
+                    // Corrige cada um para o tamanho real em pt.
+                    editor.querySelectorAll('font[size="7"]').forEach((el) => {
+                        const span = document.createElement('span');
+                        span.style.fontSize = clean + 'pt';
+                        while (el.firstChild) span.appendChild(el.firstChild);
+                        el.parentNode.replaceChild(span, el);
+                    });
+                    editor.querySelectorAll('span[style*="xxx-large"]').forEach((el) => {
+                        el.style.fontSize = clean + 'pt';
+                    });
+                } else {
+                    // ---- SEM SELEÇÃO: APLICA NO EDITOR INTEIRO ----
+                    editor.style.fontSize = clean + 'pt';
+                }
+
+                // Dispara o mesmo evento da digitação para que o operador receba.
+                // sendStyleUpdate é mantido (compatibilidade), mas a sincronização
+                // real do conteúdo modificado vai via text-update.
+                editor.dispatchEvent(new Event('input', { bubbles: true }));
+                sendStyleUpdate('fontSize', clean);
+            };
+
+            // Permite que outros pontos do código sincronizem o input com o editor
+            // (server-style-update e server-initial-state já chamam updateSizeUI).
+            window.updateSizeUI = function (size) {
+                if (sizeInput) sizeInput.value = clampSize(size);
+            };
+
+            if (decBtn) decBtn.addEventListener('click', () => {
+                const cur = clampSize(sizeInput ? sizeInput.value : 24);
+                window.applyLocalFontSize(cur - 2);
+            });
+            if (incBtn) incBtn.addEventListener('click', () => {
+                const cur = clampSize(sizeInput ? sizeInput.value : 24);
+                window.applyLocalFontSize(cur + 2);
+            });
+            if (sizeInput) {
+                sizeInput.addEventListener('change', () => {
+                    window.applyLocalFontSize(sizeInput.value);
+                });
+                sizeInput.addEventListener('blur', () => {
+                    sizeInput.value = clampSize(sizeInput.value);
+                });
+            }
+
+            // Sincroniza o valor inicial do input com o que estiver no editor
+            const initialSize = parseInt(editor.style.fontSize) || 24;
+            if (sizeInput) sizeInput.value = clampSize(initialSize);
+
+            // ============================================================
+            // BOTÃO "Aa" → DROPDOWN com UPPERCASE / lowercase / Title Case
+            // ============================================================
+            // Transforma APENAS o texto selecionado (preservando spans/cores).
+            // Se não houver seleção, transforma o documento inteiro.
+
+            // Guarda a última seleção válida dentro do editor (porque clicar nos
+            // botões da toolbar tira o foco do editor e a seleção visual some).
+            // Compartilhado entre o dropdown de case e os controles de tamanho.
+            window.lastEditorRange = null;
+            document.addEventListener('selectionchange', () => {
+                const sel = window.getSelection();
+                if (!sel || sel.rangeCount === 0) return;
+                const r = sel.getRangeAt(0);
+                if (editor.contains(r.startContainer) && editor.contains(r.endContainer) && !r.collapsed) {
+                    window.lastEditorRange = r.cloneRange();
+                }
+            });
+            // Alias local mantido por compatibilidade com o código abaixo
+            const savedRange = null; // só placeholder; uso window.lastEditorRange
+
+            function transformText(t, mode) {
+                if (!t) return t;
+                if (mode === 'upper') return t.toUpperCase();
+                if (mode === 'lower') return t.toLowerCase();
+                if (mode === 'title') {
+                    return t.toLowerCase().replace(
+                        /(^|\s|[\(\[\{"'])([\p{L}\p{N}])/gu,
+                        (_, sep, ch) => sep + ch.toUpperCase()
+                    );
+                }
+                return t;
+            }
+
+            function transformCase(mode) {
+                if (!editor) return;
+
+                // Tenta usar uma seleção ativa OU a última seleção salva
+                const liveSel = window.getSelection();
+                let range = null;
+                if (liveSel && liveSel.rangeCount > 0 && !liveSel.isCollapsed
+                    && editor.contains(liveSel.anchorNode) && editor.contains(liveSel.focusNode)) {
+                    range = liveSel.getRangeAt(0);
+                } else if (window.lastEditorRange
+                           && editor.contains(window.lastEditorRange.startContainer)
+                           && editor.contains(window.lastEditorRange.endContainer)
+                           && !window.lastEditorRange.collapsed) {
+                    range = window.lastEditorRange;
+                }
+
+                if (range) {
+                    // ----- TRANSFORMA SOMENTE A PARTE SELECIONADA -----
+                    const startNode = range.startContainer;
+                    const startOff = range.startOffset;
+                    const endNode = range.endContainer;
+                    const endOff = range.endOffset;
+
+                    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null, false);
+                    const inRange = [];
+                    let n;
+                    while ((n = walker.nextNode())) {
+                        if (range.intersectsNode(n)) inRange.push(n);
+                    }
+
+                    inRange.forEach((node) => {
+                        const text = node.nodeValue || '';
+                        let s = 0;
+                        let e = text.length;
+                        if (node === startNode) s = startOff;
+                        if (node === endNode) e = endOff;
+                        if (s >= e) return;
+                        const before = text.substring(0, s);
+                        const middle = text.substring(s, e);
+                        const after = text.substring(e);
+                        node.nodeValue = before + transformText(middle, mode) + after;
+                    });
+                } else {
+                    // ----- SEM SELEÇÃO: TRANSFORMA TUDO -----
+                    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null, false);
+                    const nodes = [];
+                    let n;
+                    while ((n = walker.nextNode())) nodes.push(n);
+                    nodes.forEach((node) => {
+                        if (node.nodeValue) node.nodeValue = transformText(node.nodeValue, mode);
+                    });
+                }
+
+                editor.dispatchEvent(new Event('input', { bubbles: true }));
+                flashSyncIndicator();
+            }
+
+            const caseBtn = document.getElementById('remote-case-btn');
+            const caseMenu = document.getElementById('remote-case-menu');
+            if (caseBtn && caseMenu) {
+                caseBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    caseMenu.style.display = caseMenu.style.display === 'block' ? 'none' : 'block';
+                });
+                document.addEventListener('click', (e) => {
+                    if (!caseMenu.contains(e.target) && e.target !== caseBtn) {
+                        caseMenu.style.display = 'none';
+                    }
+                });
+                caseMenu.querySelectorAll('.remote-case-option').forEach((opt) => {
+                    opt.addEventListener('mouseenter', () => opt.style.background = 'var(--background-tertiary)');
+                    opt.addEventListener('mouseleave', () => opt.style.background = 'transparent');
+                    opt.addEventListener('click', () => {
+                        transformCase(opt.dataset.case);
+                        caseMenu.style.display = 'none';
+                    });
+                });
+            }
+        });
+
         // === RECEBE ESTILO ===
         socket.on('server-style-update', (data) => {
             if (!data) return;
             
             if (data.type === 'fontSize') {
+                // Se o cadeado de fonte estiver fechado, ignora mudanças de tamanho
+                // vindas do operador. Cor, texto e alinhamento continuam normais.
+                if (window.fontSizeLocked) {
+                    console.log('🔒 fontSize update ignorado (cadeado fechado):', data.value);
+                    return;
+                }
                 const size = parseInt(data.value);
                 if (size >= 8 && size <= 200) {
                     editor.style.fontSize = size + 'pt';
-                    updateSizeUI(size);
+                    if (typeof updateSizeUI === 'function') updateSizeUI(size);
                 }
             } else if (data.type === 'fontFamily') {
                 editor.style.fontFamily = data.value;
@@ -876,7 +1176,7 @@
             syncStatus.textContent = "Synchronizing...";
             
             socket.emit('text-update', {
-                content: editor.innerHTML,
+                content: sanitizeOutgoingHtml(editor.innerHTML),
                 name: localStorage.getItem('prompt_user') || userName || "Anonymous"
             });
             
@@ -1063,13 +1363,19 @@
         // ============================================================
         function sendContentUpdate() {
             socket.emit('text-update', {
-                content: editor.innerHTML,
+                content: sanitizeOutgoingHtml(editor.innerHTML),
                 name: localStorage.getItem('prompt_user') || userName || "Anonymous"
             });
             flashSyncIndicator();
         }
         
         function sendStyleUpdate(type, value) {
+            // Cadeado fechado bloqueia ENVIO de fontSize/fontFamily ao operador.
+            // Cor, alinhamento e outros continuam enviando normalmente.
+            if (window.fontSizeLocked && (type === 'fontSize' || type === 'fontFamily')) {
+                console.log('🔒 sendStyleUpdate ignorado (cadeado fechado):', type, value);
+                return;
+            }
             socket.emit('style-update', {
                 type: type,
                 value: value,
@@ -1105,11 +1411,57 @@
         
         function applyEditorStyles(styles) {
             if (!styles || !editor) return;
-            if (styles.fontFamily) editor.style.fontFamily = styles.fontFamily;
-            if (styles.fontSize) editor.style.fontSize = styles.fontSize + 'pt';
+            // Cadeado fechado: NÃO aplica fontFamily/fontSize vindos do operador
+            if (!window.fontSizeLocked) {
+                if (styles.fontFamily) editor.style.fontFamily = styles.fontFamily;
+                if (styles.fontSize) editor.style.fontSize = styles.fontSize + 'pt';
+            }
             if (styles.fontColor) editor.style.color = styles.fontColor;
             if (styles.lineHeight) editor.style.lineHeight = styles.lineHeight;
             if (styles.textAlign) editor.style.textAlign = styles.textAlign;
+        }
+
+        // ============================================================
+        // SANITIZAÇÃO DO HTML RECEBIDO (respeita o cadeado de fonte)
+        // ============================================================
+        // O operador, ao mudar o tamanho, usa execCommand('fontSize') que
+        // injeta tags <font size="..."> e <span style="font-size:...">
+        // dentro do HTML. Quando esse HTML é recebido via server-text-update
+        // ou server-full-sync, esses estilos inline sobrescrevem o tamanho
+        // local do roteirista. Esta função remove font-size/font-family inline
+        // do HTML recebido SE o cadeado estiver fechado.
+        function sanitizeHtmlIfFontLocked(html) {
+            if (!window.fontSizeLocked) return html;
+            return stripFontSizeAndFamily(html);
+        }
+
+        // Sanitiza HTML que o ROTEIRISTA está prestes a ENVIAR ao operador.
+        // Quando o cadeado está fechado, remove font-size/font-family inline
+        // para que mudanças locais de tamanho/fonte do roteirista NÃO sejam
+        // refletidas no operador. Cor, texto e formatação continuam normais.
+        function sanitizeOutgoingHtml(html) {
+            if (!window.fontSizeLocked) return html;
+            return stripFontSizeAndFamily(html);
+        }
+
+        // Implementação compartilhada da limpeza de font-size / font-family inline.
+        function stripFontSizeAndFamily(html) {
+            try {
+                const tpl = document.createElement('div');
+                tpl.innerHTML = html;
+                tpl.querySelectorAll('[style]').forEach((el) => {
+                    let s = el.getAttribute('style') || '';
+                    s = s.replace(/font-size\s*:[^;]+;?/gi, '');
+                    s = s.replace(/font-family\s*:[^;]+;?/gi, '');
+                    if (s.trim()) el.setAttribute('style', s);
+                    else el.removeAttribute('style');
+                });
+                tpl.querySelectorAll('font[size]').forEach((el) => el.removeAttribute('size'));
+                tpl.querySelectorAll('font[face]').forEach((el) => el.removeAttribute('face'));
+                return tpl.innerHTML;
+            } catch (_) {
+                return html;
+            }
         }
         
         function updateToolbarState(state) {

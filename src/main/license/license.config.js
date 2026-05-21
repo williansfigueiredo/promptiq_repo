@@ -28,5 +28,5 @@ module.exports = {
   LICENSE_FILE_NAME: 'license.dat',
 
   // Versão do app enviada ao ERP (para logs no servidor)
-  APP_VERSION: '1.3.10'
+  APP_VERSION: '1.3.11'
 };

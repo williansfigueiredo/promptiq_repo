@@ -290,6 +290,11 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
+    // Reforço de peso de fonte (Arial mais grossa) — Preferences > Style.
+    // Default true: se a chave não existir ainda, mantém ativo.
+    const boost = (settings.fontWeightBoost !== false);
+    document.body.classList.toggle("font-boost", boost);
+
     if (settings.defaultFontSize) {
       currentFontSizePT = settings.defaultFontSize;
 
@@ -6011,7 +6016,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = JSON.parse(event.data);
 
       if (data.type === 'update') {
-        const editor = document.querySelector('.text-editor-area');
+        const editor = getActiveTextEditorArea();
 
         if (editor && editor.innerHTML !== data.content) {
           editor.innerHTML = data.content;
@@ -6022,6 +6027,12 @@ document.addEventListener("DOMContentLoaded", () => {
           if (container) {
             flashRedBorder(container);
           }
+
+          // Marca documento como modificado (bolinha laranja na aba + autosave + Ctrl+S)
+          if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
+            markDocumentAsUnsaved(activeDocumentId);
+          }
+          if (typeof scheduleAutoSave === "function") scheduleAutoSave();
 
           if (typeof syncContentToPrompter === 'function') syncContentToPrompter();
 
