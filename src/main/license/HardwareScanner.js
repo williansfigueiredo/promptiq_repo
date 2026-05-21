@@ -9,99 +9,114 @@
 //            imediatamente transformados em hash. Após a função
 //            retornar, o Garbage Collector descarta os valores.
 //
+// ESTRATÉGIA v2 (estabilidade máxima):
+//   - Componente principal: MachineGuid do Windows
+//     (HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Cryptography\MachineGuid)
+//     Esse valor é único por instalação do Windows e só muda quando o
+//     SO é reinstalado. NÃO é afetado por pen drives, placas de rede,
+//     mudança de cabo, sleep, etc.
+//   - Componente de reforço: serial da placa-mãe (se disponível)
+//   - Componente de reforço: marca/modelo da CPU
+//   - NÃO usa mais: serial de disco, MAC. Esses variam demais.
+//
+// MIGRAÇÃO: a função `generateLegacyFingerprint` recria o algoritmo
+// antigo (board+cpu+disk+mac) para permitir migração transparente da
+// licença gravada em versões anteriores. Veja LicenseManager.js.
+//
 // BYTENODE: Módulo puro, sem top-level await e sem ES modules.
-//           Compatível com compilação para .jsc.
 // ============================================================
 
 const crypto = require('crypto');
 const si = require('systeminformation');
+const { execSync } = require('child_process');
 
-/**
- * collectRawHardwareIds (PRIVADO)
- * --------------------------------
- * Coleta os 3 identificadores de hardware via systeminformation.
- * Função interna — NÃO é exportada para impedir uso externo dos seriais.
- *
- * Estratégia de fallback: se algum serial vier vazio (comum em alguns
- * CPUs/discos no Windows), usamos campos alternativos para não falhar
- * a geração do fingerprint.
- *
- * @returns {Promise<{board: string, cpu: string, disk: string}>}
- */
-async function collectRawHardwareIds() {
-  // 1) UUID/Serial da placa-mãe — geralmente estável durante toda a vida da máquina
-  const baseboard = await si.baseboard();
+// ------------------------------------------------------------
+// Leitura do MachineGuid do Windows (super estável)
+// ------------------------------------------------------------
+function readWindowsMachineGuid() {
+  try {
+    // reg.exe sai sempre 0 se a chave existir. Usa /v MachineGuid /t REG_SZ.
+    const out = execSync(
+      'reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid',
+      { encoding: 'utf-8', windowsHide: true, timeout: 4000 }
+    );
+    // Linha relevante: "    MachineGuid    REG_SZ    xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    const match = out.match(/MachineGuid\s+REG_SZ\s+([\w-]+)/i);
+    if (match && match[1]) return match[1].trim();
+  } catch (_) { /* ignora — cai no fallback */ }
+  return null;
+}
 
-  // 2) Serial do processador — alguns Intel/AMD não expõem; usa brand+family como fallback
-  const cpu = await si.cpu();
+// ------------------------------------------------------------
+// Coleta enxuta dos componentes ESTÁVEIS (novo algoritmo)
+// ------------------------------------------------------------
+async function collectStableIds() {
+  const baseboard = await si.baseboard().catch(() => ({}));
+  const cpu = await si.cpu().catch(() => ({}));
 
-  // 3) Disco principal — NÃO usa disks[0] pois a ordem pode mudar com pen drives / HDs externos.
-  //    Estratégia: filtra removíveis, ordena por tamanho desc → disco maior = disco do sistema.
-  const disks = await si.diskLayout();
+  return {
+    // Componente principal — só muda se o Windows for reinstalado
+    winGuid: readWindowsMachineGuid() || 'NO-WIN-GUID',
+    // Serial da placa-mãe — estável durante a vida útil da máquina
+    board: String(baseboard.serial || baseboard.assetTag || 'NO-BOARD-SERIAL'),
+    // Identificação da CPU (marca/modelo/family) — estável
+    cpu: String(cpu.serial || `${cpu.manufacturer || ''}-${cpu.brand || ''}-${cpu.family || ''}`)
+  };
+}
+
+// ------------------------------------------------------------
+// FINGERPRINT NOVO (estável)
+// ------------------------------------------------------------
+async function generateFingerprint() {
+  const ids = await collectStableIds();
+  const concatenated = `v2::${ids.winGuid}::${ids.board}::${ids.cpu}`;
+  return crypto.createHash('sha256').update(concatenated).digest('hex');
+}
+
+// ------------------------------------------------------------
+// FINGERPRINT LEGACY (para migração de licenças antigas)
+// ------------------------------------------------------------
+// Replica o algoritmo das versões 1.3.4 → 1.3.9 (board+cpu+disk+mac).
+// É usado APENAS para tentar abrir o license.dat de instalações antigas;
+// se conseguir, o LicenseManager re-criptografa com o fingerprint NOVO.
+async function generateLegacyFingerprint() {
+  const baseboard = await si.baseboard().catch(() => ({}));
+  const cpu = await si.cpu().catch(() => ({}));
+  const disks = await si.diskLayout().catch(() => []);
   const fixedDisks = (disks || [])
-    .filter(d => !d.removable)                         // descarta pen drives / removíveis
-    .sort((a, b) => (b.size || 0) - (a.size || 0));   // maior primeiro = disco principal
+    .filter(d => !d.removable)
+    .sort((a, b) => (b.size || 0) - (a.size || 0));
   const primaryDisk = fixedDisks[0] || (disks && disks[0]) || {};
 
-  // 4) MAC da interface de rede física principal — estabiliza em casos onde o disco
-  //    não tem serial exposto (VMs, alguns NVMe sem serial no WMI).
   let mac = 'NO-MAC';
   try {
     const ifaces = await si.networkInterfaces();
     const physical = (Array.isArray(ifaces) ? ifaces : [])
       .filter(i => i && !i.virtual && i.mac && i.mac !== '00:00:00:00:00:00')
-      .sort((a, b) => (a.iface || '').localeCompare(b.iface || ''));  // ordem alfabética → estável
+      .sort((a, b) => (a.iface || '').localeCompare(b.iface || ''));
     if (physical.length > 0) mac = physical[0].mac;
-  } catch (_) { /* ignora — continua sem MAC */ }
+  } catch (_) { /* ignora */ }
 
-  return {
-    board: String(baseboard.serial || baseboard.assetTag || 'NO-BOARD-SERIAL'),
-    cpu: String(cpu.serial || `${cpu.manufacturer || ''}-${cpu.brand || ''}-${cpu.family || ''}`),
-    disk: String(primaryDisk.serialNum || primaryDisk.name || 'NO-DISK-SERIAL'),
-    mac
-  };
-}
+  const board = String(baseboard.serial || baseboard.assetTag || 'NO-BOARD-SERIAL');
+  const cpuId = String(cpu.serial || `${cpu.manufacturer || ''}-${cpu.brand || ''}-${cpu.family || ''}`);
+  const disk = String(primaryDisk.serialNum || primaryDisk.name || 'NO-DISK-SERIAL');
 
-/**
- * generateFingerprint (PÚBLICO)
- * ------------------------------
- * Gera o fingerprint SHA-256 final da máquina.
- *
- * Determinístico: mesma máquina → mesmo hash, sempre.
- * Único: máquinas diferentes → hashes diferentes.
- *
- * @returns {Promise<string>} hash hexadecimal de 64 caracteres
- */
-async function generateFingerprint() {
-  const ids = await collectRawHardwareIds();
-
-  // Concatena na ORDEM FIXA com separador único.
-  // A ordem fixa é crítica: troca = hash diferente = licença inválida.
-  const concatenated = `${ids.board}::${ids.cpu}::${ids.disk}::${ids.mac}`;
-
-  // SHA-256 hex (64 chars). Após esta linha, a variável `ids` sai de escopo
-  // e o GC limpa os seriais brutos da memória.
+  const concatenated = `${board}::${cpuId}::${disk}::${mac}`;
   return crypto.createHash('sha256').update(concatenated).digest('hex');
 }
 
-/**
- * generateFingerprintDebug (PÚBLICO - APENAS DEV)
- * ------------------------------------------------
- * Versão de debug que retorna o hash + os pedaços usados.
- * USE APENAS LOCALMENTE para testar — NÃO chame em produção.
- *
- * Para testar: abra um terminal na raiz do projeto e rode:
- *   node -e "require('./src/main/license/HardwareScanner').generateFingerprintDebug().then(console.log)"
- */
+// ------------------------------------------------------------
+// Debug
+// ------------------------------------------------------------
 async function generateFingerprintDebug() {
-  const ids = await collectRawHardwareIds();
-  const concatenated = `${ids.board}::${ids.cpu}::${ids.disk}::${ids.mac}`;
+  const ids = await collectStableIds();
+  const concatenated = `v2::${ids.winGuid}::${ids.board}::${ids.cpu}`;
   const hash = crypto.createHash('sha256').update(concatenated).digest('hex');
   return {
+    algorithm: 'v2',
+    winGuid: ids.winGuid,
     board: ids.board,
     cpu: ids.cpu,
-    disk: ids.disk,
-    mac: ids.mac,
     concatenated,
     fingerprint: hash
   };
@@ -109,5 +124,6 @@ async function generateFingerprintDebug() {
 
 module.exports = {
   generateFingerprint,
+  generateLegacyFingerprint,
   generateFingerprintDebug
 };

@@ -13,7 +13,7 @@
 // BYTENODE: módulo CommonJS clássico, sem mágica.
 // ============================================================
 
-const { generateFingerprint } = require('./HardwareScanner');
+const { generateFingerprint, generateLegacyFingerprint } = require('./HardwareScanner');
 const {
   saveLicense,
   loadLicense,
@@ -45,18 +45,42 @@ const DEV_LOCAL_LICENSE_KEY = 'DEV-LOCAL-PROMPTIQ';
  */
 async function checkLocalLicense() {
   const currentFingerprint = await generateFingerprint();
-  const license = loadLicense(currentFingerprint);
 
-  if (!license) {
-    return { valid: false, reason: 'no-license-or-fingerprint-mismatch' };
+  // 1) Tenta o fingerprint NOVO (algoritmo v2 — estável)
+  let license = loadLicense(currentFingerprint);
+
+  if (license && license.fingerprint === currentFingerprint) {
+    return { valid: true, license };
   }
 
-  // Defesa em profundidade: confere o fingerprint gravado vs. o atual
-  if (license.fingerprint !== currentFingerprint) {
-    return { valid: false, reason: 'fingerprint-mismatch' };
+  // 2) MIGRAÇÃO automática: se o license.dat foi gravado por uma versão
+  //    anterior (algoritmo v1: board+cpu+disk+mac), tenta abrir com o
+  //    fingerprint legacy. Se conseguir, re-grava com o fingerprint novo
+  //    e atualiza o campo interno — tudo transparente.
+  try {
+    const legacyFingerprint = await generateLegacyFingerprint();
+    if (legacyFingerprint !== currentFingerprint) {
+      const legacyLicense = loadLicense(legacyFingerprint);
+      if (legacyLicense) {
+        console.log('[License] Migrando licença para algoritmo de fingerprint v2…');
+        const migrated = {
+          ...legacyLicense,
+          fingerprint: currentFingerprint,
+          meta: {
+            ...(legacyLicense.meta || {}),
+            migratedFromLegacy: true,
+            migratedAt: new Date().toISOString()
+          }
+        };
+        saveLicense(migrated, currentFingerprint);
+        return { valid: true, license: migrated };
+      }
+    }
+  } catch (err) {
+    console.warn('[License] Falha ao tentar migração legacy:', err && err.message);
   }
 
-  return { valid: true, license };
+  return { valid: false, reason: license ? 'fingerprint-mismatch' : 'no-license-or-fingerprint-mismatch' };
 }
 
 /**
