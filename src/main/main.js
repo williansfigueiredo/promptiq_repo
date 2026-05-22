@@ -1091,22 +1091,38 @@ ipcMain.on('save-file-direct', (event, content, editorId, filePath) => {
   if (filePath) {
     const extension = path.extname(filePath).toLowerCase();
 
-    if (extension === '.ptq') {
-      const ptqData = {
-        content: content,
-        metadata: {
-          version: '1.0',
-          updatedAt: new Date().toISOString(),
-          app: 'PromptIQ',
-          format: 'rich-text-html'
-        }
-      };
-      fs.writeFileSync(filePath, JSON.stringify(ptqData, null, 2), 'utf-8');
-    } else {
-      fs.writeFileSync(filePath, content, 'utf-8');
+    // Formatos de importação somente-leitura: não podem ser sobrescritos.
+    // Redireciona para "Save As" pedindo ao renderer para abrir o diálogo.
+    const readOnlyFormats = ['.docx', '.doc', '.pdf'];
+    if (readOnlyFormats.includes(extension)) {
+      event.sender.send('prompt-save-as', editorId);
+      return;
     }
 
-    event.sender.send('file-saved-direct', path.basename(filePath), filePath, editorId);
+    try {
+      if (extension === '.ptq') {
+        const ptqData = {
+          content: content,
+          metadata: {
+            version: '1.0',
+            updatedAt: new Date().toISOString(),
+            app: 'PromptIQ',
+            format: 'rich-text-html'
+          }
+        };
+        fs.writeFileSync(filePath, JSON.stringify(ptqData, null, 2), 'utf-8');
+      } else {
+        fs.writeFileSync(filePath, content, 'utf-8');
+      }
+      event.sender.send('file-saved-direct', path.basename(filePath), filePath, editorId);
+    } catch (err) {
+      // Se o arquivo estiver bloqueado por outro processo, pede Save As
+      if (err.code === 'EBUSY' || err.code === 'EACCES' || err.code === 'EPERM') {
+        event.sender.send('prompt-save-as', editorId);
+      } else {
+        dialog.showErrorBox('Erro ao salvar', err.message);
+      }
+    }
   }
 });
 
@@ -1635,6 +1651,13 @@ ipcMain.handle('toggle-server', async (event, mode) => {
 ipcMain.on('send-text-to-remote', (event, content) => {
   if (remoteIo) {
     remoteIo.emit('server-text-update', content);
+  }
+});
+
+// Envia progresso de leitura (índices dos parágrafos já lidos) para roteiristas
+ipcMain.on('send-read-progress-to-remote', (event, readIndices) => {
+  if (remoteIo) {
+    remoteIo.emit('server-read-progress', readIndices);
   }
 });
 

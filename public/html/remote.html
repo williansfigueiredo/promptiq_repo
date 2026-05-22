@@ -451,6 +451,14 @@
         #remote-editor p { margin: 0 0 0.5em 0; }
         #remote-editor div { margin: 0; }
 
+        /* Texto já lido pelo repórter (tachado) */
+        #remote-editor .script-read {
+            text-decoration: line-through;
+            text-decoration-thickness: 2px;
+            opacity: 0.45;
+            transition: opacity 0.3s ease;
+        }
+
         /* --------------------------------------------------------------------------
            BARRA DE STATUS
            -------------------------------------------------------------------------- */
@@ -874,13 +882,52 @@
                 ignoreNextInput = true;
                 const hadFocus = document.activeElement === editor;
                 editor.innerHTML = sanitizeHtmlIfFontLocked(content);
+                indexEditorBlocks();
+                reapplyReadProgress();
                 flashSyncIndicator();
                 updateLastSync();
                 if (hadFocus) editor.focus();
                 setTimeout(() => { ignoreNextInput = false; }, 100);
             }
         });
-        
+
+        // === PROGRESSO DE LEITURA (TACHADO) ===
+        let _currentReadIndices = [];
+
+        function indexEditorBlocks() {
+            if (!editor) return;
+            let blocks = editor.querySelectorAll('p, div, h1, h2, h3, h4, h5, h6');
+            if (blocks.length === 0) blocks = editor.children;
+            Array.from(blocks).forEach((b, i) => b.setAttribute('data-para-idx', i));
+        }
+
+        function reapplyReadProgress() {
+            if (!editor || _currentReadIndices.length === 0) return;
+            applyReadProgress(_currentReadIndices);
+        }
+
+        function applyReadProgress(readIndices) {
+            if (!editor) return;
+            const readSet = new Set(readIndices);
+            const blocks = editor.querySelectorAll('[data-para-idx]');
+            blocks.forEach((block) => {
+                const idx = parseInt(block.getAttribute('data-para-idx'));
+                if (readSet.has(idx)) {
+                    block.classList.add('script-read');
+                } else {
+                    block.classList.remove('script-read');
+                }
+            });
+        }
+
+        socket.on('server-read-progress', (readIndices) => {
+            _currentReadIndices = readIndices || [];
+            if (editor.querySelectorAll('[data-para-idx]').length === 0) {
+                indexEditorBlocks();
+            }
+            applyReadProgress(_currentReadIndices);
+        });
+
         // === RECEBE FULL-SYNC (HTML + ESTILOS + TOOLBAR) ===
         socket.on('server-full-sync', (data) => {
             if (!data) return;

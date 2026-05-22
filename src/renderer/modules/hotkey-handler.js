@@ -57,6 +57,29 @@ const HotkeyHandler = (function() {
 
     let isEnabled = false;
 
+    /**
+     * Verifica se o evento ocorreu na área do prompter (aba Operator).
+     */
+    function isPrompterTarget(event) {
+        const pane = document.getElementById("operator-tab-pane");
+        if (!pane || !pane.classList.contains("show")) return false;
+        const prompter = document.querySelector(".prompter-in-control");
+        if (!prompter) return false;
+        return prompter.contains(event.target) || event.target === prompter;
+    }
+
+    function getMouseButtonFromSetting(setting) {
+        return mouseButtonMap[normalizeMouseSetting(setting)];
+    }
+
+    function runMouseAction(event, setting, actionName) {
+        if (getMouseButtonFromSetting(setting) !== event.button) return false;
+        event.preventDefault();
+        event.stopPropagation();
+        if (actions[actionName]) actions[actionName]();
+        return true;
+    }
+
     // ============================================================
     // MAPEAMENTO DE TECLAS
     // ============================================================
@@ -89,6 +112,7 @@ const HotkeyHandler = (function() {
         '-': 'Minus',
         '=': 'Equal',
         '`': 'Backquote',
+        '*': '*',
         '[None]': '',
         'None': ''
     };
@@ -114,17 +138,38 @@ const HotkeyHandler = (function() {
         'Backquote': '`'
     };
 
-    // Mapeamento de botões do mouse
+    // Mapeamento de botões do mouse (aceita valores da UI e aliases internos)
     const mouseButtonMap = {
         'none': -1,
         'left': 0,
+        'left-click': 0,
         'middle': 1,
         'right': 2,
+        'right-click': 2,
         'back': 3,
         'forward': 4,
         'scroll-up': 'wheelUp',
-        'scroll-down': 'wheelDown'
+        'scroll-down': 'wheelDown',
+        'scroll-wheel-up': 'wheelUp',
+        'scroll-wheel-down': 'wheelDown'
     };
+
+    function normalizeMouseSetting(value) {
+        if (!value || value === 'none') return 'none';
+        const v = String(value).toLowerCase().trim();
+        return mouseButtonMap.hasOwnProperty(v) ? v : 'none';
+    }
+
+    function matchesMouseWheel(setting, direction) {
+        const n = normalizeMouseSetting(setting);
+        if (direction === 'scroll-down') {
+            return n === 'scroll-wheel-down' || n === 'scroll-down';
+        }
+        if (direction === 'scroll-up') {
+            return n === 'scroll-wheel-up' || n === 'scroll-up';
+        }
+        return false;
+    }
 
     // ============================================================
     // FUNÇÕES INTERNAS
@@ -273,99 +318,51 @@ const HotkeyHandler = (function() {
     }
 
     /**
-     * Handler de mouse click
+     * Clique do mouse: ações discretas (respeita Preferences).
      */
-    function handleMouseDown(event) {
-        if (!isEnabled) return;
+    function handleClick(event) {
+        if (!isEnabled || !isPrompterTarget(event)) return;
         if (isInputFocused()) return;
+        if (event.target.closest("#cueMarker-control")) return;
 
-        const button = event.button;
+        if (runMouseAction(event, hotkeySettings.mouseStopExit, "stopExit")) return;
+        if (runMouseAction(event, hotkeySettings.mousePauseResume, "pauseResume")) return;
+        // Reverse Scroll no mouse = pausa/retoma com um clique (ex.: botão direito)
+        if (runMouseAction(event, hotkeySettings.mouseReverseScroll, "pauseResume")) return;
+        if (runMouseAction(event, hotkeySettings.mouseScrollForward, "scrollForward")) return;
+        if (runMouseAction(event, hotkeySettings.mouseScrollBackward, "scrollBackward")) return;
+        if (runMouseAction(event, hotkeySettings.mousePreviousLine, "previousLine")) return;
+        if (runMouseAction(event, hotkeySettings.mouseNextLine, "nextLine")) return;
+        if (runMouseAction(event, hotkeySettings.mousePreviousCue, "previousCue")) return;
+        if (runMouseAction(event, hotkeySettings.mouseNextCue, "nextCue")) return;
+        if (runMouseAction(event, hotkeySettings.mouseJumpStart, "jumpStart")) return;
+        if (runMouseAction(event, hotkeySettings.mouseShowHideCue, "showHideCue")) return;
+    }
 
-        // Verifica cada atalho de mouse
-        if (mouseButtonMap[hotkeySettings.mouseStopExit] === button) {
-            event.preventDefault();
-            if (actions.stopExit) actions.stopExit();
-            return;
-        }
-
-        if (mouseButtonMap[hotkeySettings.mousePauseResume] === button) {
-            event.preventDefault();
-            if (actions.pauseResume) actions.pauseResume();
-            return;
-        }
-
-        if (mouseButtonMap[hotkeySettings.mouseScrollForward] === button) {
-            event.preventDefault();
-            if (actions.scrollForward) actions.scrollForward();
-            return;
-        }
-
-        if (mouseButtonMap[hotkeySettings.mouseScrollBackward] === button) {
-            event.preventDefault();
-            if (actions.scrollBackward) actions.scrollBackward();
-            return;
-        }
-
-        if (mouseButtonMap[hotkeySettings.mouseReverseScroll] === button) {
-            event.preventDefault();
-            if (actions.reverseScroll) actions.reverseScroll();
-            return;
-        }
-
-        if (mouseButtonMap[hotkeySettings.mousePreviousLine] === button) {
-            event.preventDefault();
-            if (actions.previousLine) actions.previousLine();
-            return;
-        }
-
-        if (mouseButtonMap[hotkeySettings.mouseNextLine] === button) {
-            event.preventDefault();
-            if (actions.nextLine) actions.nextLine();
-            return;
-        }
-
-        if (mouseButtonMap[hotkeySettings.mousePreviousCue] === button) {
-            event.preventDefault();
-            if (actions.previousCue) actions.previousCue();
-            return;
-        }
-
-        if (mouseButtonMap[hotkeySettings.mouseNextCue] === button) {
-            event.preventDefault();
-            if (actions.nextCue) actions.nextCue();
-            return;
-        }
-
-        if (mouseButtonMap[hotkeySettings.mouseJumpStart] === button) {
-            event.preventDefault();
-            if (actions.jumpStart) actions.jumpStart();
-            return;
-        }
-
-        if (mouseButtonMap[hotkeySettings.mouseShowHideCue] === button) {
-            event.preventDefault();
-            if (actions.showHideCue) actions.showHideCue();
-            return;
-        }
+    function handleContextMenu(event) {
+        if (!isEnabled || !isPrompterTarget(event)) return;
+        event.preventDefault();
     }
 
     /**
      * Handler de scroll do mouse
      */
     function handleWheel(event) {
-        if (!isEnabled) return;
+        if (!isEnabled || !isPrompterTarget(event)) return;
         if (isInputFocused()) return;
 
         const direction = event.deltaY > 0 ? 'scroll-down' : 'scroll-up';
 
-        if (hotkeySettings.mouseScrollForward === direction) {
+        if (matchesMouseWheel(hotkeySettings.mouseScrollForward, direction)) {
             event.preventDefault();
+            event.stopPropagation();
             if (actions.scrollForward) actions.scrollForward();
             return;
         }
 
-        if (hotkeySettings.mouseScrollBackward === direction) {
+        if (matchesMouseWheel(hotkeySettings.mouseScrollBackward, direction)) {
             event.preventDefault();
+            event.stopPropagation();
             if (actions.scrollBackward) actions.scrollBackward();
             return;
         }
@@ -392,8 +389,9 @@ const HotkeyHandler = (function() {
 
         // Registra listeners
         document.addEventListener('keydown', handleKeyDown);
-        document.addEventListener('mousedown', handleMouseDown);
-        document.addEventListener('wheel', handleWheel, { passive: false });
+        document.addEventListener('click', handleClick, true);
+        document.addEventListener('contextmenu', handleContextMenu, true);
+        document.addEventListener('wheel', handleWheel, { passive: false, capture: true });
 
         console.log('🎹 HotkeyHandler inicializado');
     }
@@ -485,8 +483,9 @@ const HotkeyHandler = (function() {
      */
     function destroy() {
         document.removeEventListener('keydown', handleKeyDown);
-        document.removeEventListener('mousedown', handleMouseDown);
-        document.removeEventListener('wheel', handleWheel);
+        document.removeEventListener('click', handleClick, true);
+        document.removeEventListener('contextmenu', handleContextMenu, true);
+        document.removeEventListener('wheel', handleWheel, true);
         isEnabled = false;
     }
 

@@ -104,6 +104,36 @@ document.addEventListener('DOMContentLoaded', () => {
   const mouseJumpStartSelect = document.getElementById('mouse-jump-start');
   const mouseShowHideCueSelect = document.getElementById('mouse-show-hide-cue');
 
+  // Opções padrão de mouse (paridade com PromptDog / referência)
+  const MOUSE_COMMAND_OPTIONS = [
+    { value: 'none', label: 'None' },
+    { value: 'left-click', label: 'Left-Click' },
+    { value: 'right-click', label: 'Right-Click' },
+    { value: 'scroll-wheel-down', label: 'Scroll-Wheel Down' },
+    { value: 'scroll-wheel-up', label: 'Scroll-Wheel Up' },
+  ];
+
+  function populateMouseSelect(selectEl, savedValue) {
+    if (!selectEl) return;
+    const current = savedValue || selectEl.value || 'none';
+    selectEl.innerHTML = '';
+    MOUSE_COMMAND_OPTIONS.forEach((opt) => {
+      const o = document.createElement('option');
+      o.value = opt.value;
+      o.textContent = opt.label;
+      selectEl.appendChild(o);
+    });
+    selectEl.value = MOUSE_COMMAND_OPTIONS.some((o) => o.value === current) ? current : 'none';
+  }
+
+  const allMouseSelects = [
+    mouseStopExitSelect, mousePauseResumeSelect, mouseScrollForwardSelect,
+    mouseScrollBackwardSelect, mouseReverseScrollSelect, mousePreviousLineSelect,
+    mouseNextLineSelect, mousePreviousCueSelect, mouseNextCueSelect,
+    mouseJumpStartSelect, mouseShowHideCueSelect,
+  ];
+  allMouseSelects.forEach((sel) => populateMouseSelect(sel));
+
   // Standby Settings
   const customStandbyImageCheck = document.getElementById('custom-standby-image-check');
   const selectStandbyImageBtn = document.getElementById('select-standby-image-btn');
@@ -568,17 +598,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (keyNextCueInput) keyNextCueInput.value = settings.keyNextCue || 'Right';
     if (keyJumpStartInput) keyJumpStartInput.value = settings.keyJumpStart || 'Home';
     if (keyShowHideCueInput) keyShowHideCueInput.value = settings.keyShowHideCue || '[None]';
-    if (mouseStopExitSelect) mouseStopExitSelect.value = settings.mouseStopExit || 'none';
-    if (mousePauseResumeSelect) mousePauseResumeSelect.value = settings.mousePauseResume || 'left-click';
-    if (mouseScrollForwardSelect) mouseScrollForwardSelect.value = settings.mouseScrollForward || 'scroll-wheel-down';
-    if (mouseScrollBackwardSelect) mouseScrollBackwardSelect.value = settings.mouseScrollBackward || 'scroll-wheel-up';
-    if (mouseReverseScrollSelect) mouseReverseScrollSelect.value = settings.mouseReverseScroll || 'right-click';
-    if (mousePreviousLineSelect) mousePreviousLineSelect.value = settings.mousePreviousLine || 'none';
-    if (mouseNextLineSelect) mouseNextLineSelect.value = settings.mouseNextLine || 'none';
-    if (mousePreviousCueSelect) mousePreviousCueSelect.value = settings.mousePreviousCue || 'none';
-    if (mouseNextCueSelect) mouseNextCueSelect.value = settings.mouseNextCue || 'none';
-    if (mouseJumpStartSelect) mouseJumpStartSelect.value = settings.mouseJumpStart || 'none';
-    if (mouseShowHideCueSelect) mouseShowHideCueSelect.value = settings.mouseShowHideCue || 'none';
+    if (mouseStopExitSelect) populateMouseSelect(mouseStopExitSelect, settings.mouseStopExit || 'none');
+    if (mousePauseResumeSelect) populateMouseSelect(mousePauseResumeSelect, settings.mousePauseResume || 'left-click');
+    if (mouseScrollForwardSelect) populateMouseSelect(mouseScrollForwardSelect, settings.mouseScrollForward || 'scroll-wheel-down');
+    if (mouseScrollBackwardSelect) populateMouseSelect(mouseScrollBackwardSelect, settings.mouseScrollBackward || 'scroll-wheel-up');
+    if (mouseReverseScrollSelect) populateMouseSelect(mouseReverseScrollSelect, settings.mouseReverseScroll || 'right-click');
+    if (mousePreviousLineSelect) populateMouseSelect(mousePreviousLineSelect, settings.mousePreviousLine || 'none');
+    if (mouseNextLineSelect) populateMouseSelect(mouseNextLineSelect, settings.mouseNextLine || 'none');
+    if (mousePreviousCueSelect) populateMouseSelect(mousePreviousCueSelect, settings.mousePreviousCue || 'none');
+    if (mouseNextCueSelect) populateMouseSelect(mouseNextCueSelect, settings.mouseNextCue || 'none');
+    if (mouseJumpStartSelect) populateMouseSelect(mouseJumpStartSelect, settings.mouseJumpStart || 'none');
+    if (mouseShowHideCueSelect) populateMouseSelect(mouseShowHideCueSelect, settings.mouseShowHideCue || 'none');
 
     // Standby Settings
     const path = settings.standbyImagePath;

@@ -371,23 +371,39 @@ function initFileHandlers(extractTextFromRtf, attachContextMenu, currentSettings
     if (filePath) {
       const extension = path.extname(filePath).toLowerCase();
 
-      if (extension === '.ptq') {
-        // Salva como JSON com metadados
-        const ptqData = {
-          content: content,
-          metadata: {
-            version: '1.0',
-            updatedAt: new Date().toISOString(),
-            app: 'PromptIQ',
-            format: 'rich-text-html'
-          }
-        };
-        fs.writeFileSync(filePath, JSON.stringify(ptqData, null, 2), 'utf-8');
-      } else {
-        fs.writeFileSync(filePath, content, 'utf-8');
+      // Formatos de importação somente-leitura: não podem ser sobrescritos.
+      // Redireciona para "Save As" pedindo ao renderer para abrir o diálogo.
+      const readOnlyFormats = ['.docx', '.doc', '.pdf'];
+      if (readOnlyFormats.includes(extension)) {
+        event.sender.send('prompt-save-as', editorId);
+        return;
       }
 
-      event.sender.send('file-saved-direct', path.basename(filePath), filePath, editorId);
+      try {
+        if (extension === '.ptq') {
+          // Salva como JSON com metadados
+          const ptqData = {
+            content: content,
+            metadata: {
+              version: '1.0',
+              updatedAt: new Date().toISOString(),
+              app: 'PromptIQ',
+              format: 'rich-text-html'
+            }
+          };
+          fs.writeFileSync(filePath, JSON.stringify(ptqData, null, 2), 'utf-8');
+        } else {
+          fs.writeFileSync(filePath, content, 'utf-8');
+        }
+        event.sender.send('file-saved-direct', path.basename(filePath), filePath, editorId);
+      } catch (err) {
+        // Se o arquivo estiver bloqueado por outro processo, pede Save As
+        if (err.code === 'EBUSY' || err.code === 'EACCES' || err.code === 'EPERM') {
+          event.sender.send('prompt-save-as', editorId);
+        } else {
+          dialog.showErrorBox('Erro ao salvar', err.message);
+        }
+      }
     }
   });
 

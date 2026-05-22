@@ -1020,6 +1020,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const textEl = this.getTextElement();
       if (!textEl) return;
 
+      // Indexa parágrafos para rastreamento de texto lido
+      if (typeof ensureParaIndexing === "function") ensureParaIndexing();
+
       this.isRunning = true;
       this.lastFrameTime = performance.now();
 
@@ -1079,6 +1082,7 @@ document.addEventListener("DOMContentLoaded", () => {
       this.setSpeed(0);
       handlePlaybackTimer('stop');
       updateProgressBar(0);
+      if (typeof clearReadProgress === "function") clearReadProgress();
     },
 
     setSpeed: function (val) {
@@ -1171,6 +1175,9 @@ document.addEventListener("DOMContentLoaded", () => {
         textPercent: textPercentage
       });
 
+      // Atualiza marcação de texto lido no editor (throttled internamente)
+      if (typeof updateReadProgress === "function") updateReadProgress();
+
       this.animationFrameId = requestAnimationFrame(() => this.loop());
     },
   };
@@ -1199,6 +1206,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Atualiza a posição interna do motor para quando der Play de novo não pular
         ScrollEngine.decimalScroll = el.scrollTop;
+
+        // Atualiza marcação de texto lido no editor
+        if (typeof updateReadProgress === "function") updateReadProgress();
       }
     });
   }
@@ -1624,28 +1634,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ============================================================
-  // SEÇÃO 23: CONTROLES DE SCROLL (MOUSE E TECLADO)
-  // ============================================================
-  // Roda do mouse e setas controlam velocidade do scroll
-
-  // === CONTROLES DE MOUSE E TECLADO ===
-  if (prompterContainer) {
-    prompterContainer.addEventListener(
-      "wheel",
-      (e) => {
-        e.preventDefault();
-        const sensitivity = 5;
-        const direction = e.deltaY > 0 ? 1 : -1;
-        ScrollEngine.changeSpeedBy(direction * sensitivity);
-      },
-      { passive: false }
-    );
-  }
-
-  // ============================================================
   // SEÇÃO 23.1: INICIALIZAÇÃO DO HOTKEY HANDLER
   // ============================================================
-  // Sistema de atalhos configuráveis de teclado e mouse
+  // Atalhos de teclado/mouse configuráveis em Preferences → Controls
 
   console.log('🎹 Verificando HotkeyHandler:', typeof HotkeyHandler, HotkeyHandler);
 
@@ -1735,9 +1726,11 @@ document.addEventListener("DOMContentLoaded", () => {
           ScrollEngine.changeSpeedBy(-5);
         },
         reverseScroll: () => {
-          // Inverte a direção do scroll
           const currentSpeed = ScrollEngine.speed || 0;
           ScrollEngine.setSpeed(-currentSpeed);
+          if (ScrollEngine.speed !== 0 && !ScrollEngine.isRunning) {
+            ScrollEngine.start();
+          }
         },
         previousLine: () => {
           // Volta UMA linha (parado ou rodando).
@@ -1829,10 +1822,13 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         },
         showHideCue: () => {
-          // Toggle visibilidade do cue marker
-          const cueMarker = document.querySelector(".cue-marker");
-          if (cueMarker) {
-            cueMarker.style.display = cueMarker.style.display === 'none' ? '' : 'none';
+          const cueMarker = document.getElementById("cueMarker-control");
+          if (!cueMarker) return;
+          const hidden = cueMarker.style.display === "none";
+          cueMarker.style.display = hidden ? "flex" : "none";
+          if (globalPrefs) {
+            globalPrefs.showCueMarker = hidden;
+            ipcRenderer.send("save-settings", globalPrefs);
           }
         }
       },
@@ -2416,6 +2412,13 @@ document.addEventListener("DOMContentLoaded", () => {
   function saveCurrentDocumentDirect(content, doc) {
     if (!content) content = "";
     if (doc.path) {
+      const ext = doc.path.split('.').pop().toLowerCase();
+      const readOnlyFormats = ['docx', 'doc', 'pdf'];
+      if (readOnlyFormats.includes(ext)) {
+        // Formato importado: não pode ser sobrescrito — abre "Save As" direto
+        ipcRenderer.send("save-file-dialog", content, doc.id, doc.name);
+        return;
+      }
       ipcRenderer.send("save-file-direct", content, doc.id, doc.path);
       doc.saved = true;
       updateTabTitle(doc.id, doc.name, true);
@@ -2423,6 +2426,16 @@ document.addEventListener("DOMContentLoaded", () => {
       ipcRenderer.send("save-file-dialog", content, doc.id, doc.name);
     }
   }
+
+  // Fallback: main process pediu "Save As" (ex.: arquivo bloqueado por EBUSY)
+  ipcRenderer.on('prompt-save-as', (event, editorId) => {
+    const targetDoc = documents.find(d => d.id === editorId) || getActiveDocument();
+    const editor = getActiveTextEditorArea();
+    if (targetDoc && editor) {
+      const content = getCleanContent(editor);
+      ipcRenderer.send("save-file-dialog", content, targetDoc.id, targetDoc.name);
+    }
+  });
 
   function showHomeDefault() {
     if (homeContentDefault) homeContentDefault.classList.remove("d-none");
@@ -2552,6 +2565,9 @@ document.addEventListener("DOMContentLoaded", () => {
     highlights.forEach((span) => {
       const parent = span.parentNode;
       parent.replaceChild(document.createTextNode(span.textContent), span);
+    });
+    clone.querySelectorAll("[data-para-idx]").forEach((el) => {
+      el.removeAttribute("data-para-idx");
     });
     return clone.innerHTML;
   }
@@ -3345,6 +3361,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (control) {
       control.innerHTML = finalContent;
 
+      // Indexa parágrafos no prompter para rastreamento de texto lido
+      const prompterBlocks = getBlockElements(control);
+      Array.from(prompterBlocks).forEach((block, i) => {
+        block.setAttribute("data-para-idx", i);
+      });
+
       const baseColor = operatorState.isInverted ? "#000000" : "#FFFFFF";
       control.style.color = baseColor;
 
@@ -3352,7 +3374,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const bgColor = operatorState.isInverted ? "#FFFFFF" : "#000000";
         prompterContainer.style.backgroundColor = bgColor;
 
-        // Atualiza também o wrapper pai
         const prompterWrapper = document.getElementById("operator-prompter-wrapper");
         if (prompterWrapper) {
           prompterWrapper.style.backgroundColor = bgColor;
@@ -3372,6 +3393,113 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     prepararRoteiroParaLeitura();
+  }
+
+  // ============================================================
+  // SEÇÃO 33B: RASTREAMENTO DE TEXTO LIDO (TACHADO NO EDITOR)
+  // ============================================================
+  // Marca no editor do roteirista os parágrafos que já passaram
+  // pelo cue marker no prompter, aplicando estilo tachado.
+
+  let _lastReadUpdateTime = 0;
+  const READ_UPDATE_INTERVAL = 150;
+
+  /**
+   * Retorna a posição Y do cue marker no viewport.
+   * Fallback: 50% da altura do container do prompter.
+   */
+  function getCueViewportY() {
+    const container = document.querySelector(".prompter-in-control");
+    const marker = document.getElementById("cueMarker-control");
+    if (!container) return 0;
+
+    if (marker && marker.style.display !== "none") {
+      const r = marker.getBoundingClientRect();
+      return r.top + r.height / 2;
+    }
+    const cr = container.getBoundingClientRect();
+    return cr.top + container.clientHeight * 0.5;
+  }
+
+  /**
+   * Retorna os blocos (parágrafos/elementos de bloco) de um container.
+   * Se não houver elementos de bloco, retorna os filhos diretos do container.
+   */
+  function getBlockElements(container) {
+    let blocks = container.querySelectorAll("p, div, h1, h2, h3, h4, h5, h6");
+    if (blocks.length === 0) {
+      blocks = container.children;
+    }
+    return blocks;
+  }
+
+  /**
+   * Garante que os blocos do prompter estejam indexados com data-para-idx.
+   * Chamado antes de iniciar o rastreamento e dentro do loop se necessário.
+   */
+  function ensureParaIndexing() {
+    const textEl = document.getElementById("prompterText-control");
+    if (!textEl) return;
+
+    const prompterBlocks = getBlockElements(textEl);
+    Array.from(prompterBlocks).forEach((b, i) => b.setAttribute("data-para-idx", i));
+
+    console.log(`📌 Indexação de texto lido: ${prompterBlocks.length} blocos no prompter`);
+  }
+
+  let _lastReadIndices = "";
+
+  /**
+   * Calcula quais parágrafos do prompter já foram lidos (saíram
+   * pelo topo da tela) e envia os índices para os roteiristas remotos.
+   *
+   * Lógica: a posição de cada bloco é calculada relativa ao topo do
+   * elemento de texto. O "readLine" é quantos pixels já rolaram
+   * (decimalScroll). Quando blockBottom <= readLine, o bloco inteiro
+   * saiu pelo topo → está lido. No scroll=0 nada é lido.
+   */
+  function updateReadProgress() {
+    const now = performance.now();
+    if (now - _lastReadUpdateTime < READ_UPDATE_INTERVAL) return;
+    _lastReadUpdateTime = now;
+
+    const textEl = document.getElementById("prompterText-control");
+    if (!textEl) return;
+
+    let prompterBlocks = textEl.querySelectorAll("[data-para-idx]");
+
+    if (prompterBlocks.length === 0) {
+      ensureParaIndexing();
+      prompterBlocks = textEl.querySelectorAll("[data-para-idx]");
+      if (prompterBlocks.length === 0) return;
+    }
+
+    const textElTop = textEl.getBoundingClientRect().top;
+    const readLine = ScrollEngine.decimalScroll;
+    const readIndices = [];
+
+    prompterBlocks.forEach((block) => {
+      const rect = block.getBoundingClientRect();
+      // Posição do bloco relativa ao topo do elemento de texto (constante)
+      const blockBottomRelToText = (rect.top + rect.height) - textElTop;
+      if (blockBottomRelToText <= readLine) {
+        readIndices.push(parseInt(block.getAttribute("data-para-idx")));
+      }
+    });
+
+    const key = readIndices.join(",");
+    if (key !== _lastReadIndices) {
+      _lastReadIndices = key;
+      broadcastReadProgressUpdate(readIndices);
+    }
+  }
+
+  /**
+   * Reseta o progresso de leitura (envia lista vazia para roteiristas).
+   */
+  function clearReadProgress() {
+    _lastReadIndices = "";
+    broadcastReadProgressUpdate([]);
   }
 
   // ============================================================
@@ -3830,19 +3958,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
     window.getSelection().removeAllRanges();
 
-    // ========== AQUI: APLICA A FORMATAÇÃO PADRÃO ==========
+    // Aplica formatação padrão apenas para formatos que NÃO trazem
+    // estilo próprio (txt, importações). Arquivos .ptq/.html já têm
+    // spans com font-size inline e NÃO devem ser sobrescritos.
+    const ext = doc.path ? doc.path.split('.').pop().toLowerCase() : '';
+    const preserveFormatting = ['ptq', 'html', 'htm'].includes(ext);
+
     setTimeout(() => {
       const editor = getActiveTextEditorArea();
       if (editor) {
-        // Seleciona tudo
         editor.focus();
-        document.execCommand("selectAll", false, null);
 
-        // Aplica a formatação padrão
-        applyDefaultFormatting(editor);
-
-        // Remove seleção
-        document.getSelection().removeAllRanges();
+        if (!preserveFormatting) {
+          document.execCommand("selectAll", false, null);
+          applyDefaultFormatting(editor);
+          document.getSelection().removeAllRanges();
+        } else {
+          // Apenas aplica o tamanho base no container (sem tocar nos spans internos)
+          if (typeof currentFontSizePT !== 'undefined' && currentFontSizePT > 0) {
+            editor.style.fontSize = `${currentFontSizePT}pt`;
+          }
+          if (globalPrefs && globalPrefs.defaultFont) {
+            editor.style.fontFamily = globalPrefs.defaultFont;
+          }
+        }
       }
 
       updateFormatMenuState();
@@ -4142,24 +4281,26 @@ document.addEventListener("DOMContentLoaded", () => {
   // Atualiza interface quando configurações mudam
 
   ipcRenderer.on("settings-updated-globally", (event, settings) => {
-    globalPrefs = settings;
-    console.log("Configurações recebidas:", settings);
+    // Nota: globalPrefs e applySettingsToVisuals já são tratados pelo
+    // listener principal (Seção 11). Aqui só tratamos o que é exclusivo
+    // desta seção: sincronizar o nome da fonte na toolbar e aplicar o
+    // tamanho padrão somente em editores VAZIOS (novo documento).
+    // NÃO chamamos updateFontUIState com o tamanho, pois isso sobrescreveria
+    // currentFontSizePT e resetaria a fonte ativa do usuário para 12pt.
 
-    // 1. Aplica o visual geral (fundo, cor padrão da caixa)
-    if (typeof applySettingsToVisuals === 'function') applySettingsToVisuals();
-
-    // 2. SINCRONIA CRÍTICA: Atualiza a Barra de Ferramentas com os valores da preferência
-    if (settings.defaultFont || settings.defaultFontSize) {
-      updateFontUIState(settings.defaultFont, settings.defaultFontSize);
+    // Sincroniza apenas o nome da fonte na toolbar (sem tocar no tamanho)
+    if (settings.defaultFont) {
+      updateFontUIState(settings.defaultFont, null);
     }
 
-    // 3. Se o editor estiver vazio (novo documento), força o estilo padrão no cursor
+    // Aplica o tamanho padrão somente em editores que estão completamente vazios
     const editor = document.querySelector('.text-editor-area');
-    if (editor && editor.innerText.trim() === "") {
-      // Aplica direto no estilo do container para começar certo
+    if (editor && editor.innerText.trim() === "" && settings.defaultFont) {
       editor.style.fontFamily = settings.defaultFont;
-      // Importante: No container usamos 'pt' direto
-      editor.style.fontSize = `${settings.defaultFontSize}pt`;
+      // Tamanho só se currentFontSizePT não foi definido pelo usuário ainda
+      if (typeof currentFontSizePT === 'undefined' || currentFontSizePT <= 0) {
+        editor.style.fontSize = `${settings.defaultFontSize}pt`;
+      }
     }
   });
 
@@ -5986,6 +6127,14 @@ document.addEventListener("DOMContentLoaded", () => {
         channel.send(JSON.stringify({ type: 'update', content: editor.innerHTML }));
       }
 
+      if (_lastReadIndices) {
+        const indices = _lastReadIndices.split(",").filter(Boolean).map(Number);
+        channel.send(JSON.stringify({ type: "read-progress", readIndices: indices }));
+        if (signalingSocket && signalingSocket.connected) {
+          signalingSocket.emit("read-progress", { readIndices: indices });
+        }
+      }
+
       const savedName = (peers[userId] && peers[userId].userName) ? peers[userId].userName : "Visitor (Internet)";
 
       addLogEntry({
@@ -6082,6 +6231,26 @@ document.addEventListener("DOMContentLoaded", () => {
         if (peer.dataChannel && peer.dataChannel.readyState === 'open') {
           peer.dataChannel.send(JSON.stringify({ type: 'update', content: content }));
         }
+      }
+    });
+  }
+
+  /**
+   * Envia progresso de leitura para roteiristas (Local + Internet).
+   * Local: IPC → Socket.io na porta 3001
+   * Internet: Socket.io no servidor de sinalização + WebRTC data channel
+   */
+  function broadcastReadProgressUpdate(readIndices) {
+    ipcRenderer.send("send-read-progress-to-remote", readIndices);
+
+    if (signalingSocket && signalingSocket.connected) {
+      signalingSocket.emit("read-progress", { readIndices });
+    }
+
+    Object.keys(peers).forEach((id) => {
+      const peer = peers[id];
+      if (peer.dataChannel && peer.dataChannel.readyState === "open") {
+        peer.dataChannel.send(JSON.stringify({ type: "read-progress", readIndices }));
       }
     });
   }
@@ -6612,6 +6781,66 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ============================================================
+  // TRACKING DE SELEÇÃO DO EDITOR (para aplicação de fonte parcial)
+  // ============================================================
+  // Salva a última seleção não-vazia feita dentro do editor.
+  // Crucial porque ao clicar na toolbar o browser descarta a seleção.
+  let lastEditorRange = null;
+
+  // 1) selectionchange: salva o range e atualiza o tamanho na toolbar
+  document.addEventListener('selectionchange', () => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const editorEl = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
+    if (!editorEl) return;
+
+    // Se a seleção está dentro do editor, detecta o tamanho do texto
+    if (editorEl.contains(range.commonAncestorContainer)) {
+      // Salva o range se não for colapsado (para aplicação de fonte parcial)
+      if (!range.collapsed) {
+        lastEditorRange = range.cloneRange();
+      }
+
+      // Detecta o tamanho da fonte no ponto da seleção/cursor
+      let node = range.startContainer;
+      if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+
+      if (node) {
+        const computed = window.getComputedStyle(node);
+        const px = parseFloat(computed.fontSize);
+        if (px > 0) {
+          const pt = Math.round((px / 96) * 72);
+          // Atualiza a toolbar sem disparar eventos de change
+          const sizeSelect = document.getElementById('font-size-toolbar-fix');
+          const sizeCustom = document.getElementById('font-size-custom');
+          if (sizeSelect) {
+            // Tenta selecionar o valor exato; se não existir, limpa
+            const opt = sizeSelect.querySelector(`option[value="${pt}"]`);
+            sizeSelect.value = opt ? pt : '';
+          }
+          if (sizeCustom) sizeCustom.value = pt;
+        }
+      }
+    }
+  });
+
+  // 2) mousedown em QUALQUER elemento FORA do editor: salva o range
+  //    uma última vez. Isso cobre selects, inputs, botões da toolbar.
+  document.addEventListener('mousedown', (e) => {
+    const editorEl = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
+    if (!editorEl) return;
+    // Se o clique é DENTRO do editor, não faz nada (seleção natural)
+    if (editorEl.contains(e.target)) return;
+    // Clique FORA do editor: salva a seleção ANTES de ela ser descartada
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && !sel.getRangeAt(0).collapsed
+        && editorEl.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+      lastEditorRange = sel.getRangeAt(0).cloneRange();
+    }
+  }, true); // ← useCapture=true para pegar ANTES de o foco mudar
+
+  // ============================================================
   // SEÇÃO 58: INPUT DE TAMANHO NA TOOLBAR
   // ============================================================
   // Permite digitação direta do tamanho de fonte
@@ -6676,56 +6905,87 @@ document.addEventListener("DOMContentLoaded", () => {
     const editor = getActiveTextEditorArea();
     if (!editor) return;
 
-    console.log("✏️ Aplicando font size no Editor:", sizeInPt + "pt");
+    const liveSel = window.getSelection();
+    const liveRange = (liveSel && liveSel.rangeCount > 0) ? liveSel.getRangeAt(0) : null;
 
-    // 1. Aplica no container do editor como estilo base
-    editor.style.fontSize = `${sizeInPt}pt`;
+    const hasLive = liveRange && !liveRange.collapsed
+      && editor.contains(liveRange.commonAncestorContainer);
 
-    // 2. Atualiza a variável global
-    currentFontSizePT = sizeInPt;
+    let workingRange = null;
+    if (hasLive) {
+      workingRange = liveRange;
+    } else if (lastEditorRange && !lastEditorRange.collapsed) {
+      try {
+        if (editor.contains(lastEditorRange.commonAncestorContainer)) {
+          workingRange = lastEditorRange;
+        }
+      } catch (e) { /* range inválido */ }
+    }
 
-    // 3. Se há seleção ativa, aplica apenas na seleção
-    const selection = window.getSelection();
-    if (selection && selection.toString().length > 0) {
-      editor.focus();
-      document.execCommand("styleWithCSS", false, true);
+    if (workingRange) {
+      // ── MODO PARCIAL: aplica APENAS no texto selecionado ─────────────
+      try {
+        // 1. Extrai o conteúdo selecionado para um DocumentFragment
+        const fragment = workingRange.extractContents();
 
-      // Aplica via execCommand (limitado a 1-7)
-      const fontSizeValue = Math.max(1, Math.min(7, Math.floor(sizeInPt / 4)));
-      document.execCommand("fontSize", false, fontSizeValue);
+        // 2. Limpa font-size de TODOS os descendentes do fragment
+        //    (assim spans internos não sobrescrevem o tamanho novo)
+        const stripFontSize = (root) => {
+          if (!root || !root.querySelectorAll) return;
+          root.querySelectorAll('[style]').forEach(el => {
+            el.style.removeProperty('font-size');
+            if (!el.getAttribute('style') || el.getAttribute('style').trim() === '') {
+              el.removeAttribute('style');
+            }
+          });
+          root.querySelectorAll('font[size]').forEach(f => f.removeAttribute('size'));
+        };
+        stripFontSize(fragment);
 
-      // Corrige os spans criados para usar o valor real em PT
-      const fontSpans = editor.querySelectorAll('span[style*="font-size"], font[size]');
-      fontSpans.forEach(el => {
-        el.removeAttribute("size");
+        // 3. Cria o span wrapper com o novo tamanho e insere o fragment
+        const wrapper = document.createElement('span');
+        wrapper.style.fontSize = `${sizeInPt}pt`;
+        wrapper.appendChild(fragment);
+
+        // 4. Insere o wrapper de volta no documento
+        workingRange.insertNode(wrapper);
+
+        // 5. Re-seleciona o conteúdo do wrapper (preserva seleção visual)
+        const newRange = document.createRange();
+        newRange.selectNodeContents(wrapper);
+        liveSel.removeAllRanges();
+        liveSel.addRange(newRange);
+
+        // Atualiza o range salvo para a próxima operação
+        lastEditorRange = newRange.cloneRange();
+
+        // Atualiza variável global, mas NÃO mexe no container do editor
+        currentFontSizePT = sizeInPt;
+
+      } catch (err) {
+        console.error('Erro ao aplicar font-size na seleção:', err);
+        // Fallback: aplica globalmente
+        editor.style.fontSize = `${sizeInPt}pt`;
+        currentFontSizePT = sizeInPt;
+      }
+
+    } else {
+      // ── MODO GLOBAL: sem seleção → aplica em todo o documento ────────
+      currentFontSizePT = sizeInPt;
+      editor.style.fontSize = `${sizeInPt}pt`;
+
+      // Atualiza spans inline existentes
+      editor.querySelectorAll('[style*="font-size"]').forEach(el => {
         el.style.fontSize = `${sizeInPt}pt`;
       });
-    } else {
-      // 4. Se não há seleção, aplica em TODO o conteúdo
-      // Aplica recursivamente em todos os elementos com font-size inline
-      const allElements = editor.querySelectorAll('*');
-      allElements.forEach(el => {
-        if (el.style && el.style.fontSize) {
-          el.style.fontSize = `${sizeInPt}pt`;
-        }
-      });
-
-      // Também remove fonts legadas
-      const legacyFonts = editor.querySelectorAll('font[size]');
-      legacyFonts.forEach(font => {
-        font.removeAttribute("size");
-        font.style.fontSize = `${sizeInPt}pt`;
+      editor.querySelectorAll('font[size]').forEach(f => {
+        f.removeAttribute('size');
+        f.style.fontSize = `${sizeInPt}pt`;
       });
     }
 
-    // 5. Sincroniza com o prompter
-    if (typeof syncContentToPrompter === "function") {
-      syncContentToPrompter();
-    }
-
-    if (activeDocumentId) {
-      markDocumentAsUnsaved(activeDocumentId);
-    }
+    if (typeof syncContentToPrompter === "function") syncContentToPrompter();
+    if (activeDocumentId) markDocumentAsUnsaved(activeDocumentId);
   }
 
   /**
@@ -6910,18 +7170,13 @@ document.addEventListener("DOMContentLoaded", () => {
       el.removeAttribute("color");    // <font color="">
       el.removeAttribute("bgcolor");  // <div bgcolor="">
 
-      // Remove estilos antigos (mantém cores e essencial)
+      // Remove estilos antigos (mantém cores e font-size do usuário)
       if (el.style) {
         const currentStyles = el.style.cssText;
 
-        // Se tem estilo, filtra (preserva cores do usuário)
         if (currentStyles) {
-          // Remove apenas font-family e font-size antigos
-          // PRESERVA: color, background-color (cores aplicadas pelo usuário)
           let newStyle = el.style.cssText;
           newStyle = newStyle.replace(/font-family:\s*[^;]+;?/gi, "");
-          newStyle = newStyle.replace(/font-size:\s*[^;]+;?/gi, "");
-          // NÃO remove mais: color, background-color, background
 
           el.style.cssText = newStyle;
         }
