@@ -288,8 +288,10 @@
                 <option value="left-click">Left-Click</option>
               </select>
               <button
+                type="button"
                 class="btn btn-sm btn-outline-secondary"
-                id="default-key-stop"
+                id="controls-defaults-btn"
+                title="Restaurar atalhos padrão desta aba (Controls)"
               >
                 Defaults
               </button>
@@ -619,7 +621,12 @@
         id="pref-actions"
         class="p-6 bg-light border-bottom text-end d-flex justify-content-between mb-5"
       >
-        <button id="default-values-btn" class="btn btn-secondary me-4">
+        <button
+          type="button"
+          id="default-values-btn"
+          class="btn btn-secondary me-4"
+          title="Restaurar Style, Playback, Display e Standby (não altera Controls)"
+        >
           Default Values
         </button>
         <div>

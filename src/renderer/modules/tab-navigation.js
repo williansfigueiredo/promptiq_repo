@@ -4,8 +4,8 @@
 // DESCRIÇÃO: Módulo de navegação entre abas com memória de posição
 // FUNÇÃO: 
 //   1. Persiste posição do scroll do Operator ao trocar de aba
-//   2. Permite navegação contextual: duplo clique no Editor vai 
-//      para a posição correspondente no Operator
+//   2. Navegação contextual explícita: menu "Go to Operator" ou APIs
+//      navigateToWordIndex / navigateToPosition
 //   3. Mapeia palavras entre Editor e Operator usando índices
 // ============================================================
 
@@ -64,9 +64,8 @@ const TabNavigationManager = {
     // =========================================
     // RASTREIO DO CARET (CURSOR PISCANDO) NO EDITOR
     // =========================================
-    // Sempre que o usuário move o cursor dentro de um .text-editor-area,
-    // guardamos a posição. Quando ele trocar para a aba Operator,
-    // navegamos automaticamente para esse ponto.
+    // Rastreia o caret no editor (usado apenas por APIs explícitas, ex. menu
+    // "Go to Operator"). Trocar de aba NÃO deve saltar o scroll do Operator.
     document.addEventListener('selectionchange', () => {
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) return;
@@ -89,6 +88,7 @@ const TabNavigationManager = {
     if (tabEditTrigger) {
       tabEditTrigger.addEventListener('show.bs.tab', () => {
         // Para o scroll e salva posição ANTES de sair da aba Operator
+        this.clearPendingNavigation();
         this.stopScrollIfRunning();
       });
 
@@ -118,6 +118,7 @@ const TabNavigationManager = {
     if (tabHomeTrigger) {
       tabHomeTrigger.addEventListener('show.bs.tab', () => {
         // Para o scroll e salva posição ANTES de sair da aba Operator
+        this.clearPendingNavigation();
         this.stopScrollIfRunning();
       });
 
@@ -145,10 +146,8 @@ const TabNavigationManager = {
     if (tabOperatorTrigger) {
       // Pré-aplica posição ANTES da aba aparecer (evita salto visual)
       tabOperatorTrigger.addEventListener('show.bs.tab', () => {
-        // Se o usuário deixou o cursor (caret) num ponto do editor e não
-        // havia uma navegação por menu de contexto pendente, usa a posição
-        // do caret como destino no Operator.
-        this.tryUseCaretAsPendingNavigation();
+        // Restaura a posição salva ao voltar — sem saltar para o caret do Edit.
+        // Navegação por palavra só via menu "Go to Operator" ou navigateToWordIndex().
         this.preApplyScrollPosition();
       });
 
@@ -554,9 +553,10 @@ const TabNavigationManager = {
       console.log('📍 Modo manual - posição via scrollTop:', currentPosition);
     }
     
-    // Salva a posição apenas se for maior que 0
-    if (currentPosition > 0) {
-      this.operatorSavedScrollPosition = currentPosition;
+    // Sempre persiste a posição atual (inclui 0 no início do roteiro)
+    this.operatorSavedScrollPosition = currentPosition;
+    if (typeof ScrollEngine !== 'undefined') {
+      ScrollEngine.decimalScroll = currentPosition;
     }
     
     // ============================================

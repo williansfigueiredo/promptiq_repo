@@ -56,8 +56,21 @@ document.addEventListener("DOMContentLoaded", () => {
   // Memória persistente do prompter
   let roteiroIndexado = [];
   let posicaoAtualNoRoteiro = 0;
+  let voiceModeActive = false;
 
   let currentFontSizePT = 12;
+
+  // Evita sync duplicado durante transformações em massa (ex.: Uppercase em roteiro inteiro)
+  let _bulkEditDepth = 0;
+
+  function beginBulkEdit() {
+    _bulkEditDepth++;
+  }
+
+  function endBulkEdit(done) {
+    _bulkEditDepth = Math.max(0, _bulkEditDepth - 1);
+    if (_bulkEditDepth === 0 && typeof done === "function") done();
+  }
 
   // ============================================================
   // SEÇÃO 3: CONFIGURAÇÕES INICIAIS DO EDITOR
@@ -312,10 +325,15 @@ document.addEventListener("DOMContentLoaded", () => {
       const fontSizeCustom = document.getElementById('font-size-custom');
 
       if (fontSizeChanged) {
-        currentFontSizePT = settings.defaultFontSize;
-        if (fontSizePreset) fontSizePreset.value = settings.defaultFontSize;
-        if (fontSizeCustom) fontSizeCustom.value = settings.defaultFontSize;
-        applyExactFontSizeToOperator(settings.defaultFontSize);
+        // Não regredir tamanho ativo da sessão (ex.: prefs sem campo default-font-size)
+        const sessionSize = currentFontSizePT > 0 ? currentFontSizePT : settings.defaultFontSize;
+        const effectiveSize =
+          settings.defaultFontSize >= sessionSize ? settings.defaultFontSize : sessionSize;
+
+        currentFontSizePT = effectiveSize;
+        if (fontSizePreset) fontSizePreset.value = effectiveSize;
+        if (fontSizeCustom) fontSizeCustom.value = effectiveSize;
+        applyExactFontSizeToOperator(effectiveSize);
       }
     }
 
@@ -720,11 +738,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       prompterContainer.style.display = 'block';
-      prompterContainer.style.textAlign = 'center';
-      prompterText.style.display = 'block';
-      prompterText.style.margin = '0 auto';
-      prompterText.style.width = 'fit-content';
-      prompterText.style.maxWidth = '100%';
       prompterText.style.paddingTop = '40px';
 
       const userMargin = prefs.prompterMargin || 40;
@@ -732,6 +745,8 @@ document.addEventListener("DOMContentLoaded", () => {
       prompterText.style.paddingLeft = `${userMargin + safeZoneArrow}px`;
       prompterText.style.paddingRight = `${userMargin}px`;
       prompterText.style.lineHeight = prefs.lineSpacing || 1.5;
+
+      applyPrompterTextAlign(getEditorTextAlign(getActiveTextEditorArea()));
 
       const attrs = prefs.defaultFontAttributes || [];
       prompterText.style.fontWeight = attrs.includes('bold') ? 'bold' : 'normal';
@@ -1005,6 +1020,8 @@ document.addEventListener("DOMContentLoaded", () => {
     lastFrameTime: 0,
     decimalScroll: 0,
     animationFrameId: null,
+    lastScrollIpcTime: 0,
+    scrollIpcMs: 50,
 
     getTextElement: function () {
       return document.getElementById("prompterText-control");
@@ -1156,26 +1173,18 @@ document.addEventListener("DOMContentLoaded", () => {
           textEl.style.transform = `translate3d(0, -${this.decimalScroll}px, 0)`;
         }
       }
-      // 1. Aplica na sua tela (Editor)
 
-      // 1. Aplica na sua tela (Editor)
-      if (textEl) {
-        textEl.style.transform = `translate3d(0, -${this.decimalScroll}px, 0)`;
+      // Sincroniza scroll com janela de projeção (throttled — evita IPC a 60fps)
+      const textHeight = textEl ? textEl.offsetHeight : 0;
+      const textPercentage = textHeight > 0
+        ? Math.min(1, Math.max(0, this.decimalScroll / textHeight))
+        : 0;
+
+      if (now - this.lastScrollIpcTime >= this.scrollIpcMs) {
+        this.lastScrollIpcTime = now;
+        ipcRenderer.send("sync-scroll-position", { textPercent: textPercentage });
       }
 
-      // === 2. ENVIA POSIÇÃO DE SCROLL PARA A TV (Sincronização Direta) ===
-      // Calcula porcentagem da altura do texto que já passou
-      const textHeight = textEl ? textEl.offsetHeight : 0;
-
-      // Porcentagem do texto que já passou pelo topo (0 a 1)
-      const textPercentage = textHeight > 0 ? Math.min(1, Math.max(0, this.decimalScroll / textHeight)) : 0;
-
-      // Envia porcentagem para sincronia perfeita
-      ipcRenderer.send('sync-scroll-position', {
-        textPercent: textPercentage
-      });
-
-      // Atualiza marcação de texto lido no editor (throttled internamente)
       if (typeof updateReadProgress === "function") updateReadProgress();
 
       this.animationFrameId = requestAnimationFrame(() => this.loop());
@@ -1588,21 +1597,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const btn = document.getElementById(btnId);
     if (btn) {
       btn.addEventListener("click", (e) => {
-        e.preventDefault(); // Evita perder o foco
-
-        // Garante que o editor está focado antes de aplicar
-        const editor = document.querySelector(".text-editor-area");
-        if (editor) editor.focus();
-
-        // Aplica o alinhamento
-        document.execCommand(command, false, null);
-
-        // Atualiza o estado visual dos botões (qual está ativo)
-        updateFormatMenuState();
-
-        // Sincroniza com o prompter
-        if (typeof syncContentToPrompter === "function")
-          syncContentToPrompter();
+        e.preventDefault();
+        applyTextAlignment(command);
       });
     }
   }
@@ -1875,43 +1871,100 @@ document.addEventListener("DOMContentLoaded", () => {
   // Converte texto selecionado para maiúsculas, minúsculas ou título
 
   /**
+   * Transforma texto nos nós do range, preservando HTML (cores, negrito, etc.).
+   * Muito mais rápido que execCommand("insertText") em roteiros grandes.
+   */
+  function transformTextInRange(range, transformFn) {
+    const editor = getActiveTextEditorArea();
+    if (!editor || !range || range.collapsed) return false;
+
+    const textNodes = [];
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (range.intersectsNode(node)) textNodes.push(node);
+    }
+    if (textNodes.length === 0) return false;
+
+    const caseTransform =
+      typeof transformFn === "function"
+        ? transformFn
+        : (text) => text;
+
+    beginBulkEdit();
+    try {
+      for (let i = textNodes.length - 1; i >= 0; i--) {
+        const textNode = textNodes[i];
+        const value = textNode.nodeValue;
+        if (!value) continue;
+
+        let start = 0;
+        let end = value.length;
+        if (textNode === range.startContainer) start = range.startOffset;
+        if (textNode === range.endContainer) end = range.endOffset;
+        if (start >= end) continue;
+
+        const before = value.slice(0, start);
+        const middle = value.slice(start, end);
+        const after = value.slice(end);
+        const transformed = caseTransform(middle);
+        if (transformed === middle) continue;
+
+        if (before || after) {
+          const parent = textNode.parentNode;
+          if (!parent) continue;
+          const frag = document.createDocumentFragment();
+          if (before) frag.appendChild(document.createTextNode(before));
+          frag.appendChild(document.createTextNode(transformed));
+          if (after) frag.appendChild(document.createTextNode(after));
+          parent.replaceChild(frag, textNode);
+        } else {
+          textNode.nodeValue = transformed;
+        }
+      }
+    } finally {
+      endBulkEdit(() => {
+        if (activeDocumentId) markDocumentAsUnsaved(activeDocumentId);
+        syncContentToPrompter();
+        scheduleAutoSave();
+      });
+    }
+
+    return true;
+  }
+
+  /**
    * Altera a caixa do texto selecionado
    * @param {string} type - 'upper', 'lower' ou 'title'
    */
   function changeCase(type) {
-    const editor = document.querySelector(".text-editor-area");
+    const editor = getActiveTextEditorArea();
     if (!editor) return;
 
     editor.focus();
     const selection = window.getSelection();
+    if (!selection.rangeCount) return;
 
-    // Se não tiver nada selecionado, não faz nada
-    if (selection.toString().length === 0) return;
+    const range = selection.getRangeAt(0);
+    if (range.collapsed || selection.toString().length === 0) return;
 
-    const text = selection.toString();
-    let newText = text;
-
-    // Aplica a transformação
+    let transformFn;
     switch (type) {
       case "upper":
-        newText = text.toUpperCase();
+        transformFn = (text) => text.toUpperCase();
         break;
       case "lower":
-        newText = text.toLowerCase();
+        transformFn = (text) => text.toLowerCase();
         break;
       case "title":
-        // Transforma a primeira letra de cada palavra em maiúscula
-        newText = text.toLowerCase().replace(/(?:^|\s)\w/g, function (match) {
-          return match.toUpperCase();
-        });
+        transformFn = (text) =>
+          text.toLowerCase().replace(/(?:^|\s)\w/g, (match) => match.toUpperCase());
         break;
+      default:
+        return;
     }
 
-    // Substitui o texto mantendo o histórico de desfazer (Undo)
-    document.execCommand("insertText", false, newText);
-
-    // (Opcional) Sincroniza imediatamente com o prompter
-    if (typeof syncContentToPrompter === "function") syncContentToPrompter();
+    transformTextInRange(range, transformFn);
   }
 
   // ============================================================
@@ -2207,8 +2260,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     editor.addEventListener("input", () => {
+      if (_bulkEditDepth > 0) return;
       markDocumentAsUnsaved(newId);
-      syncContentToPrompter();
+      scheduleSyncContentToPrompter();
       scheduleAutoSave();
     });
 
@@ -2494,7 +2548,91 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function commandToTextAlign(command) {
+    const map = {
+      justifyLeft: "left",
+      justifyCenter: "center",
+      justifyRight: "right",
+      justifyFull: "justify",
+    };
+    return map[command] || "left";
+  }
+
+  function getEditorTextAlign(editor) {
+    if (!editor) return "left";
+    const inline = (editor.style.textAlign || "").trim();
+    if (inline) return inline === "start" ? "left" : inline;
+
+    const blocks = editor.querySelectorAll("p, div, h1, h2, h3, h4, h5, h6");
+    for (const block of blocks) {
+      const blockAlign = (block.style.textAlign || "").trim();
+      if (blockAlign) return blockAlign === "start" ? "left" : blockAlign;
+    }
+
+    const computed = window.getComputedStyle(editor).textAlign;
+    if (computed === "start") return "left";
+    return computed || "left";
+  }
+
+  function applyPrompterTextAlign(align) {
+    const prompterText = document.getElementById("prompterText-control");
+    const prompterContainer = document.querySelector(".prompter-in-control");
+    if (!prompterText || !prompterContainer) return;
+
+    const normalized =
+      align === "start" ? "left" : align === "end" ? "right" : align || "left";
+
+    prompterContainer.style.textAlign = normalized;
+    prompterText.style.textAlign = normalized;
+    prompterText.style.display = "block";
+    prompterText.style.maxWidth = "100%";
+
+    if (normalized === "center") {
+      prompterContainer.style.alignItems = "center";
+      prompterText.style.margin = "0 auto";
+      prompterText.style.width = "fit-content";
+    } else if (normalized === "right") {
+      prompterContainer.style.alignItems = "flex-end";
+      prompterText.style.margin = "0 0 0 auto";
+      prompterText.style.width = "97%";
+    } else {
+      prompterContainer.style.alignItems = "flex-start";
+      prompterText.style.margin = "0";
+      prompterText.style.width = "97%";
+    }
+
+    prompterText
+      .querySelectorAll("p, div, h1, h2, h3, h4, h5, h6")
+      .forEach((block) => {
+        block.style.textAlign = normalized;
+      });
+  }
+
+  function applyTextAlignment(command) {
+    const editor = getActiveTextEditorArea();
+    if (!editor) return;
+
+    restoreSelection();
+    editor.focus();
+
+    const align = commandToTextAlign(command);
+    document.execCommand(command, false, null);
+
+    editor.style.textAlign = align;
+    editor.querySelectorAll("p, div, h1, h2, h3, h4, h5, h6").forEach((block) => {
+      block.style.textAlign = align;
+    });
+
+    markDocumentAsUnsaved(activeDocumentId);
+    syncContentToPrompter();
+    updateFormatMenuState();
+  }
+
   function applyStyle(command, value = null) {
+    if (["justifyLeft", "justifyCenter", "justifyRight", "justifyFull"].includes(command)) {
+      applyTextAlignment(command);
+      return;
+    }
     restoreSelection();
     document.execCommand(command, false, value);
     const editor = getActiveTextEditorArea();
@@ -3297,34 +3435,54 @@ document.addEventListener("DOMContentLoaded", () => {
   // ============================================================
   // SEÇÃO 33: SINCRONIZAÇÃO EDITOR → PROMPTER
   // ============================================================
-  // Envia conteúdo do editor para o prompter local e janela externa
+  let _lastPrompterHtml = "";
+  let _syncPrompterTimer = null;
+  let _remoteTextTimer = null;
+  let _lastRemoteHtml = "";
 
-  /**
-   * Sincroniza conteúdo do editor com o prompter
-   * Limpa formatação desnecessária e envia para main process
-   */
-  function syncContentToPrompter() {
-    const editor = getActiveTextEditorArea();
-    const control = document.getElementById("prompterText-control");
+  function scheduleSyncContentToPrompter() {
+    clearTimeout(_syncPrompterTimer);
+    const delay = ScrollEngine.isRunning ? 300 : 80;
+    _syncPrompterTimer = setTimeout(syncContentToPrompter, delay);
+  }
 
-    // Se não tiver editor (fechou tudo), limpa a tela
-    if (!editor) {
-      if (control) {
-        control.innerHTML = "";
-        // 🔥 ENVIA PARA O MAIN PROCESS (Janela Externa)
-        ipcRenderer.send("update-prompter-content", "");
-      }
-      return;
+  function scheduleRemoteTextBroadcast(html) {
+    if (!html || html === _lastRemoteHtml) return;
+    clearTimeout(_remoteTextTimer);
+    _remoteTextTimer = setTimeout(() => {
+      if (!html || html === _lastRemoteHtml) return;
+      _lastRemoteHtml = html;
+      ipcRenderer.send("send-text-to-remote", html);
+      if (typeof broadcastTextUpdate === "function") broadcastTextUpdate(html);
+    }, 200);
+  }
+
+  function applyPrompterContainerStyles(control, editor) {
+    if (!control) return;
+
+    const baseColor = operatorState.isInverted ? "#000000" : "#FFFFFF";
+    control.style.color = baseColor;
+
+    if (prompterContainer) {
+      const bgColor = operatorState.isInverted ? "#FFFFFF" : "#000000";
+      prompterContainer.style.backgroundColor = bgColor;
+      const prompterWrapper = document.getElementById("operator-prompter-wrapper");
+      if (prompterWrapper) prompterWrapper.style.backgroundColor = bgColor;
     }
 
-    let content = getCleanContent(editor);
+    if (typeof currentFontSizePT !== "undefined" && currentFontSizePT > 0) {
+      control.style.fontSize = `${currentFontSizePT}pt`;
+      control.style.lineHeight = "1.4";
+    }
 
-    // Limpa elementos temporários
+    applyPrompterTextAlign(getEditorTextAlign(editor));
+  }
+
+  function processPrompterHtml(content) {
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = content;
 
-    const coloredElements = tempDiv.querySelectorAll("*");
-    coloredElements.forEach((el) => {
+    tempDiv.querySelectorAll("*").forEach((el) => {
       if (el.style.color) {
         const c = el.style.color.replace(/\s/g, "");
         if (c === "rgb(0,0,0)" || c === "black" || c === "#000000") {
@@ -3344,55 +3502,86 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    const finalContent = tempDiv.innerHTML;
+    return tempDiv.innerHTML;
+  }
 
-    // 🔥 ENVIA PARA O MAIN PROCESS PRIMEIRO (Janela Externa)
+  /**
+   * Sincroniza conteúdo do editor com o prompter
+   * Limpa formatação desnecessária e envia para main process
+   */
+  function syncContentToPrompter() {
+    const editor = getActiveTextEditorArea();
+    const control = document.getElementById("prompterText-control");
+
+    if (!editor) {
+      if (control && control.innerHTML !== "") {
+        control.innerHTML = "";
+        _lastPrompterHtml = "";
+        _lastRemoteHtml = "";
+        ipcRenderer.send("update-prompter-content", "");
+      }
+      return;
+    }
+
+    const content = getCleanContent(editor);
+    if (content === _lastPrompterHtml) {
+      applyPrompterContainerStyles(control, editor);
+      return;
+    }
+
+    const finalContent = processPrompterHtml(content);
+    if (finalContent === _lastPrompterHtml) {
+      applyPrompterContainerStyles(control, editor);
+      return;
+    }
+
+    _lastPrompterHtml = finalContent;
+    _lastRemoteHtml = finalContent;
+
     ipcRenderer.send("update-prompter-content", finalContent);
+    ipcRenderer.send("send-text-to-remote", finalContent);
 
-    // 🔥 SINCRONIZA TAMANHO DA FONTE COM A JANELA DE PROJEÇÃO
-    if (typeof currentFontSizePT !== 'undefined' && currentFontSizePT > 0) {
+    if (typeof currentFontSizePT !== "undefined" && currentFontSizePT > 0) {
       ipcRenderer.send("sync-projection-font-size", currentFontSizePT);
     }
 
-    // 🔥 ENVIA PARA ROTEIRISTAS REMOTOS (Wi-Fi Local)
-    ipcRenderer.send("send-text-to-remote", finalContent);
-
-    // Depois atualiza local
     if (control) {
+      const container = document.querySelector(".prompter-in-control");
+      const savedScroll =
+        (typeof TabNavigationManager !== "undefined" &&
+          TabNavigationManager.operatorSavedScrollPosition > 0)
+          ? TabNavigationManager.operatorSavedScrollPosition
+          : ScrollEngine.decimalScroll ||
+            (container ? container.scrollTop : 0) ||
+            0;
+      const wasRunning = ScrollEngine.isRunning;
+
       control.innerHTML = finalContent;
 
-      // Indexa parágrafos no prompter para rastreamento de texto lido
       const prompterBlocks = getBlockElements(control);
       Array.from(prompterBlocks).forEach((block, i) => {
         block.setAttribute("data-para-idx", i);
       });
 
-      const baseColor = operatorState.isInverted ? "#000000" : "#FFFFFF";
-      control.style.color = baseColor;
-
-      if (prompterContainer) {
-        const bgColor = operatorState.isInverted ? "#FFFFFF" : "#000000";
-        prompterContainer.style.backgroundColor = bgColor;
-
-        const prompterWrapper = document.getElementById("operator-prompter-wrapper");
-        if (prompterWrapper) {
-          prompterWrapper.style.backgroundColor = bgColor;
-        }
-      }
-
-      const paragraphs = control.querySelectorAll("p, div, h1, h2, h3");
-      paragraphs.forEach((p) => {
+      control.querySelectorAll("p, div, h1, h2, h3").forEach((p) => {
         if (!p.style.marginBottom) p.style.marginBottom = "0.5em";
         p.style.marginTop = "0";
       });
 
-      if (typeof currentFontSizePT !== 'undefined' && currentFontSizePT > 0) {
-        control.style.fontSize = `${currentFontSizePT}pt`;
-        control.style.lineHeight = "1.4";
+      applyPrompterContainerStyles(control, editor);
+
+      if (wasRunning) {
+        control.style.willChange = "transform";
+        control.style.transform = `translate3d(0, -${savedScroll}px, 0)`;
+      } else if (savedScroll > 0 && container) {
+        container.style.overflowY = "auto";
+        control.style.transform = "none";
+        container.scrollTop = savedScroll;
+        ScrollEngine.decimalScroll = savedScroll;
       }
     }
 
-    prepararRoteiroParaLeitura();
+    if (voiceModeActive) prepararRoteiroParaLeitura();
   }
 
   // ============================================================
@@ -3402,7 +3591,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // pelo cue marker no prompter, aplicando estilo tachado.
 
   let _lastReadUpdateTime = 0;
-  const READ_UPDATE_INTERVAL = 150;
+  const READ_UPDATE_INTERVAL = 200;
 
   /**
    * Retorna a posição Y do cue marker no viewport.
@@ -3474,16 +3663,14 @@ document.addEventListener("DOMContentLoaded", () => {
       if (prompterBlocks.length === 0) return;
     }
 
-    const textElTop = textEl.getBoundingClientRect().top;
     const readLine = ScrollEngine.decimalScroll;
     const readIndices = [];
+    let blockBottom = 0;
 
     prompterBlocks.forEach((block) => {
-      const rect = block.getBoundingClientRect();
-      // Posição do bloco relativa ao topo do elemento de texto (constante)
-      const blockBottomRelToText = (rect.top + rect.height) - textElTop;
-      if (blockBottomRelToText <= readLine) {
-        readIndices.push(parseInt(block.getAttribute("data-para-idx")));
+      blockBottom += block.offsetHeight;
+      if (blockBottom <= readLine) {
+        readIndices.push(parseInt(block.getAttribute("data-para-idx"), 10));
       }
     });
 
@@ -5598,25 +5785,14 @@ document.addEventListener("DOMContentLoaded", () => {
     // CORREÇÃO: Usar innerHTML para manter cores e formatação ao reconectar
     return editor ? editor.innerHTML : "";
   }
-  // MONITORAR DIGITAÇÃO LOCAL (PC -> SITE)
+  // MONITORAR DIGITAÇÃO LOCAL (PC -> SITE) — debounced para não travar o Operator
   document.addEventListener("input", (e) => {
-    if (
-      e.target.getAttribute("contenteditable") === "true" ||
-      e.target.tagName === "TEXTAREA"
-    ) {
-      // CORREÇÃO: Usar innerHTML para pegar as cores e negrito
-      const currentText = e.target.innerHTML;
+    if (_bulkEditDepth > 0) return;
+    const editor = getActiveTextEditorArea();
+    if (!editor || !editor.contains(e.target)) return;
+    if (e.target.getAttribute("contenteditable") !== "true") return;
 
-      ipcRenderer.send("send-text-to-remote", currentText);
-
-      // Envia para TODOS os usuários conectados na internet
-      broadcastTextUpdate(currentText);
-
-      // 3. Atualiza o Prompter Local
-      if (typeof syncContentToPrompter === "function") {
-        syncContentToPrompter();
-      }
-    }
+    scheduleRemoteTextBroadcast(editor.innerHTML);
   });
 
   // 2. SERVIDOR PEDE O TEXTO (Quando o roteirista conecta)
@@ -6262,7 +6438,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const btnVoiceTrack = document.getElementById("btn-voice-tracking");
   const labelVoiceTrack = document.getElementById("voice-status-label");
-  let voiceModeActive = false;
 
   // 1. OUVIR O GERENCIADOR DE VOZ
   window.addEventListener("voice-tracking-event", (e) => {
@@ -6296,6 +6471,8 @@ document.addEventListener("DOMContentLoaded", () => {
         btnVoiceTrack.classList.add("btn-danger", "text-white");
         btnVoiceTrack.classList.remove("btn-light");
         if (labelVoiceTrack) labelVoiceTrack.innerText = "ON";
+
+        prepararRoteiroParaLeitura();
 
         // Para rolagem automática para a voz assumir
         if (typeof ScrollEngine !== "undefined") ScrollEngine.stop();
@@ -6635,7 +6812,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 4. Sincroniza Menu Superior e Cores
     if (typeof updateFontUIState === 'function') {
-      updateFontUIState(globalPrefs.defaultFont, globalPrefs.defaultFontSize);
+      updateFontUIState(
+        globalPrefs.defaultFont,
+        currentFontSizePT > 0 ? currentFontSizePT : globalPrefs.defaultFontSize
+      );
     }
     const colorInput = document.getElementById('font-color-picker');
     if (colorInput) colorInput.value = globalPrefs.defaultFontColor;

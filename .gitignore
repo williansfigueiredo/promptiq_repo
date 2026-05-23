@@ -9,6 +9,10 @@ build/
 # Gate de licença ofuscado (gerado por scripts/bundle-license-gate.js antes do dist)
 src/main/license-dist/
 
+# Bytecode gerado localmente (scripts/bundle-production.js — não versionar)
+src/main/main.jsc
+src/renderer/app.jsc
+
 # API de licenças (projeto separado, hospedado no Railway)
 license-api-mysql/
 

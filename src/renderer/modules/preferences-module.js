@@ -43,6 +43,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const fontWeightBoostCheck = document.getElementById('font-weight-boost-check');
   const backgroundColorInput = document.getElementById('background-color');
   const cueColorInput = document.getElementById('cue-color');
+
+  // Mantém snapshot das settings carregadas — campos ausentes no HTML
+  // (ex.: default-font-size) não devem ser sobrescritos com fallback 12 ao salvar.
+  let _lastLoadedSettings = {};
   const cueTypeSelect = document.getElementById('cue-type');
 
   // Playback Settings
@@ -155,6 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   const defaultValuesBtn = document.getElementById('default-values-btn');
+  const controlsDefaultsBtn = document.getElementById('controls-defaults-btn');
   const okBtn = document.getElementById('ok-btn');
   const cancelBtn = document.getElementById('cancel-btn');
 
@@ -416,18 +421,27 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log("   continuous-loop-check:", loopCheck, "checked:", loopCheck?.checked);
 
       const settings = {
-        // Style Settings
-        defaultFont: defaultFontInput ? defaultFontInput.value : 'Arial',
-        defaultFontSize: defaultFontSizeInput ? parseInt(defaultFontSizeInput.value) : 12,
-        defaultFontAttributes: collectedAttributes,
-        defaultFontColor: defaultFontColorInput ? defaultFontColorInput.value : '#FFFFFF',
-        prompterFontScale: prompterFontScaleInput ? parseInt(prompterFontScaleInput.value) : 30,
-        prompterMargin: prompterMarginInput ? parseInt(prompterMarginInput.value) : 40,
-        lineSpacing: lineSpacingInput ? parseFloat(lineSpacingInput.value) : 1.5,
-        fontWeightBoost: fontWeightBoostCheck ? fontWeightBoostCheck.checked : true,
-        backgroundColor: backgroundColorInput ? backgroundColorInput.value : '#000000',
-        cueColor: cueColorInput ? cueColorInput.value : '#00FF00',
-        cueType: cueTypeSelect ? cueTypeSelect.value : 'arrow',
+        // Preserva tudo que já estava salvo (tamanho de fonte da sessão, etc.)
+        ..._lastLoadedSettings,
+
+        // Style Settings — só sobrescreve campos que existem no formulário
+        ...(defaultFontInput && { defaultFont: defaultFontInput.value }),
+        ...(defaultFontSizeInput && {
+          defaultFontSize: parseInt(defaultFontSizeInput.value, 10) || _lastLoadedSettings.defaultFontSize || 12,
+        }),
+        ...(defaultFontAttributesGroup && { defaultFontAttributes: collectedAttributes }),
+        ...(defaultFontColorInput && { defaultFontColor: defaultFontColorInput.value }),
+        ...(prompterFontScaleInput && {
+          prompterFontScale: parseInt(prompterFontScaleInput.value, 10) || 30,
+        }),
+        ...(prompterMarginInput && {
+          prompterMargin: parseInt(prompterMarginInput.value, 10) || 40,
+        }),
+        ...(lineSpacingInput && { lineSpacing: parseFloat(lineSpacingInput.value) || 1.5 }),
+        ...(fontWeightBoostCheck && { fontWeightBoost: fontWeightBoostCheck.checked }),
+        ...(backgroundColorInput && { backgroundColor: backgroundColorInput.value }),
+        ...(cueColorInput && { cueColor: cueColorInput.value }),
+        ...(cueTypeSelect && { cueType: cueTypeSelect.value }),
 
         // Playback Settings
         overallSpeed: overallSpeedInput ? parseInt(overallSpeedInput.value) : 50,
@@ -494,6 +508,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // ============================================================
   function loadSettings(settings) {
     if (!settings) return;
+
+    _lastLoadedSettings = { ...settings };
 
     // Style Settings
     if (defaultFontInput) defaultFontInput.value = settings.defaultFont || 'Arial';
@@ -587,28 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hardwareSupportSelect) hardwareSupportSelect.value = settings.hardwareSupport || 'opengl';
 
     // Controls Settings
-    if (keyStopExitInput) keyStopExitInput.value = settings.keyStopExit || 'Esc';
-    if (keyPauseResumeInput) keyPauseResumeInput.value = settings.keyPauseResume || 'Space';
-    if (keyScrollForwardInput) keyScrollForwardInput.value = settings.keyScrollForward || 'Down';
-    if (keyScrollBackwardInput) keyScrollBackwardInput.value = settings.keyScrollBackward || 'Up';
-    if (keyReverseScrollInput) keyReverseScrollInput.value = settings.keyReverseScroll || 'Backspace';
-    if (keyPreviousLineInput) keyPreviousLineInput.value = settings.keyPreviousLine || '[';
-    if (keyNextLineInput) keyNextLineInput.value = settings.keyNextLine || ']';
-    if (keyPreviousCueInput) keyPreviousCueInput.value = settings.keyPreviousCue || 'Left';
-    if (keyNextCueInput) keyNextCueInput.value = settings.keyNextCue || 'Right';
-    if (keyJumpStartInput) keyJumpStartInput.value = settings.keyJumpStart || 'Home';
-    if (keyShowHideCueInput) keyShowHideCueInput.value = settings.keyShowHideCue || '[None]';
-    if (mouseStopExitSelect) populateMouseSelect(mouseStopExitSelect, settings.mouseStopExit || 'none');
-    if (mousePauseResumeSelect) populateMouseSelect(mousePauseResumeSelect, settings.mousePauseResume || 'left-click');
-    if (mouseScrollForwardSelect) populateMouseSelect(mouseScrollForwardSelect, settings.mouseScrollForward || 'scroll-wheel-down');
-    if (mouseScrollBackwardSelect) populateMouseSelect(mouseScrollBackwardSelect, settings.mouseScrollBackward || 'scroll-wheel-up');
-    if (mouseReverseScrollSelect) populateMouseSelect(mouseReverseScrollSelect, settings.mouseReverseScroll || 'right-click');
-    if (mousePreviousLineSelect) populateMouseSelect(mousePreviousLineSelect, settings.mousePreviousLine || 'none');
-    if (mouseNextLineSelect) populateMouseSelect(mouseNextLineSelect, settings.mouseNextLine || 'none');
-    if (mousePreviousCueSelect) populateMouseSelect(mousePreviousCueSelect, settings.mousePreviousCue || 'none');
-    if (mouseNextCueSelect) populateMouseSelect(mouseNextCueSelect, settings.mouseNextCue || 'none');
-    if (mouseJumpStartSelect) populateMouseSelect(mouseJumpStartSelect, settings.mouseJumpStart || 'none');
-    if (mouseShowHideCueSelect) populateMouseSelect(mouseShowHideCueSelect, settings.mouseShowHideCue || 'none');
+    applyControlsSettingsToForm(settings);
 
     // Standby Settings
     const path = settings.standbyImagePath;
@@ -659,22 +654,108 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ============================================================
-  // FUNÇÃO: Resetar aos valores padrão
+  // Valores de fábrica — Controls (aba Controls)
   // ============================================================
+  const FACTORY_CONTROLS = {
+    keyStopExit: 'Esc',
+    keyPauseResume: 'Space',
+    keyScrollForward: 'Down',
+    keyScrollBackward: 'Up',
+    keyReverseScroll: 'Backspace',
+    keyPreviousLine: '[',
+    keyNextLine: ']',
+    keyPreviousCue: 'Left',
+    keyNextCue: 'Right',
+    keyJumpStart: 'Home',
+    keyShowHideCue: '[None]',
+    mouseStopExit: 'none',
+    mousePauseResume: 'left-click',
+    mouseScrollForward: 'scroll-wheel-down',
+    mouseScrollBackward: 'scroll-wheel-up',
+    mouseReverseScroll: 'right-click',
+    mousePreviousLine: 'none',
+    mouseNextLine: 'none',
+    mousePreviousCue: 'none',
+    mouseNextCue: 'none',
+    mouseJumpStart: 'none',
+    mouseShowHideCue: 'none',
+  };
+
+  const CONTROL_SETTING_KEYS = Object.keys(FACTORY_CONTROLS);
+
+  function applyControlsSettingsToForm(settings) {
+    if (keyStopExitInput) keyStopExitInput.value = settings.keyStopExit || 'Esc';
+    if (keyPauseResumeInput) keyPauseResumeInput.value = settings.keyPauseResume || 'Space';
+    if (keyScrollForwardInput) keyScrollForwardInput.value = settings.keyScrollForward || 'Down';
+    if (keyScrollBackwardInput) keyScrollBackwardInput.value = settings.keyScrollBackward || 'Up';
+    if (keyReverseScrollInput) keyReverseScrollInput.value = settings.keyReverseScroll || 'Backspace';
+    if (keyPreviousLineInput) keyPreviousLineInput.value = settings.keyPreviousLine || '[';
+    if (keyNextLineInput) keyNextLineInput.value = settings.keyNextLine || ']';
+    if (keyPreviousCueInput) keyPreviousCueInput.value = settings.keyPreviousCue || 'Left';
+    if (keyNextCueInput) keyNextCueInput.value = settings.keyNextCue || 'Right';
+    if (keyJumpStartInput) keyJumpStartInput.value = settings.keyJumpStart || 'Home';
+    if (keyShowHideCueInput) keyShowHideCueInput.value = settings.keyShowHideCue || '[None]';
+    if (mouseStopExitSelect) populateMouseSelect(mouseStopExitSelect, settings.mouseStopExit || 'none');
+    if (mousePauseResumeSelect) populateMouseSelect(mousePauseResumeSelect, settings.mousePauseResume || 'left-click');
+    if (mouseScrollForwardSelect) populateMouseSelect(mouseScrollForwardSelect, settings.mouseScrollForward || 'scroll-wheel-down');
+    if (mouseScrollBackwardSelect) populateMouseSelect(mouseScrollBackwardSelect, settings.mouseScrollBackward || 'scroll-wheel-up');
+    if (mouseReverseScrollSelect) populateMouseSelect(mouseReverseScrollSelect, settings.mouseReverseScroll || 'right-click');
+    if (mousePreviousLineSelect) populateMouseSelect(mousePreviousLineSelect, settings.mousePreviousLine || 'none');
+    if (mouseNextLineSelect) populateMouseSelect(mouseNextLineSelect, settings.mouseNextLine || 'none');
+    if (mousePreviousCueSelect) populateMouseSelect(mousePreviousCueSelect, settings.mousePreviousCue || 'none');
+    if (mouseNextCueSelect) populateMouseSelect(mouseNextCueSelect, settings.mouseNextCue || 'none');
+    if (mouseJumpStartSelect) populateMouseSelect(mouseJumpStartSelect, settings.mouseJumpStart || 'none');
+    if (mouseShowHideCueSelect) populateMouseSelect(mouseShowHideCueSelect, settings.mouseShowHideCue || 'none');
+  }
+
+  function pickControlSettings(source) {
+    const picked = {};
+    CONTROL_SETTING_KEYS.forEach((key) => {
+      if (source && source[key] !== undefined) picked[key] = source[key];
+    });
+    return picked;
+  }
+
+  /** Restaura só a aba Controls (botão "Defaults" dentro da aba). */
+  function loadDefaultControlsSettings() {
+    _lastLoadedSettings = { ..._lastLoadedSettings, ...FACTORY_CONTROLS };
+    applyControlsSettingsToForm(FACTORY_CONTROLS);
+  }
+
+  /** Restaura Style, Playback, Display, Standby etc. — preserva Controls. */
   function loadDefaultSettings() {
+    const preservedControls = pickControlSettings(_lastLoadedSettings);
+
     const defaultSettings = {
-      defaultFont: 'Arial', defaultFontSize: 12, defaultFontAttributes: [],
-      defaultFontColor: '#FFFFFF', prompterFontScale: 30, prompterMargin: 40,
-      lineSpacing: 1.5, backgroundColor: '#000000', cueColor: '#00FF00',
+      defaultFont: 'Arial',
+      defaultFontSize: 12,
+      defaultFontAttributes: [],
+      defaultFontColor: '#FFFFFF',
+      prompterFontScale: 30,
+      prompterMargin: 40,
+      lineSpacing: 1.5,
+      fontWeightBoost: true,
+      backgroundColor: '#000000',
+      cueColor: '#00FF00',
       cueType: 'arrow',
-      overallSpeed: 50, playbackTimer: 'off', showProgressIndicator: false, continuousLoop: false, accelerationLevel: 50,
-      mirrorMode: 'none', promptingWindow: 'dual-screen', windowTransparency: 0, hardwareSupport: 'opengl',
-      keyStopExit: 'Esc', keyPauseResume: 'Space', keyScrollForward: 'Down', keyScrollBackward: 'Up', keyReverseScroll: 'Backspace', keyPreviousLine: '[', keyNextLine: ']', keyPreviousCue: 'Left', keyNextCue: 'Right', keyJumpStart: 'Home', keyShowHideCue: '[None]',
-      mouseStopExit: 'none', mousePauseResume: 'left-click', mouseScrollForward: 'scroll-wheel-down', mouseScrollBackward: 'scroll-wheel-up', mouseReverseScroll: 'right-click', mousePreviousLine: 'none', mouseNextLine: 'none', mousePreviousCue: 'none', mouseNextCue: 'none', mouseJumpStart: 'none', mouseShowHideCue: 'none',
+      overallSpeed: 50,
+      playbackTimer: 'off',
+      showProgressIndicator: false,
+      progressThumbColor: '#FFFFFF',
+      showCueMarker: true,
+      continuousLoop: false,
+      accelerationLevel: 50,
+      mirrorMode: 'none',
+      promptingWindow: 'dual-screen',
+      windowTransparency: 0,
+      hardwareSupport: 'opengl',
       useCustomStandbyImage: false,
       standbyImagePath: null,
-      autoCheckForUpdates: true, lastCheckDate: '14 de out. de 2025 09:03:20'
+      standbyTimeout: 5,
+      autoCheckForUpdates: true,
+      ...preservedControls,
     };
+
     loadSettings(defaultSettings);
   }
 
@@ -702,7 +783,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (defaultValuesBtn) {
-    defaultValuesBtn.addEventListener('click', loadDefaultSettings);
+    defaultValuesBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      loadDefaultSettings();
+    });
+  }
+
+  if (controlsDefaultsBtn) {
+    controlsDefaultsBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      loadDefaultControlsSettings();
+    });
   }
 
   // ============================================================
