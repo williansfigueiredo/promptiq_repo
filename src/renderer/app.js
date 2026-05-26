@@ -4030,11 +4030,24 @@ document.addEventListener("DOMContentLoaded", () => {
       maxReadIdx = passed.maxReadIndex;
     }
 
+    // Fallback por pixels (scroll via transform) quando a detecção visual falha
+    const cueOffset = getCueOffsetInContainer();
+    if (readCount === 0 && readLinePx > cueOffset + 1) {
+      let accumulated = 0;
+      prompterBlocks.forEach((block, i) => {
+        accumulated += block.offsetHeight;
+        if (accumulated <= readLinePx + 1) {
+          maxReadIdx = i;
+          readCount = i + 1;
+        }
+      });
+    }
+
     const scrollRatio =
-      total > 0 && readCount > 0
-        ? readCount / total
-        : contentHeightPx > 0
-          ? Math.min(1, readLinePx / contentHeightPx)
+      contentHeightPx > 0
+        ? Math.min(1, Math.max(0, readLinePx / contentHeightPx))
+        : total > 0 && readCount > 0
+          ? readCount / total
           : 0;
 
     return {
@@ -4045,6 +4058,8 @@ document.addEventListener("DOMContentLoaded", () => {
       scrollRatio,
       readLinePx,
       contentHeightPx,
+      scrollPos,
+      isScrolling: ScrollEngine.isRunning || scrollPos > 1,
     };
   }
 

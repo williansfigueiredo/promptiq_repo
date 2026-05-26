@@ -1180,46 +1180,58 @@
             const blockCount = blocks.length;
             if (blockCount <= 0 || !payload || typeof payload !== 'object') return 0;
 
-            if (typeof payload.readCount === 'number' && payload.totalBlocks > 0) {
-                if (payload.totalBlocks === blockCount) {
-                    return Math.min(Math.max(0, payload.readCount), blockCount);
-                }
-                const ratio = payload.readCount / payload.totalBlocks;
-                return Math.min(blockCount, Math.max(0, Math.round(ratio * blockCount)));
-            }
-
-            if (
-                typeof payload.maxReadIndex === 'number' &&
-                payload.maxReadIndex >= 0 &&
-                payload.totalBlocks > 0 &&
-                payload.totalBlocks === blockCount
-            ) {
-                return Math.min(payload.maxReadIndex + 1, blockCount);
-            }
-
             const totalHeight = blocks.reduce((sum, block) => sum + block.offsetHeight, 0);
             if (totalHeight <= 0) return 0;
 
+            // Mesma ordem do roteirista via internet: pixels primeiro (tempo real no scroll)
+            const scrolling =
+                payload.isScrolling === true ||
+                (typeof payload.scrollPos === 'number' && payload.scrollPos > 1) ||
+                (typeof payload.readCount === 'number' && payload.readCount > 0) ||
+                (typeof payload.maxReadIndex === 'number' && payload.maxReadIndex >= 0);
+
             let readLinePx = 0;
-            if (typeof payload.readLinePx === 'number' && payload.readLinePx > 0) {
-                const opHeight =
-                    typeof payload.contentHeightPx === 'number' && payload.contentHeightPx > 0
-                        ? payload.contentHeightPx
-                        : totalHeight;
-                readLinePx = (payload.readLinePx / opHeight) * totalHeight;
-            } else if (typeof payload.scrollRatio === 'number' && payload.scrollRatio > 0) {
-                readLinePx = payload.scrollRatio * totalHeight;
+            if (scrolling) {
+                if (typeof payload.readLinePx === 'number' && payload.readLinePx > 0) {
+                    const opHeight =
+                        typeof payload.contentHeightPx === 'number' && payload.contentHeightPx > 0
+                            ? payload.contentHeightPx
+                            : totalHeight;
+                    readLinePx = (payload.readLinePx / opHeight) * totalHeight;
+                } else if (typeof payload.scrollRatio === 'number' && payload.scrollRatio > 0) {
+                    readLinePx = payload.scrollRatio * totalHeight;
+                } else if (typeof payload.readPercent === 'number' && payload.readPercent > 0) {
+                    readLinePx = payload.readPercent * totalHeight;
+                }
             }
 
-            if (readLinePx <= 0) return 0;
+            if (readLinePx > 0) {
+                let readCount = 0;
+                let accumulated = 0;
+                blocks.forEach((block, idx) => {
+                    accumulated += block.offsetHeight;
+                    if (accumulated <= readLinePx + 1) readCount = idx + 1;
+                });
+                if (readCount > 0) return readCount;
+            }
 
-            let readCount = 0;
-            let accumulated = 0;
-            blocks.forEach((block, idx) => {
-                accumulated += block.offsetHeight;
-                if (accumulated <= readLinePx + 1) readCount = idx + 1;
-            });
-            return readCount;
+            if (typeof payload.readCount === 'number' && payload.readCount > 0) {
+                if (payload.totalBlocks > 0 && payload.totalBlocks !== blockCount) {
+                    const ratio = payload.readCount / payload.totalBlocks;
+                    return Math.min(blockCount, Math.max(0, Math.round(ratio * blockCount)));
+                }
+                return Math.min(payload.readCount, blockCount);
+            }
+
+            if (typeof payload.maxReadIndex === 'number' && payload.maxReadIndex >= 0) {
+                if (payload.totalBlocks > 0 && payload.totalBlocks !== blockCount) {
+                    const ratio = (payload.maxReadIndex + 1) / payload.totalBlocks;
+                    return Math.min(blockCount, Math.max(0, Math.round(ratio * blockCount)));
+                }
+                return Math.min(payload.maxReadIndex + 1, blockCount);
+            }
+
+            return 0;
         }
 
         function setBlockReadState(block, isRead) {
@@ -1244,6 +1256,8 @@
             const readCount = computeReadCountFromPayload(payload, blocks);
             const viewState = saveEditorViewState();
 
+            editor.querySelectorAll('.script-read').forEach((el) => el.classList.remove('script-read'));
+            editor.querySelectorAll('[data-read]').forEach((el) => el.removeAttribute('data-read'));
             blocks.forEach((block, idx) => {
                 setBlockReadState(block, idx < readCount);
             });
@@ -1254,8 +1268,8 @@
 
         socket.on('server-read-progress', (payload) => {
             if (!payload) return;
-            storeReadProgressPayload(payload);
-            applyReadProgressNow(payload);
+            applyReadProgress(payload);
+            requestAnimationFrame(() => applyReadProgressNow(_serverReadPayload));
         });
 
         restoreCachedReadProgress();
