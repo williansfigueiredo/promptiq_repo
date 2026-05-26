@@ -147,6 +147,7 @@ let currentSettings = { ...defaultSettings, ...loadSettingsFromDisk() };
 // ============================================================
 
 let currentSessionID = "";   // PIN de 6 dígitos da sessão remota atual
+let currentReadProgress = null; // Último progresso de leitura (reativa após refresh do roteirista)
 let controlWindow = null;    // Janela principal do editor
 let splashWindow = null;     // Janela de splash screen inicial
 let overlayWindow = null;    // Janela de overlay (mensagens rápidas)
@@ -1527,8 +1528,8 @@ ipcMain.handle('import-diff-document', async (event) => {
 // Express + Socket.io para controle remoto via Wi-Fi
 // WebRTC para conexão P2P via internet (roteiro.promptiq.com.br)
 
-// HTML da página de controle remoto (carregado do arquivo)
-const remotePageHTML = fs.readFileSync(path.join(__dirname, '../../public/html/remote.html'), 'utf-8');
+// HTML da página de controle remoto (recarregado do disco a cada request)
+const remotePagePath = path.join(__dirname, '../../public/html/remote.html');
 
 /**
  * Handler para iniciar/parar servidor remoto
@@ -1569,7 +1570,10 @@ ipcMain.handle('toggle-server', async (event, mode) => {
         remoteIo = socketIo(remoteServer);
 
         currentSessionID = Math.floor(100000 + Math.random() * 900000).toString();
-        remoteApp.get('/', (req, res) => res.send(remotePageHTML));
+        remoteApp.get('/', (req, res) => {
+          res.set('Cache-Control', 'no-store');
+          res.sendFile(remotePagePath);
+        });
 
         remoteIo.on('connection', (socket) => {
 
@@ -1579,9 +1583,16 @@ ipcMain.handle('toggle-server', async (event, mode) => {
               socket.userName = userData.name || "Anonymous";
               socket.emit('login-success', true);
 
+              if (currentReadProgress) {
+                socket.emit('server-read-progress', currentReadProgress);
+              }
+
               // Busca janela ativa no momento (não guarda referência antiga)
               const mainWin = BrowserWindow.getAllWindows().find(w => !w.isDestroyed());
-              if (mainWin) mainWin.webContents.send('request-text-for-remote');
+              if (mainWin) {
+                mainWin.webContents.send('request-text-for-remote');
+                mainWin.webContents.send('request-full-state-for-remote');
+              }
               if (mainWin) {
                 mainWin.webContents.send('add-log', {
                   msg: `${socket.userName} Entered the room.`,
@@ -1647,17 +1658,41 @@ ipcMain.handle('toggle-server', async (event, mode) => {
   }
 });
 
+function emitReadProgressToRemotes() {
+  if (!remoteIo || currentReadProgress == null) return;
+  if (currentSessionID) {
+    remoteIo.to(currentSessionID).emit('server-read-progress', currentReadProgress);
+  }
+  remoteIo.emit('server-read-progress', currentReadProgress);
+}
+
+function applyReadProgressFromPayload(payload) {
+  if (!payload || typeof payload !== 'object') return;
+  currentReadProgress = payload;
+  if (!remoteIo) return;
+  emitReadProgressToRemotes();
+}
+
 // Sincroniza texto do PC para dispositivos remotos conectados
 ipcMain.on('send-text-to-remote', (event, content) => {
   if (remoteIo) {
     remoteIo.emit('server-text-update', content);
+    emitReadProgressToRemotes();
   }
 });
 
 // Envia progresso de leitura (índices dos parágrafos já lidos) para roteiristas
 ipcMain.on('send-read-progress-to-remote', (event, readIndices) => {
-  if (remoteIo) {
-    remoteIo.emit('server-read-progress', readIndices);
+  applyReadProgressFromPayload(readIndices);
+});
+
+// Envia estado completo (HTML + estilos + progresso) para roteiristas Wi-Fi
+ipcMain.on('send-full-state-to-remote', (event, state) => {
+  if (remoteIo && state) {
+    remoteIo.emit('server-initial-state', state);
+    if (state.readProgress) {
+      applyReadProgressFromPayload(state.readProgress);
+    }
   }
 });
 
@@ -1780,6 +1815,9 @@ ipcMain.on('sync-scroll-position', (event, position) => {
       win.webContents.send('update-scroll', position);
     }
   });
+  if (position && position.readProgress) {
+    applyReadProgressFromPayload(position.readProgress);
+  }
 });
 
 // Atualiza conteúdo do prompter em todas as janelas (exceto remetente)

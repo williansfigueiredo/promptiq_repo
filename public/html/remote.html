@@ -445,18 +445,43 @@
             color: var(--text-primary);
             background: var(--background-primary);
             outline: none; overflow-y: auto; border: none; min-height: 200px;
+            position: relative;
         }
         
         #remote-editor:empty:before { content: attr(placeholder); color: var(--text-tertiary); pointer-events: none; font-style: italic; }
         #remote-editor p { margin: 0 0 0.5em 0; }
         #remote-editor div { margin: 0; }
 
-        /* Texto já lido pelo repórter (tachado) */
-        #remote-editor .script-read {
-            text-decoration: line-through;
-            text-decoration-thickness: 2px;
-            opacity: 0.45;
-            transition: opacity 0.3s ease;
+        /* Texto já lido pelo repórter — cor mais clara, SEM tachado */
+        #remote-editor .script-read,
+        #remote-editor [data-read="1"] {
+            opacity: 0.42 !important;
+            filter: grayscale(0.75) brightness(1.05) !important;
+            text-decoration: none !important;
+            text-decoration-line: none !important;
+        }
+        #remote-editor .script-read,
+        #remote-editor .script-read *,
+        #remote-editor [data-read="1"],
+        #remote-editor [data-read="1"] *,
+        #remote-editor .script-read b,
+        #remote-editor .script-read strong,
+        #remote-editor .script-read font,
+        #remote-editor .script-read font[color],
+        #remote-editor [data-read="1"] font[color],
+        #remote-editor .script-read span,
+        #remote-editor .script-read s,
+        #remote-editor .script-read strike,
+        #remote-editor .script-read del {
+            color: #9ca3af !important;
+            -webkit-text-fill-color: #9ca3af !important;
+            text-decoration: none !important;
+            text-decoration-line: none !important;
+        }
+        #remote-editor .script-read [style*="background"],
+        #remote-editor [data-read="1"] [style*="background"] {
+            background-color: transparent !important;
+            background: transparent !important;
         }
 
         /* --------------------------------------------------------------------------
@@ -734,6 +759,7 @@
         let lastReceivedContent = "";
         let ignoreNextInput = false;
         let rightClickedColorBtn = null; // Para trocar cor via right-click
+        let _textEmitTimer = null;
         
         // ============================================================
         // INICIALIZAÇÃO
@@ -824,8 +850,34 @@
             document.getElementById('u-icon').innerText = userName.charAt(0).toUpperCase();
             showAppScreen();
             updateConnectionStatus(true);
+            restoreCachedReadProgress();
+            if (
+                _serverReadPayload &&
+                (!(_serverReadPayload.readLinePx > 0) &&
+                    !(_serverReadPayload.scrollRatio > 0) &&
+                    !(_serverReadPayload.readCount > 0))
+            ) {
+                _serverReadPayload = null;
+                try { sessionStorage.removeItem('promptiq:readProgress'); } catch (_) {}
+            }
+            if (_serverReadPayload) {
+                setTimeout(() => applyReadProgressNow(_serverReadPayload), 400);
+            } else {
+                applyReadProgressNow({ readCount: 0, scrollRatio: 0, readLinePx: 0 });
+            }
         });
         
+        function updateFontUI(fontFamily) {
+            if (!fontFamily) return;
+            const select = document.getElementById('remote-font-select');
+            if (select) select.value = fontFamily;
+        }
+
+        function updateAlignmentUI(alignment) {
+            const map = { 'left': 'remote-align-left', 'center': 'remote-align-center', 'right': 'remote-align-right' };
+            if (map[alignment]) setActiveAlignment(map[alignment]);
+        }
+
         // ============================================================
         // RECEBE ESTADO INICIAL COMPLETO (Cold Start Fix)
         // ============================================================
@@ -839,7 +891,11 @@
             if (state.htmlContent && !isTyping) {
                 lastReceivedContent = state.htmlContent;
                 ignoreNextInput = true;
+                const viewState = saveEditorViewState();
                 editor.innerHTML = sanitizeHtmlIfFontLocked(state.htmlContent);
+                indexEditorBlocks();
+                reapplyReadProgress();
+                restoreEditorViewState(viewState);
                 setTimeout(() => { ignoreNextInput = false; }, 100);
             }
             
@@ -863,6 +919,10 @@
                 editor.style.textAlign = state.textAlign;
                 updateAlignmentUI(state.textAlign);
             }
+
+            if (state.readProgress) {
+                applyReadProgress(state.readProgress);
+            }
             
             flashSyncIndicator();
             updateLastSync();
@@ -875,58 +935,333 @@
             showLoginScreen();
         });
         
+        function flushTextUpdateToHost() {
+            if (!editor || ignoreNextInput) return;
+            const outgoing = sanitizeOutgoingHtml(editor.innerHTML);
+            if (!outgoing || outgoing === lastReceivedContent) return;
+            socket.emit('text-update', {
+                content: outgoing,
+                name: localStorage.getItem('prompt_user') || userName || 'Anonymous'
+            });
+        }
+
+        function scheduleTextUpdateToHost() {
+            clearTimeout(_textEmitTimer);
+            _textEmitTimer = setTimeout(flushTextUpdateToHost, 150);
+        }
+
         // === RECEBE TEXTO DO HOST ===
         socket.on('server-text-update', (content) => {
             if (!isTyping && editor && content !== lastReceivedContent) {
                 lastReceivedContent = content;
                 ignoreNextInput = true;
                 const hadFocus = document.activeElement === editor;
+                const viewState = saveEditorViewState();
                 editor.innerHTML = sanitizeHtmlIfFontLocked(content);
                 indexEditorBlocks();
                 reapplyReadProgress();
+                restoreEditorViewState(viewState);
                 flashSyncIndicator();
                 updateLastSync();
                 if (hadFocus) editor.focus();
                 setTimeout(() => { ignoreNextInput = false; }, 100);
+            } else if (!isTyping && editor && _serverReadPayload) {
+                reapplyReadProgress();
             }
         });
 
-        // === PROGRESSO DE LEITURA (TACHADO) ===
-        let _currentReadIndices = [];
+        // === PROGRESSO DE LEITURA (cor mais clara no roteirista) ===
+        let _currentMaxReadIdx = -1;
+        let _pendingReadProgress = null;
+        let _readProgressFlushTimer = null;
+        let _serverReadPayload = null;
+        let _realignReadTimer = null;
+
+        function hasBlockText(el) {
+            if (!el || el.nodeType !== 1) return false;
+            return !!(el.textContent || '').replace(/\u00a0/g, ' ').trim() || el.querySelector('br,img,hr');
+        }
+
+        function getBlockElementsDirect(container) {
+            if (!container) return [];
+            const blocks = [];
+            const STRUCTURAL = /^(P|DIV|H1|H2|H3|H4|H5|H6|LI|BLOCKQUOTE)$/i;
+
+            Array.from(container.children).forEach((child) => {
+                if (!child || child.nodeType !== 1) return;
+
+                if (/^DIV$/i.test(child.tagName)) {
+                    const inner = Array.from(child.children).filter(
+                        (el) => el.nodeType === 1 && (STRUCTURAL.test(el.tagName) || hasBlockText(el))
+                    );
+                    if (inner.length > 0) {
+                        inner.forEach((el) => blocks.push(el));
+                        return;
+                    }
+                }
+
+                if (hasBlockText(child)) blocks.push(child);
+            });
+
+            if (blocks.length > 0) return blocks;
+            if (container.children.length > 0) return Array.from(container.children);
+            return [container];
+        }
 
         function indexEditorBlocks() {
             if (!editor) return;
-            let blocks = editor.querySelectorAll('p, div, h1, h2, h3, h4, h5, h6');
-            if (blocks.length === 0) blocks = editor.children;
-            Array.from(blocks).forEach((b, i) => b.setAttribute('data-para-idx', i));
+            editor.querySelectorAll('.script-read').forEach((el) => el.classList.remove('script-read'));
+            editor.querySelectorAll('[data-read]').forEach((el) => el.removeAttribute('data-read'));
+            editor.querySelectorAll('[data-para-idx]').forEach((el) => el.removeAttribute('data-para-idx'));
+            ensureBlockIndexing();
+        }
+
+        function ensureBlockIndexing() {
+            if (!editor) return [];
+            const blocks = getBlockElementsDirect(editor);
+            blocks.forEach((block, i) => {
+                block.setAttribute('data-para-idx', String(i));
+            });
+            return blocks;
+        }
+
+        function getCursorBlockIndex() {
+            const sel = window.getSelection();
+            if (!sel || sel.rangeCount === 0) return -1;
+            let node = sel.getRangeAt(0).startContainer;
+            if (node.nodeType === 3) node = node.parentElement;
+            while (node && node !== editor) {
+                if (node.nodeType === 1 && node.hasAttribute('data-para-idx')) {
+                    return parseInt(node.getAttribute('data-para-idx'), 10);
+                }
+                node = node.parentElement;
+            }
+            return -1;
+        }
+
+        function saveEditorViewState() {
+            if (!editor) return null;
+            const sel = window.getSelection();
+            let range = null;
+            if (sel && sel.rangeCount > 0 && editor.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+                range = sel.getRangeAt(0).cloneRange();
+            } else if (window.lastEditorRange) {
+                range = window.lastEditorRange.cloneRange();
+            }
+            return { scrollTop: editor.scrollTop, range };
+        }
+
+        function restoreEditorViewState(state) {
+            if (!state || !editor) return;
+            editor.scrollTop = state.scrollTop;
+            if (state.range) {
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                try {
+                    sel.addRange(state.range);
+                    window.lastEditorRange = state.range.cloneRange();
+                } catch (_) {}
+            }
+        }
+
+        function flushPendingReadProgress() {
+            if (_pendingReadProgress == null) return;
+            const payload = _pendingReadProgress;
+            _pendingReadProgress = null;
+            applyReadProgressNow(payload);
+        }
+
+        function resolveMaxReadIdx(payload, blockCount) {
+            if (blockCount <= 0) return -1;
+            let maxIdx = -1;
+            let readPercent = null;
+
+            if (typeof payload === 'number') {
+                maxIdx = payload;
+            } else if (Array.isArray(payload)) {
+                maxIdx = payload.length ? Math.max(...payload) : -1;
+            } else if (payload && typeof payload === 'object') {
+                if (typeof payload.maxReadIndex === 'number') maxIdx = payload.maxReadIndex;
+                else if (Array.isArray(payload.readIndices) && payload.readIndices.length) {
+                    maxIdx = Math.max(...payload.readIndices);
+                }
+                if (typeof payload.readPercent === 'number') readPercent = payload.readPercent;
+            }
+
+            if (maxIdx >= 0) return Math.min(maxIdx, blockCount - 1);
+            if (readPercent != null) {
+                if (readPercent <= 0) return -1;
+                return Math.min(blockCount - 1, Math.max(0, Math.ceil(readPercent * blockCount) - 1));
+            }
+            return -1;
+        }
+
+        function getReadBlockCount(payload, blockCount) {
+            if (blockCount <= 0) return 0;
+            if (payload && typeof payload === 'object' && typeof payload.readCount === 'number') {
+                return Math.max(0, Math.min(payload.readCount, blockCount));
+            }
+            const maxIdx = resolveMaxReadIdx(payload, blockCount);
+            return maxIdx < 0 ? 0 : maxIdx + 1;
+        }
+
+        function resolveReadLinePx(payload, blocks) {
+            const totalHeight = blocks.reduce((sum, block) => sum + block.offsetHeight, 0);
+            if (totalHeight <= 0) return 0;
+
+            if (payload && typeof payload === 'object') {
+                if (typeof payload.scrollRatio === 'number') {
+                    return Math.max(0, Math.min(totalHeight, payload.scrollRatio * totalHeight));
+                }
+                if (typeof payload.readPercent === 'number') {
+                    return Math.max(0, Math.min(totalHeight, payload.readPercent * totalHeight));
+                }
+                if (typeof payload.readLinePx === 'number') {
+                    let px = payload.readLinePx;
+                    if (
+                        typeof payload.contentHeightPx === 'number' &&
+                        payload.contentHeightPx > 0 &&
+                        payload.contentHeightPx !== totalHeight
+                    ) {
+                        px = (px / payload.contentHeightPx) * totalHeight;
+                    }
+                    return Math.max(0, Math.min(totalHeight, px));
+                }
+            }
+
+            const count = getReadBlockCount(payload, blocks.length);
+            let px = 0;
+            for (let i = 0; i < count && i < blocks.length; i++) {
+                px += blocks[i].offsetHeight;
+            }
+            return px;
+        }
+
+        function storeReadProgressPayload(payload) {
+            _serverReadPayload = payload;
+            try {
+                const hasProgress =
+                    (payload && typeof payload.readLinePx === 'number' && payload.readLinePx > 0) ||
+                    (payload && typeof payload.scrollRatio === 'number' && payload.scrollRatio > 0.001) ||
+                    (payload && typeof payload.readCount === 'number' && payload.readCount > 0);
+                if (hasProgress) {
+                    sessionStorage.setItem('promptiq:readProgress', JSON.stringify(payload));
+                } else {
+                    sessionStorage.removeItem('promptiq:readProgress');
+                }
+            } catch (_) {}
+        }
+
+        function restoreCachedReadProgress() {
+            if (_serverReadPayload) return;
+            try {
+                const raw = sessionStorage.getItem('promptiq:readProgress');
+                if (raw) _serverReadPayload = JSON.parse(raw);
+            } catch (_) {}
+        }
+
+        function scheduleReadProgressRealign() {
+            if (!_serverReadPayload) return;
+            clearTimeout(_realignReadTimer);
+            _realignReadTimer = setTimeout(() => applyReadProgressNow(_serverReadPayload), 120);
         }
 
         function reapplyReadProgress() {
-            if (!editor || _currentReadIndices.length === 0) return;
-            applyReadProgress(_currentReadIndices);
+            if (!editor || !_serverReadPayload) return;
+            requestAnimationFrame(() => applyReadProgressNow(_serverReadPayload));
         }
 
-        function applyReadProgress(readIndices) {
-            if (!editor) return;
-            const readSet = new Set(readIndices);
-            const blocks = editor.querySelectorAll('[data-para-idx]');
-            blocks.forEach((block) => {
-                const idx = parseInt(block.getAttribute('data-para-idx'));
-                if (readSet.has(idx)) {
-                    block.classList.add('script-read');
-                } else {
-                    block.classList.remove('script-read');
+        function applyReadProgress(payload) {
+            storeReadProgressPayload(payload);
+            applyReadProgressNow(payload);
+        }
+
+        function computeReadCountFromPayload(payload, blocks) {
+            const blockCount = blocks.length;
+            if (blockCount <= 0 || !payload || typeof payload !== 'object') return 0;
+
+            if (typeof payload.readCount === 'number' && payload.totalBlocks > 0) {
+                if (payload.totalBlocks === blockCount) {
+                    return Math.min(Math.max(0, payload.readCount), blockCount);
                 }
+                const ratio = payload.readCount / payload.totalBlocks;
+                return Math.min(blockCount, Math.max(0, Math.round(ratio * blockCount)));
+            }
+
+            if (
+                typeof payload.maxReadIndex === 'number' &&
+                payload.maxReadIndex >= 0 &&
+                payload.totalBlocks > 0 &&
+                payload.totalBlocks === blockCount
+            ) {
+                return Math.min(payload.maxReadIndex + 1, blockCount);
+            }
+
+            const totalHeight = blocks.reduce((sum, block) => sum + block.offsetHeight, 0);
+            if (totalHeight <= 0) return 0;
+
+            let readLinePx = 0;
+            if (typeof payload.readLinePx === 'number' && payload.readLinePx > 0) {
+                const opHeight =
+                    typeof payload.contentHeightPx === 'number' && payload.contentHeightPx > 0
+                        ? payload.contentHeightPx
+                        : totalHeight;
+                readLinePx = (payload.readLinePx / opHeight) * totalHeight;
+            } else if (typeof payload.scrollRatio === 'number' && payload.scrollRatio > 0) {
+                readLinePx = payload.scrollRatio * totalHeight;
+            }
+
+            if (readLinePx <= 0) return 0;
+
+            let readCount = 0;
+            let accumulated = 0;
+            blocks.forEach((block, idx) => {
+                accumulated += block.offsetHeight;
+                if (accumulated <= readLinePx + 1) readCount = idx + 1;
             });
+            return readCount;
         }
 
-        socket.on('server-read-progress', (readIndices) => {
-            _currentReadIndices = readIndices || [];
-            if (editor.querySelectorAll('[data-para-idx]').length === 0) {
-                indexEditorBlocks();
+        function setBlockReadState(block, isRead) {
+            if (!block) return;
+            block.classList.toggle('script-read', isRead);
+            if (isRead) block.setAttribute('data-read', '1');
+            else block.removeAttribute('data-read');
+        }
+
+        function applyReadProgressNow(payload, retryCount) {
+            if (!editor) return;
+
+            const blocks = ensureBlockIndexing();
+            if (blocks.length === 0) return;
+
+            const totalHeight = blocks.reduce((sum, block) => sum + block.offsetHeight, 0);
+            if (totalHeight <= 0 && (retryCount || 0) < 8) {
+                requestAnimationFrame(() => applyReadProgressNow(payload, (retryCount || 0) + 1));
+                return;
             }
-            applyReadProgress(_currentReadIndices);
+
+            const readCount = computeReadCountFromPayload(payload, blocks);
+            const viewState = saveEditorViewState();
+
+            blocks.forEach((block, idx) => {
+                setBlockReadState(block, idx < readCount);
+            });
+
+            _currentMaxReadIdx = readCount > 0 ? readCount - 1 : -1;
+            restoreEditorViewState(viewState);
+        }
+
+        socket.on('server-read-progress', (payload) => {
+            if (!payload) return;
+            storeReadProgressPayload(payload);
+            applyReadProgressNow(payload);
         });
+
+        restoreCachedReadProgress();
+        if (_serverReadPayload) {
+            setTimeout(() => applyReadProgressNow(_serverReadPayload), 300);
+        }
 
         // === RECEBE FULL-SYNC (HTML + ESTILOS + TOOLBAR) ===
         socket.on('server-full-sync', (data) => {
@@ -935,7 +1270,11 @@
             if (data.content && data.content.html && !isTyping) {
                 lastReceivedContent = data.content.html;
                 ignoreNextInput = true;
+                const viewState = saveEditorViewState();
                 editor.innerHTML = sanitizeHtmlIfFontLocked(data.content.html);
+                indexEditorBlocks();
+                reapplyReadProgress();
+                restoreEditorViewState(viewState);
                 setTimeout(() => { ignoreNextInput = false; }, 100);
             }
             
@@ -1222,10 +1561,7 @@
             syncDot.classList.add('syncing');
             syncStatus.textContent = "Synchronizing...";
             
-            socket.emit('text-update', {
-                content: sanitizeOutgoingHtml(editor.innerHTML),
-                name: localStorage.getItem('prompt_user') || userName || "Anonymous"
-            });
+            scheduleTextUpdateToHost();
             
             clearTimeout(typeTimeout);
             typeTimeout = setTimeout(() => {
@@ -1233,6 +1569,7 @@
                 syncDot.classList.remove('syncing');
                 syncDot.classList.add('synced');
                 syncStatus.textContent = "Synced";
+                scheduleReadProgressRealign();
             }, 800);
         });
         
@@ -1477,18 +1814,30 @@
         // ou server-full-sync, esses estilos inline sobrescrevem o tamanho
         // local do roteirista. Esta função remove font-size/font-family inline
         // do HTML recebido SE o cadeado estiver fechado.
-        function sanitizeHtmlIfFontLocked(html) {
-            if (!window.fontSizeLocked) return html;
-            return stripFontSizeAndFamily(html);
+        function stripReadProgressMarkup(html) {
+            if (!html) return html;
+            try {
+                const tpl = document.createElement('div');
+                tpl.innerHTML = html;
+                tpl.querySelectorAll('.script-read').forEach((el) => el.classList.remove('script-read'));
+                tpl.querySelectorAll('[data-read]').forEach((el) => el.removeAttribute('data-read'));
+                tpl.querySelectorAll('[data-para-idx]').forEach((el) => el.removeAttribute('data-para-idx'));
+                return tpl.innerHTML;
+            } catch (_) {
+                return html;
+            }
         }
 
-        // Sanitiza HTML que o ROTEIRISTA está prestes a ENVIAR ao operador.
-        // Quando o cadeado está fechado, remove font-size/font-family inline
-        // para que mudanças locais de tamanho/fonte do roteirista NÃO sejam
-        // refletidas no operador. Cor, texto e formatação continuam normais.
+        function sanitizeHtmlIfFontLocked(html) {
+            let out = stripReadProgressMarkup(html);
+            if (window.fontSizeLocked) out = stripFontSizeAndFamily(out);
+            return out;
+        }
+
         function sanitizeOutgoingHtml(html) {
-            if (!window.fontSizeLocked) return html;
-            return stripFontSizeAndFamily(html);
+            let out = stripReadProgressMarkup(html);
+            if (window.fontSizeLocked) out = stripFontSizeAndFamily(out);
+            return out;
         }
 
         // Implementação compartilhada da limpeza de font-size / font-family inline.
@@ -1514,11 +1863,6 @@
         function updateToolbarState(state) {
             if (!state) return;
             if (state.alignment) updateAlignmentUI(state.alignment);
-        }
-        
-        function updateAlignmentUI(alignment) {
-            const map = { 'left': 'remote-align-left', 'center': 'remote-align-center', 'right': 'remote-align-right' };
-            if (map[alignment]) setActiveAlignment(map[alignment]);
         }
         
         function applyGlobalPrefs(prefs) {

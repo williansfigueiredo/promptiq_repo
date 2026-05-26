@@ -62,6 +62,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Evita sync duplicado durante transformações em massa (ex.: Uppercase em roteiro inteiro)
   let _bulkEditDepth = 0;
+  let _remoteEchoSuppressDepth = 0;
+  let _remoteUpdateTimer = null;
 
   function beginBulkEdit() {
     _bulkEditDepth++;
@@ -70,6 +72,127 @@ document.addEventListener("DOMContentLoaded", () => {
   function endBulkEdit(done) {
     _bulkEditDepth = Math.max(0, _bulkEditDepth - 1);
     if (_bulkEditDepth === 0 && typeof done === "function") done();
+  }
+
+  function shouldBroadcastToRemotes() {
+    return _remoteEchoSuppressDepth === 0;
+  }
+
+  function runWithoutRemoteBroadcast(fn) {
+    _remoteEchoSuppressDepth++;
+    try {
+      return fn();
+    } finally {
+      _remoteEchoSuppressDepth = Math.max(0, _remoteEchoSuppressDepth - 1);
+    }
+  }
+
+  function normalizeRemoteEditorHtml(html) {
+    if (!html || typeof html !== "string") return "";
+    try {
+      const temp = document.createElement("div");
+      temp.innerHTML = html;
+      temp.querySelectorAll("[style]").forEach((el) => {
+        let s = el.getAttribute("style") || "";
+        s = s.replace(/font-size\s*:[^;]+;?/gi, "");
+        s = s.replace(/line-height\s*:[^;]+;?/gi, "");
+        s = s.trim().replace(/\s*;\s*;/g, ";");
+        if (s.replace(/;/g, "").trim()) el.setAttribute("style", s);
+        else el.removeAttribute("style");
+      });
+      temp.querySelectorAll("font[size]").forEach((el) => el.removeAttribute("size"));
+      temp.querySelectorAll("font[face]").forEach((el) => el.removeAttribute("face"));
+      temp.querySelectorAll("[data-para-idx]").forEach((el) => el.removeAttribute("data-para-idx"));
+      temp.querySelectorAll(".script-read").forEach((el) => el.classList.remove("script-read"));
+      return temp.innerHTML;
+    } catch (_) {
+      return html;
+    }
+  }
+
+  function getOperatorFontSizePt() {
+    const prompter = document.getElementById("prompterText-control");
+    const editor = getActiveTextEditorArea();
+    let size = parseInt(prompter?.style.fontSize, 10);
+    if (!size || size <= 0) size = parseInt(editor?.style.fontSize, 10);
+    if ((!size || size <= 0) && typeof currentFontSizePT === "number" && currentFontSizePT > 0) {
+      size = currentFontSizePT;
+    }
+    if (!size || size <= 0) {
+      size = (typeof globalPrefs !== "undefined" && globalPrefs?.defaultFontSize) || 24;
+    }
+    return size;
+  }
+
+  function rebroadcastReadProgress() {
+    _lastReadUpdateTime = 0;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (typeof updateReadProgress === "function") {
+          updateReadProgress(true, true);
+          return;
+        }
+        const snap = typeof getReadProgressSnapshot === "function" ? getReadProgressSnapshot() : null;
+        if (snap && typeof broadcastReadProgressUpdate === "function") {
+          broadcastReadProgressUpdate(snap);
+        }
+      });
+    });
+  }
+
+  function applyOperatorEditorTypography(editor) {
+    if (!editor) return;
+    const prompter = document.getElementById("prompterText-control");
+    const size = getOperatorFontSizePt();
+    currentFontSizePT = size;
+    editor.style.fontSize = `${size}pt`;
+    editor.style.lineHeight = prompter?.style.lineHeight || editor.style.lineHeight || "1.4";
+    if (prompter?.style.fontFamily) editor.style.fontFamily = prompter.style.fontFamily;
+    if (prompter?.style.textAlign) editor.style.textAlign = prompter.style.textAlign;
+  }
+
+  function applyRemoteEditorUpdate(newHtml) {
+    const editor = getActiveTextEditorArea();
+    if (!editor || typeof newHtml !== "string") return false;
+
+    const normalized = normalizeRemoteEditorHtml(newHtml);
+    if (editor.innerHTML === normalized) return false;
+
+    runWithoutRemoteBroadcast(() => {
+      beginBulkEdit();
+      editor.innerHTML = normalized;
+      applyOperatorEditorTypography(editor);
+      endBulkEdit(() => {
+        if (typeof syncContentToPrompter === "function") {
+          syncContentToPrompter({ skipRemoteBroadcast: true, skipReadProgressRebroadcast: true });
+        }
+        if (typeof applyExactFontSizeToOperator === "function") {
+          applyExactFontSizeToOperator(getOperatorFontSizePt());
+        }
+        rebroadcastReadProgress();
+      });
+    });
+
+    return true;
+  }
+
+  function afterRemoteEditorApplied(editor) {
+    if (!editor) return;
+    flashRedBorder(editor);
+    const container = document.getElementById("document-content-container");
+    if (container) {
+      container.style.transition = "box-shadow 0.2s";
+      container.style.boxShadow = "inset 0 0 0 4px #ff0000";
+      setTimeout(() => (container.style.boxShadow = "none"), 400);
+    }
+    flashRedBorderMultiple(editor, 2);
+    if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
+      markDocumentAsUnsaved(activeDocumentId);
+    }
+    if (typeof scheduleAutoSave === "function") scheduleAutoSave();
+    if (isInternetServerActive && typeof broadcastTextUpdate === "function") {
+      broadcastTextUpdate(getCleanContent(editor));
+    }
   }
 
   // ============================================================
@@ -1021,7 +1144,27 @@ document.addEventListener("DOMContentLoaded", () => {
     decimalScroll: 0,
     animationFrameId: null,
     lastScrollIpcTime: 0,
+    lastReadProgressTime: 0,
+    lastProgressBarTime: 0,
     scrollIpcMs: 50,
+    readProgressMs: 50,
+    progressBarMs: 32,
+    _metricsCache: null,
+    _readProgressHeartbeatId: null,
+
+    invalidateMetrics: function () {
+      this._metricsCache = null;
+    },
+
+    getScrollMetrics: function (textEl, container) {
+      if (this._metricsCache) return this._metricsCache;
+      const contentHeight = textEl.offsetHeight;
+      const containerHeight = container.clientHeight;
+      const maxScroll = Math.max(0, contentHeight - containerHeight + containerHeight / 2);
+      const scrollDenom = Math.max(1, contentHeight - containerHeight);
+      this._metricsCache = { contentHeight, containerHeight, maxScroll, scrollDenom };
+      return this._metricsCache;
+    },
 
     getTextElement: function () {
       return document.getElementById("prompterText-control");
@@ -1037,11 +1180,15 @@ document.addEventListener("DOMContentLoaded", () => {
       const textEl = this.getTextElement();
       if (!textEl) return;
 
-      // Indexa parágrafos para rastreamento de texto lido
+      // Indexa parágrafos para rastreamento de texto lido (uma vez ao iniciar)
       if (typeof ensureParaIndexing === "function") ensureParaIndexing();
+      this.invalidateMetrics();
 
       this.isRunning = true;
       this.lastFrameTime = performance.now();
+      this.lastScrollIpcTime = 0;
+      this.lastReadProgressTime = 0;
+      this.lastProgressBarTime = 0;
 
       // Sincroniza a posição atual para não pular
       this.decimalScroll = container.scrollTop;
@@ -1062,6 +1209,11 @@ document.addEventListener("DOMContentLoaded", () => {
       // Inicia Timer
       handlePlaybackTimer('start');
 
+      requestAnimationFrame(() => {
+        if (typeof updateReadProgress === "function") updateReadProgress(true, true);
+      });
+
+      this.startReadProgressHeartbeat();
       this.loop();
     },
 
@@ -1087,9 +1239,19 @@ document.addEventListener("DOMContentLoaded", () => {
       if (pauseBtn) pauseBtn.classList.add("d-none");
 
       handlePlaybackTimer('pause');
+
+      if (_syncPrompterTimer) {
+        clearTimeout(_syncPrompterTimer);
+        _syncPrompterTimer = null;
+        if (typeof syncContentToPrompter === "function") syncContentToPrompter();
+      }
+
+      if (typeof updateReadProgress === "function") updateReadProgress(true, true);
+      this.stopReadProgressHeartbeat();
     },
 
     stop: function () {
+      this.stopReadProgressHeartbeat();
       this.pause();
       const container = document.querySelector(".prompter-in-control");
       if (container) {
@@ -1121,71 +1283,79 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     },
 
+    startReadProgressHeartbeat: function () {
+      this.stopReadProgressHeartbeat();
+      this._readProgressHeartbeatId = setInterval(() => {
+        if (typeof updateReadProgress === "function") updateReadProgress(true, true);
+      }, 250);
+    },
+
+    stopReadProgressHeartbeat: function () {
+      if (this._readProgressHeartbeatId) {
+        clearInterval(this._readProgressHeartbeatId);
+        this._readProgressHeartbeatId = null;
+      }
+    },
+
     loop: function () {
       if (!this.isRunning) return;
 
       const now = performance.now();
-      const deltaTime = now - this.lastFrameTime; // Tempo desde o último frame (ms)
+      const deltaTime = Math.min(now - this.lastFrameTime, 48);
       this.lastFrameTime = now;
 
-      // === NOVA FÓRMULA DE VELOCIDADE (MAIS LENTA E LINEAR) ===
-      // Antes estava exponencial, o que deixava muito rápido.
-      // Agora: Velocidade 50 = ~150 pixels por segundo.
-      // Fator de multiplicação: 3.0 (Ajuste este número se quiser mais rápido/lento geral)
       const speedMultiplier = 3.0;
-
       const pixelsPerSecond = this.speed * speedMultiplier;
-
-      // Quantos pixels mover neste frame específico?
       const pixelsToScroll = (pixelsPerSecond * deltaTime) / 1000;
 
       const textEl = this.getTextElement();
       const container = document.querySelector(".prompter-in-control");
 
-      if (container && textEl) {
-        if (Math.abs(pixelsToScroll) > 0) {
-          this.decimalScroll += pixelsToScroll;
+      if (container && textEl && Math.abs(pixelsToScroll) > 0.001) {
+        this.decimalScroll += pixelsToScroll;
 
-          const contentHeight = textEl.offsetHeight;
-          const containerHeight = container.clientHeight;
-          // Calcula o limite máximo de scroll (fundo do texto)
-          const maxScroll = Math.max(0, contentHeight - containerHeight + (containerHeight / 2));
+        const metrics = this.getScrollMetrics(textEl, container);
+        const { contentHeight, maxScroll, scrollDenom } = metrics;
 
-          // --- ATUALIZA A BARRA DE PROGRESSO VERTICAL ---
-          // Calcula porcentagem (0 a 1)
-          const scrollRatio = Math.min(1, Math.max(0, this.decimalScroll / (contentHeight - containerHeight)));
+        if (now - this.lastProgressBarTime >= this.progressBarMs) {
+          this.lastProgressBarTime = now;
+          const scrollRatio = Math.min(1, Math.max(0, this.decimalScroll / scrollDenom));
           updateProgressBar(scrollRatio);
-
-          // --- LÓGICA DE LOOP ---
-          if (pixelsToScroll > 0 && this.decimalScroll >= maxScroll) {
-            // Chegou no fim
-            if (globalPrefs && globalPrefs.continuousLoop) {
-              this.decimalScroll = 0; // Loop: Volta ao topo instantaneamente
-            } else {
-              this.pause(); // Para
-              return;
-            }
-          } else if (pixelsToScroll < 0 && this.decimalScroll <= 0) {
-            this.decimalScroll = 0; // Não sobe além do topo
-          }
-
-          // Aplica o movimento
-          textEl.style.transform = `translate3d(0, -${this.decimalScroll}px, 0)`;
         }
+
+        if (pixelsToScroll > 0 && this.decimalScroll >= maxScroll) {
+          if (globalPrefs && globalPrefs.continuousLoop) {
+            this.decimalScroll = 0;
+          } else {
+            this.pause();
+            return;
+          }
+        } else if (pixelsToScroll < 0 && this.decimalScroll <= 0) {
+          this.decimalScroll = 0;
+        }
+
+        textEl.style.transform = `translate3d(0, ${-this.decimalScroll}px, 0)`;
+
+        if (typeof updateReadProgress === "function") updateReadProgress(true, true);
       }
 
-      // Sincroniza scroll com janela de projeção (throttled — evita IPC a 60fps)
-      const textHeight = textEl ? textEl.offsetHeight : 0;
-      const textPercentage = textHeight > 0
-        ? Math.min(1, Math.max(0, this.decimalScroll / textHeight))
-        : 0;
-
-      if (now - this.lastScrollIpcTime >= this.scrollIpcMs) {
+      if (now - this.lastScrollIpcTime >= this.scrollIpcMs && container && textEl) {
         this.lastScrollIpcTime = now;
-        ipcRenderer.send("sync-scroll-position", { textPercent: textPercentage });
+        const { contentHeight } = this.getScrollMetrics(textEl, container);
+        const textPercentage =
+          contentHeight > 0 ? Math.min(1, Math.max(0, this.decimalScroll / contentHeight)) : 0;
+        const readProgress =
+          typeof computeReadProgressPayload === "function" ? computeReadProgressPayload() : null;
+        ipcRenderer.send("sync-scroll-position", { textPercent: textPercentage, readProgress });
       }
 
-      if (typeof updateReadProgress === "function") updateReadProgress();
+      if (
+        now - this.lastReadProgressTime >= this.readProgressMs &&
+        typeof updateReadProgress === "function"
+      ) {
+        this.lastReadProgressTime = now;
+        updateReadProgress(true, true);
+      }
 
       this.animationFrameId = requestAnimationFrame(() => this.loop());
     },
@@ -1198,6 +1368,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // Quando o usuário rola manualmente, sincroniza com a TV
 
   if (prompterContainer) {
+    window.addEventListener("resize", () => {
+      if (typeof ScrollEngine !== "undefined") ScrollEngine.invalidateMetrics();
+    });
+
     prompterContainer.addEventListener("scroll", () => {
       // Só executa se o Play estiver desligado (Scroll Manual)
       if (!ScrollEngine.isRunning) {
@@ -1208,16 +1382,17 @@ document.addEventListener("DOMContentLoaded", () => {
         const textHeight = textEl ? textEl.offsetHeight : el.scrollHeight;
         const textPercentage = textHeight > 0 ? Math.min(1, Math.max(0, el.scrollTop / textHeight)) : 0;
 
-        // Envia porcentagem para a TV
-        ipcRenderer.send('sync-scroll-position', {
-          textPercent: textPercentage
-        });
-
         // Atualiza a posição interna do motor para quando der Play de novo não pular
         ScrollEngine.decimalScroll = el.scrollTop;
 
-        // Atualiza marcação de texto lido no editor
-        if (typeof updateReadProgress === "function") updateReadProgress();
+        const readProgress =
+          typeof computeReadProgressPayload === "function" ? computeReadProgressPayload() : null;
+
+        // Envia porcentagem para a TV + progresso de leitura para roteiristas
+        ipcRenderer.send("sync-scroll-position", { textPercent: textPercentage, readProgress });
+
+        // Atualiza marcação de texto lido no roteirista (tempo real)
+        if (typeof updateReadProgress === "function") updateReadProgress(false, true);
       }
     });
   }
@@ -2696,6 +2871,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  /** HTML idêntico ao do prompter (mesma estrutura de blocos para progresso de leitura). */
+  function getRemoteSyncContent() {
+    const editor = getActiveTextEditorArea();
+    if (!editor) return "";
+    const content = getCleanContent(editor);
+    return typeof processPrompterHtml === "function" ? processPrompterHtml(content) : content;
+  }
+
   function getCleanContent(editor) {
     if (!editor) return "";
     const clone = editor.cloneNode(true);
@@ -2706,6 +2889,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     clone.querySelectorAll("[data-para-idx]").forEach((el) => {
       el.removeAttribute("data-para-idx");
+    });
+    clone.querySelectorAll(".script-read").forEach((el) => {
+      el.classList.remove("script-read");
     });
     return clone.innerHTML;
   }
@@ -3442,15 +3628,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function scheduleSyncContentToPrompter() {
     clearTimeout(_syncPrompterTimer);
-    const delay = ScrollEngine.isRunning ? 300 : 80;
-    _syncPrompterTimer = setTimeout(syncContentToPrompter, delay);
+    if (ScrollEngine.isRunning) return;
+    _syncPrompterTimer = setTimeout(syncContentToPrompter, 80);
   }
 
   function scheduleRemoteTextBroadcast(html) {
-    if (!html || html === _lastRemoteHtml) return;
+    if (!html || !shouldBroadcastToRemotes()) return;
+    if (html === _lastRemoteHtml) return;
     clearTimeout(_remoteTextTimer);
     _remoteTextTimer = setTimeout(() => {
-      if (!html || html === _lastRemoteHtml) return;
+      if (!html || html === _lastRemoteHtml || !shouldBroadcastToRemotes()) return;
       _lastRemoteHtml = html;
       ipcRenderer.send("send-text-to-remote", html);
       if (typeof broadcastTextUpdate === "function") broadcastTextUpdate(html);
@@ -3471,7 +3658,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (typeof currentFontSizePT !== "undefined" && currentFontSizePT > 0) {
-      control.style.fontSize = `${currentFontSizePT}pt`;
+      control.style.fontSize = `${getOperatorFontSizePt()}pt`;
       control.style.lineHeight = "1.4";
     }
 
@@ -3509,9 +3696,11 @@ document.addEventListener("DOMContentLoaded", () => {
    * Sincroniza conteúdo do editor com o prompter
    * Limpa formatação desnecessária e envia para main process
    */
-  function syncContentToPrompter() {
+  function syncContentToPrompter(options = {}) {
     const editor = getActiveTextEditorArea();
     const control = document.getElementById("prompterText-control");
+    const skipRemoteBroadcast =
+      options.skipRemoteBroadcast === true || !shouldBroadcastToRemotes();
 
     if (!editor) {
       if (control && control.innerHTML !== "") {
@@ -3538,8 +3727,12 @@ document.addEventListener("DOMContentLoaded", () => {
     _lastPrompterHtml = finalContent;
     _lastRemoteHtml = finalContent;
 
+    if (typeof ScrollEngine !== "undefined") ScrollEngine.invalidateMetrics();
+
     ipcRenderer.send("update-prompter-content", finalContent);
-    ipcRenderer.send("send-text-to-remote", finalContent);
+    if (!skipRemoteBroadcast) {
+      ipcRenderer.send("send-text-to-remote", finalContent);
+    }
 
     if (typeof currentFontSizePT !== "undefined" && currentFontSizePT > 0) {
       ipcRenderer.send("sync-projection-font-size", currentFontSizePT);
@@ -3558,9 +3751,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       control.innerHTML = finalContent;
 
-      const prompterBlocks = getBlockElements(control);
-      Array.from(prompterBlocks).forEach((block, i) => {
-        block.setAttribute("data-para-idx", i);
+      clearParaIndexing(control);
+      getBlockElements(control).forEach((block, i) => {
+        block.setAttribute("data-para-idx", String(i));
       });
 
       control.querySelectorAll("p, div, h1, h2, h3").forEach((p) => {
@@ -3570,9 +3763,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
       applyPrompterContainerStyles(control, editor);
 
+      ensureParaIndexing();
+      ScrollEngine.invalidateMetrics();
+
       if (wasRunning) {
+        const containerHeight = container ? container.clientHeight : 0;
+        const contentHeight = control.offsetHeight;
+        const maxScroll = Math.max(0, contentHeight - containerHeight + containerHeight / 2);
+        const clampedScroll = Math.min(savedScroll, maxScroll);
+        ScrollEngine.decimalScroll = clampedScroll;
         control.style.willChange = "transform";
-        control.style.transform = `translate3d(0, -${savedScroll}px, 0)`;
+        control.style.transform = `translate3d(0, -${clampedScroll}px, 0)`;
       } else if (savedScroll > 0 && container) {
         container.style.overflowY = "auto";
         control.style.transform = "none";
@@ -3582,16 +3783,119 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (voiceModeActive) prepararRoteiroParaLeitura();
+
+    if (skipRemoteBroadcast && !options.skipReadProgressRebroadcast) {
+      rebroadcastReadProgress();
+    }
   }
 
   // ============================================================
-  // SEÇÃO 33B: RASTREAMENTO DE TEXTO LIDO (TACHADO NO EDITOR)
+  // SEÇÃO 33B: RASTREAMENTO DE TEXTO LIDO (ROTEIRISTA REMOTO)
   // ============================================================
-  // Marca no editor do roteirista os parágrafos que já passaram
-  // pelo cue marker no prompter, aplicando estilo tachado.
+  // Marca no roteirista remoto os parágrafos que já passaram
+  // pelo scroll do prompter (cor mais clara, sem tachado).
 
   let _lastReadUpdateTime = 0;
-  const READ_UPDATE_INTERVAL = 200;
+  const READ_UPDATE_INTERVAL = 100;
+
+  /**
+   * Distância do topo do container até o centro do cue marker (px).
+   * Usa style.top (px/%) para funcionar mesmo com aba Operator oculta.
+   */
+  function getCueOffsetInContainer() {
+    const container = document.querySelector(".prompter-in-control");
+    const marker = document.getElementById("cueMarker-control");
+    if (!container) return window._cachedCueOffsetPx || 0;
+
+    const containerH = container.clientHeight || 0;
+
+    if (marker && marker.style.display !== "none") {
+      const top = marker.style.top || "";
+      if (top.endsWith("%")) {
+        const pct = parseFloat(top);
+        if (!isNaN(pct) && containerH > 0) {
+          window._cachedCueOffsetPx = containerH * (pct / 100);
+          return window._cachedCueOffsetPx;
+        }
+      }
+      const topPx = parseFloat(top);
+      if (!isNaN(topPx)) {
+        window._cachedCueOffsetPx = topPx;
+        return topPx;
+      }
+      if (containerH > 0) {
+        const containerRect = container.getBoundingClientRect();
+        const markerRect = marker.getBoundingClientRect();
+        if (containerRect.height > 0) {
+          window._cachedCueOffsetPx = Math.max(
+            0,
+            markerRect.top + markerRect.height / 2 - containerRect.top
+          );
+          return window._cachedCueOffsetPx;
+        }
+      }
+    }
+
+    if (containerH > 0) {
+      window._cachedCueOffsetPx = containerH * 0.5;
+      return window._cachedCueOffsetPx;
+    }
+    return window._cachedCueOffsetPx || 200;
+  }
+
+  function computeReadLinePx(textEl) {
+    if (!textEl) return 0;
+    const cueOffset = getCueOffsetInContainer();
+    const container = document.querySelector(".prompter-in-control");
+    let scrollPos = ScrollEngine.decimalScroll || 0;
+    if (!ScrollEngine.isRunning && container) {
+      scrollPos = container.scrollTop || scrollPos;
+    }
+    return Math.max(0, scrollPos + cueOffset);
+  }
+
+  /**
+   * Blocos cujo fundo já passou acima da seta verde (mesma regra visual do Operator).
+   */
+  function countBlocksPassedCue(blocks) {
+    if (!blocks || blocks.length === 0) return { readCount: 0, maxReadIndex: -1 };
+
+    const container = document.querySelector(".prompter-in-control");
+    const containerRect = container ? container.getBoundingClientRect() : null;
+    const cueY = getCueViewportY();
+
+    if (containerRect && containerRect.height > 0 && cueY > 0) {
+      let readCount = 0;
+      let maxReadIndex = -1;
+      blocks.forEach((block, i) => {
+        if (block.getBoundingClientRect().bottom <= cueY + 2) {
+          maxReadIndex = i;
+          readCount = i + 1;
+        }
+      });
+      return { readCount, maxReadIndex };
+    }
+
+    const readLinePx = computeReadLinePx(document.getElementById("prompterText-control"));
+    let readCount = 0;
+    let maxReadIndex = -1;
+    let accumulated = 0;
+    blocks.forEach((block, i) => {
+      accumulated += block.offsetHeight;
+      if (accumulated <= readLinePx + 1) {
+        maxReadIndex = i;
+        readCount = i + 1;
+      }
+    });
+    return { readCount, maxReadIndex };
+  }
+
+  function getBlockBottomInContainer(block, container) {
+    if (!block || !container) return 0;
+    const containerRect = container.getBoundingClientRect();
+    const blockRect = block.getBoundingClientRect();
+    return blockRect.bottom - containerRect.top + container.scrollTop;
+  }
 
   /**
    * Retorna a posição Y do cue marker no viewport.
@@ -3611,82 +3915,193 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /**
-   * Retorna os blocos (parágrafos/elementos de bloco) de um container.
-   * Se não houver elementos de bloco, retorna os filhos diretos do container.
+   * Blocos de parágrafo de primeiro nível (evita contar divs aninhados em dobro).
+   * Se um DIV contém parágrafos internos, usa os filhos internos.
    */
   function getBlockElements(container) {
-    let blocks = container.querySelectorAll("p, div, h1, h2, h3, h4, h5, h6");
-    if (blocks.length === 0) {
-      blocks = container.children;
-    }
-    return blocks;
+    if (!container) return [];
+    const blocks = [];
+    const STRUCTURAL = /^(P|DIV|H1|H2|H3|H4|H5|H6|LI|BLOCKQUOTE)$/i;
+
+    Array.from(container.children).forEach((child) => {
+      if (!child || child.nodeType !== 1) return;
+
+      if (/^DIV$/i.test(child.tagName)) {
+        const inner = Array.from(child.children).filter(
+          (el) => el.nodeType === 1 && (STRUCTURAL.test(el.tagName) || hasBlockText(el))
+        );
+        if (inner.length > 0) {
+          inner.forEach((el) => blocks.push(el));
+          return;
+        }
+      }
+
+      if (hasBlockText(child)) blocks.push(child);
+    });
+
+    if (blocks.length > 0) return blocks;
+    if (container.children.length > 0) return Array.from(container.children);
+    return [container];
+  }
+
+  function hasBlockText(el) {
+    if (!el || el.nodeType !== 1) return false;
+    return !!(el.textContent || "").replace(/\u00a0/g, " ").trim() || el.querySelector("br,img,hr");
+  }
+
+  function clearParaIndexing(container) {
+    if (!container) return;
+    container.querySelectorAll("[data-para-idx]").forEach((el) => {
+      el.removeAttribute("data-para-idx");
+    });
   }
 
   /**
-   * Garante que os blocos do prompter estejam indexados com data-para-idx.
-   * Chamado antes de iniciar o rastreamento e dentro do loop se necessário.
+   * Indexa parágrafos no prompter e no editor (mesma ordem para o roteirista).
    */
   function ensureParaIndexing() {
     const textEl = document.getElementById("prompterText-control");
-    if (!textEl) return;
+    const editor = getActiveTextEditorArea();
 
-    const prompterBlocks = getBlockElements(textEl);
-    Array.from(prompterBlocks).forEach((b, i) => b.setAttribute("data-para-idx", i));
-
-    console.log(`📌 Indexação de texto lido: ${prompterBlocks.length} blocos no prompter`);
+    [textEl, editor].forEach((container) => {
+      if (!container) return;
+      clearParaIndexing(container);
+      getBlockElements(container).forEach((block, i) => {
+        block.setAttribute("data-para-idx", String(i));
+      });
+    });
   }
 
-  let _lastReadIndices = "";
+  let _lastReadMaxIdx = -1;
+  let _lastReadCount = 0;
+  let _lastReadTotalBlocks = 0;
+  let _lastReadPercent = -1;
+  let _lastReadLinePx = 0;
+  let _lastContentHeightPx = 0;
+
+  function getReadProgressSnapshot() {
+    if (
+      _lastReadMaxIdx < 0 &&
+      _lastReadCount <= 0 &&
+      _lastReadPercent <= 0 &&
+      _lastReadLinePx <= 0
+    ) {
+      return null;
+    }
+    return {
+      maxReadIndex: _lastReadMaxIdx,
+      readCount: _lastReadCount,
+      totalBlocks: _lastReadTotalBlocks,
+      readPercent: _lastReadPercent,
+      scrollRatio: _lastReadPercent,
+      readLinePx: _lastReadLinePx,
+      contentHeightPx: _lastContentHeightPx,
+    };
+  }
 
   /**
-   * Calcula quais parágrafos do prompter já foram lidos (saíram
-   * pelo topo da tela) e envia os índices para os roteiristas remotos.
-   *
-   * Lógica: a posição de cada bloco é calculada relativa ao topo do
-   * elemento de texto. O "readLine" é quantos pixels já rolaram
-   * (decimalScroll). Quando blockBottom <= readLine, o bloco inteiro
-   * saiu pelo topo → está lido. No scroll=0 nada é lido.
+   * Calcula payload de progresso de leitura a partir do scroll atual do Operator.
    */
-  function updateReadProgress() {
-    const now = performance.now();
-    if (now - _lastReadUpdateTime < READ_UPDATE_INTERVAL) return;
-    _lastReadUpdateTime = now;
-
+  function computeReadProgressPayload() {
     const textEl = document.getElementById("prompterText-control");
-    if (!textEl) return;
+    const container = document.querySelector(".prompter-in-control");
+    if (!textEl) return null;
 
-    let prompterBlocks = textEl.querySelectorAll("[data-para-idx]");
+    const prompterBlocks = getBlockElements(textEl);
+    if (prompterBlocks.length === 0) return null;
 
-    if (prompterBlocks.length === 0) {
-      ensureParaIndexing();
-      prompterBlocks = textEl.querySelectorAll("[data-para-idx]");
-      if (prompterBlocks.length === 0) return;
+    const blockHeightSum = prompterBlocks.reduce((sum, block) => sum + block.offsetHeight, 0);
+    const contentHeightPx = Math.max(textEl.scrollHeight || 0, blockHeightSum, 1);
+    const total = prompterBlocks.length;
+    const readLinePx = computeReadLinePx(textEl);
+
+    let scrollPos = ScrollEngine.decimalScroll || 0;
+    if (!ScrollEngine.isRunning && container) {
+      scrollPos = container.scrollTop || scrollPos;
     }
 
-    const readLine = ScrollEngine.decimalScroll;
-    const readIndices = [];
-    let blockBottom = 0;
+    let readCount = 0;
+    let maxReadIdx = -1;
 
-    prompterBlocks.forEach((block) => {
-      blockBottom += block.offsetHeight;
-      if (blockBottom <= readLine) {
-        readIndices.push(parseInt(block.getAttribute("data-para-idx"), 10));
-      }
-    });
-
-    const key = readIndices.join(",");
-    if (key !== _lastReadIndices) {
-      _lastReadIndices = key;
-      broadcastReadProgressUpdate(readIndices);
+    // Tempo real: compara posição visual dos blocos com a seta verde
+    if (ScrollEngine.isRunning || scrollPos > 0) {
+      const passed = countBlocksPassedCue(prompterBlocks);
+      readCount = passed.readCount;
+      maxReadIdx = passed.maxReadIndex;
     }
+
+    const scrollRatio =
+      total > 0 && readCount > 0
+        ? readCount / total
+        : contentHeightPx > 0
+          ? Math.min(1, readLinePx / contentHeightPx)
+          : 0;
+
+    return {
+      maxReadIndex: maxReadIdx,
+      readCount,
+      totalBlocks: total,
+      readPercent: scrollRatio,
+      scrollRatio,
+      readLinePx,
+      contentHeightPx,
+    };
+  }
+
+  /**
+   * Calcula parágrafos já lidos (passaram pelo cue marker) e envia ao roteirista.
+   * @param {boolean} fromEngine - chamado pelo loop do scroll (sem layout forçado)
+   * @param {boolean} forceBroadcast - reenvia mesmo se valores não mudaram
+   */
+  function updateReadProgress(fromEngine, forceBroadcast) {
+    if (!fromEngine && !forceBroadcast) {
+      const now = performance.now();
+      if (now - _lastReadUpdateTime < READ_UPDATE_INTERVAL) return;
+      _lastReadUpdateTime = now;
+    }
+
+    const payload = computeReadProgressPayload();
+    if (!payload) return;
+
+    const changed =
+      payload.maxReadIndex !== _lastReadMaxIdx ||
+      payload.readCount !== _lastReadCount ||
+      Math.abs(payload.readPercent - _lastReadPercent) > 0.001 ||
+      Math.abs((_lastReadLinePx || 0) - payload.readLinePx) > 0.5 ||
+      Math.abs((_lastContentHeightPx || 0) - payload.contentHeightPx) > 0.5;
+
+    if (changed || forceBroadcast) {
+      _lastReadMaxIdx = payload.maxReadIndex;
+      _lastReadCount = payload.readCount;
+      _lastReadTotalBlocks = payload.totalBlocks || 0;
+      _lastReadPercent = payload.readPercent;
+      _lastReadLinePx = payload.readLinePx;
+      _lastContentHeightPx = payload.contentHeightPx;
+      broadcastReadProgressUpdate(payload);
+    }
+
+    return payload;
   }
 
   /**
    * Reseta o progresso de leitura (envia lista vazia para roteiristas).
    */
   function clearReadProgress() {
-    _lastReadIndices = "";
-    broadcastReadProgressUpdate([]);
+    _lastReadMaxIdx = -1;
+    _lastReadCount = 0;
+    _lastReadTotalBlocks = 0;
+    _lastReadPercent = 0;
+    _lastReadLinePx = 0;
+    _lastContentHeightPx = 0;
+    broadcastReadProgressUpdate({
+      maxReadIndex: -1,
+      readCount: 0,
+      totalBlocks: 0,
+      readPercent: 0,
+      scrollRatio: 0,
+      readLinePx: 0,
+      contentHeightPx: 0,
+    });
   }
 
   // ============================================================
@@ -4500,81 +4915,80 @@ document.addEventListener("DOMContentLoaded", () => {
    * Atualiza posição da barra de progresso do scroll
    * @param {number} ratio - Posição relativa (0 a 1)
    */
+  let _progressBarUi = null;
+
   function updateProgressBar(ratio) {
     // 1. Verifica preferência
     if (!globalPrefs || !globalPrefs.showProgressIndicator) {
-      const existing = document.getElementById('prompter-custom-scrollbar');
-      if (existing) existing.style.display = 'none';
+      if (_progressBarUi && _progressBarUi.container) {
+        _progressBarUi.container.style.display = 'none';
+      } else {
+        const existing = document.getElementById('prompter-custom-scrollbar');
+        if (existing) existing.style.display = 'none';
+      }
       return;
     }
 
-    // 2. Encontra a caixa de texto que rola
     const scrollableBox = document.querySelector('.prompter-in-control');
     if (!scrollableBox) return;
 
-    // 3. O SEGREDO: Usamos o PAI dessa caixa para prender a barra
-    // Assim a barra NÃO rola junto com o texto
     const containerParent = scrollableBox.parentElement;
+    if (!_progressBarUi || !_progressBarUi.container || !_progressBarUi.container.isConnected) {
+      if (getComputedStyle(containerParent).position === 'static') {
+        containerParent.style.position = 'relative';
+      }
 
-    // Garante que o pai tenha posição relativa para segurar a barra absoluta
-    if (getComputedStyle(containerParent).position === 'static') {
-      containerParent.style.position = 'relative';
+      let barContainer = document.getElementById('prompter-custom-scrollbar');
+      let barThumb = document.getElementById('prompter-scrollbar-thumb');
+
+      if (!barContainer) {
+        barContainer = document.createElement('div');
+        barContainer.id = 'prompter-custom-scrollbar';
+        barContainer.style.position = 'absolute';
+        barContainer.style.top = '0';
+        barContainer.style.bottom = '0';
+        barContainer.style.left = '0';
+        barContainer.style.right = 'auto';
+        barContainer.style.width = '10px';
+        const isInverted = operatorState && operatorState.isInverted;
+        barContainer.style.backgroundColor = isInverted ? '#FFFFFF' : '#000000';
+        barContainer.style.zIndex = '9999';
+        barContainer.style.pointerEvents = 'none';
+
+        barThumb = document.createElement('div');
+        barThumb.id = 'prompter-scrollbar-thumb';
+        barThumb.style.position = 'absolute';
+        barThumb.style.width = '100%';
+        barThumb.style.height = '30px';
+        const thumbColor = globalPrefs && globalPrefs.progressThumbColor
+          ? globalPrefs.progressThumbColor
+          : (isInverted ? '#000000' : '#FFFFFF');
+        barThumb.style.backgroundColor = thumbColor;
+        barThumb.style.top = '0px';
+        barThumb.style.willChange = 'transform';
+        barThumb.style.boxShadow = '2px 2px 5px rgba(0,0,0,0.5)';
+
+        barContainer.appendChild(barThumb);
+        containerParent.appendChild(barContainer);
+      }
+
+      _progressBarUi = {
+        container: barContainer,
+        thumb: barThumb,
+        parent: containerParent,
+      };
     }
 
-    let barContainer = document.getElementById('prompter-custom-scrollbar');
-    let barThumb = document.getElementById('prompter-scrollbar-thumb');
+    const { container, thumb, parent } = _progressBarUi;
+    container.style.display = 'block';
 
-    // 4. CRIA SE NÃO EXISTIR
-    if (!barContainer) {
-      // TRILHO (Fundo da barra)
-      barContainer = document.createElement('div');
-      barContainer.id = 'prompter-custom-scrollbar';
-
-      // POSICIONAMENTO: LADO ESQUERDO (Junto com a Seta)
-      barContainer.style.position = 'absolute';
-      barContainer.style.top = '0';
-      barContainer.style.bottom = '0';
-      barContainer.style.left = '0';   // <--- ESQUERDA
-      barContainer.style.right = 'auto';
-
-      barContainer.style.width = '10px';
-      // Cor adapta ao estado de inversão
-      const isInverted = operatorState && operatorState.isInverted;
-      barContainer.style.backgroundColor = isInverted ? '#FFFFFF' : '#000000';
-      barContainer.style.zIndex = '9999'; // Acima de tudo
-      barContainer.style.pointerEvents = 'none'; // Não bloqueia cliques
-
-      // O INDICADOR (Quadradinho)
-      barThumb = document.createElement('div');
-      barThumb.id = 'prompter-scrollbar-thumb';
-      barThumb.style.position = 'absolute';
-      barThumb.style.width = '100%';
-      barThumb.style.height = '30px'; // Um pouco maior para visibilidade
-      // Cor adapta: usa progressThumbColor se definido, senão usa inversão
-      const thumbColor = globalPrefs && globalPrefs.progressThumbColor 
-        ? globalPrefs.progressThumbColor 
-        : (isInverted ? '#000000' : '#FFFFFF');
-      barThumb.style.backgroundColor = thumbColor;
-      barThumb.style.top = '0px';
-      barThumb.style.boxShadow = '2px 2px 5px rgba(0,0,0,0.5)';
-
-      barContainer.appendChild(barThumb);
-      containerParent.appendChild(barContainer); // Anexa ao PAI (não ao texto)
-    }
-
-    barContainer.style.display = 'block';
-
-    // 5. ATUALIZA A POSIÇÃO
-    // Usa a altura do pai para calcular
-    const trackHeight = containerParent.clientHeight;
+    const trackHeight = parent.clientHeight;
     const thumbHeight = 40;
-    const availableHeight = trackHeight - thumbHeight;
-
-    // Garante que ratio esteja entre 0 e 1
+    const availableHeight = Math.max(0, trackHeight - thumbHeight);
     const safeRatio = Math.min(1, Math.max(0, ratio));
     const topPos = safeRatio * availableHeight;
 
-    if (barThumb) barThumb.style.top = `${topPos}px`;
+    if (thumb) thumb.style.transform = `translate3d(0, ${topPos}px, 0)`;
   }
 
 
@@ -5693,19 +6107,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   ipcRenderer.on("update-text-from-remote", (event, newText) => {
     const editor = getActiveTextEditorArea();
-    if (editor) {
-      editor.innerText = newText;
-
-      // 🔴 FEEDBACK VISUAL: Borda vermelha piscando
-      flashRedBorder(editor);
-
-      // Marca documento como modificado (bolinha laranja na aba + autosave)
-      if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
-        markDocumentAsUnsaved(activeDocumentId);
-      }
-      if (typeof scheduleAutoSave === "function") scheduleAutoSave();
-
-      if (typeof syncContentToPrompter === "function") syncContentToPrompter();
+    if (!editor || typeof newText !== "string") return;
+    if (applyRemoteEditorUpdate(newText)) {
+      afterRemoteEditorApplied(editor);
     }
   });
 
@@ -5798,9 +6202,15 @@ document.addEventListener("DOMContentLoaded", () => {
   // 2. SERVIDOR PEDE O TEXTO (Quando o roteirista conecta)
   // Agora envia Full-Sync para sincronização pixel-perfect
   ipcRenderer.on("request-text-for-remote", () => {
-    // Envia texto simples para compatibilidade
-    const text = getEditorContent();
+    const text = getRemoteSyncContent();
     ipcRenderer.send("send-text-to-remote", text);
+
+    if (typeof updateReadProgress === "function") {
+      updateReadProgress(true, true);
+    } else {
+      const readSnapshot = getReadProgressSnapshot();
+      if (readSnapshot) broadcastReadProgressUpdate(readSnapshot);
+    }
 
     // NOVO: Envia Full-Sync para sincronização pixel-perfect
     if (typeof broadcastFullSync === 'function') {
@@ -5818,10 +6228,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Coleta o estado atual do editor
     const fullState = {
-      htmlContent: editor.innerHTML || "",
+      htmlContent: getRemoteSyncContent(),
       fontSize: parseInt(editor.style.fontSize) || currentFontSizePT || 24,
       fontFamily: editor.style.fontFamily || "Arial",
-      textAlign: editor.style.textAlign || "left"
+      textAlign: editor.style.textAlign || "left",
+      readProgress:
+        typeof computeReadProgressPayload === "function"
+          ? computeReadProgressPayload()
+          : getReadProgressSnapshot(),
     };
 
     console.log('📤 Enviando estado completo para remoto:', fullState.fontSize + 'pt');
@@ -5831,40 +6245,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // ✅ SOLUÇÃO 1: Quando recebe atualização do roteirista (Local Wi-Fi)
   ipcRenderer.on("update-from-remote", (event, newText) => {
     const editor = getActiveTextEditorArea();
+    if (!editor) return;
 
-    // Evita loop infinito: só atualiza se for diferente
-    // Compara innerHTML com innerHTML para manter consistência
-    if (editor && editor.innerHTML !== newText) {
-      editor.innerHTML = newText;
-
-      // 🔴 FEEDBACK VISUAL: Borda vermelha piscando
-      flashRedBorder(editor);
-
-      // Sinal Visual de Alerta (Borda Vermelha)
-      const container = document.getElementById("document-content-container");
-      if (container) {
-        container.style.transition = "box-shadow 0.2s";
-        container.style.boxShadow = "inset 0 0 0 4px #ff0000";
-        setTimeout(() => (container.style.boxShadow = "none"), 400);
-      }
-      flashRedBorderMultiple(editor, 2);
-
-      // Marca documento como modificado (bolinha laranja na aba + autosave + Ctrl+S)
-      if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
-        markDocumentAsUnsaved(activeDocumentId);
-      }
-      if (typeof scheduleAutoSave === "function") scheduleAutoSave();
-
-      // 🔥 O PASSO CRUCIAL: Manda atualizar a janela do Operador IMEDIATAMENTE
-      if (typeof syncContentToPrompter === "function") {
-        syncContentToPrompter();
-      }
-
-      // 🔗 PROPAGAÇÃO: Se Internet estiver ativo, envia para os peers WebRTC também
-      if (isInternetServerActive && typeof broadcastTextUpdate === "function") {
-        broadcastTextUpdate(newText);
-      }
-    }
+    clearTimeout(_remoteUpdateTimer);
+    _remoteUpdateTimer = setTimeout(() => {
+      if (!applyRemoteEditorUpdate(newText)) return;
+      afterRemoteEditorApplied(editor);
+    }, 80);
   });
 
   // ✅ SOLUÇÃO 2: Quando recebe atualização de ESTILO do roteirista (fonte, tamanho)
@@ -5938,6 +6325,9 @@ document.addEventListener("DOMContentLoaded", () => {
       syncContentToPrompter();
     }
   });
+
+  // Progresso de leitura vai SOMENTE para roteiristas via Socket.io (browser :3001).
+  // Não aplicar cinza no editor local — só no remote.html.
 
 
   // ============================================================
@@ -6256,6 +6646,12 @@ document.addEventListener("DOMContentLoaded", () => {
         console.log("UsuÃ¡rio desconectado:", userId);
       }
     });
+
+    // ⭐ NOVO: Ouve progresso de leitura do prompter para marcar texto como lido
+    signalingSocket.on('read-progress', (payload) => {
+      // Internet: progresso vai ao roteirista web via signaling — não marcar editor local
+      void payload;
+    });
   }
 
   function createPeerConnection(targetId, isInitiator) {
@@ -6303,11 +6699,12 @@ document.addEventListener("DOMContentLoaded", () => {
         channel.send(JSON.stringify({ type: 'update', content: editor.innerHTML }));
       }
 
-      if (_lastReadIndices) {
-        const indices = _lastReadIndices.split(",").filter(Boolean).map(Number);
-        channel.send(JSON.stringify({ type: "read-progress", readIndices: indices }));
+      const readSnapshot = getReadProgressSnapshot();
+      if (readSnapshot) {
+        const payload = normalizeReadProgressPayload(readSnapshot);
+        channel.send(JSON.stringify({ type: "read-progress", ...payload }));
         if (signalingSocket && signalingSocket.connected) {
-          signalingSocket.emit("read-progress", { readIndices: indices });
+          signalingSocket.emit("read-progress", payload);
         }
       }
 
@@ -6354,43 +6751,26 @@ document.addEventListener("DOMContentLoaded", () => {
       if (data.type === 'update') {
         const editor = getActiveTextEditorArea();
 
-        if (editor && editor.innerHTML !== data.content) {
-          editor.innerHTML = data.content;
+        if (!editor || !applyRemoteEditorUpdate(data.content)) return;
 
-          flashRedBorder(editor);
+        afterRemoteEditorApplied(editor);
 
-          const container = document.getElementById(`doc-${activeDocumentId}`);
-          if (container) {
-            flashRedBorder(container);
-          }
+        broadcastTextUpdate(getCleanContent(editor), userId);
 
-          // Marca documento como modificado (bolinha laranja na aba + autosave + Ctrl+S)
-          if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
-            markDocumentAsUnsaved(activeDocumentId);
-          }
-          if (typeof scheduleAutoSave === "function") scheduleAutoSave();
-
-          if (typeof syncContentToPrompter === 'function') syncContentToPrompter();
-
-          // Propaga para outros peers WebRTC
-          broadcastTextUpdate(data.content, userId);
-
-          // 🔗 PROPAGAÇÃO: Se Local estiver ativo, envia para Wi-Fi também
-          if (isLocalServerActive) {
-            ipcRenderer.send('send-text-to-remote', data.content);
-          }
-
-          const remoteName = (peers[userId] && peers[userId].userName) ? peers[userId].userName : "Roteirista (Web)";
-
-          addLogEntry({
-            msg: `${remoteName} is typing...`,
-            type: 'edit',
-            source: 'Internet',
-            user: remoteName
-          });
-
-          flashRedBorderMultiple(editor, 2);
+        if (isLocalServerActive && shouldBroadcastToRemotes()) {
+          ipcRenderer.send('send-text-to-remote', getCleanContent(editor));
         }
+
+        const remoteName = (peers[userId] && peers[userId].userName) ? peers[userId].userName : "Roteirista (Web)";
+
+        addLogEntry({
+          msg: `${remoteName} is typing...`,
+          type: 'edit',
+          source: 'Internet',
+          user: remoteName
+        });
+      } else if (data.type === 'read-progress') {
+        // Progresso enviado pelo host ao roteirista web — não aplicar no editor local
       }
     };
   }
@@ -6412,21 +6792,47 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /**
-   * Envia progresso de leitura para roteiristas (Local + Internet).
-   * Local: IPC → Socket.io na porta 3001
-   * Internet: Socket.io no servidor de sinalização + WebRTC data channel
+   * Normaliza payload de leitura (inclui readIndices para servidor/script legado).
    */
-  function broadcastReadProgressUpdate(readIndices) {
-    ipcRenderer.send("send-read-progress-to-remote", readIndices);
+  function normalizeReadProgressPayload(payload) {
+    const data =
+      typeof payload === "number"
+        ? { maxReadIndex: payload, readPercent: payload < 0 ? 0 : undefined }
+        : { ...(payload || {}) };
+
+    if (typeof data.maxReadIndex === "number") {
+      data.readIndices =
+        data.maxReadIndex >= 0
+          ? Array.from({ length: data.maxReadIndex + 1 }, (_, i) => i)
+          : [];
+    } else if (!Array.isArray(data.readIndices)) {
+      data.readIndices = [];
+    }
+
+    if (typeof data.readCount !== "number" && typeof data.maxReadIndex === "number" && data.maxReadIndex >= 0) {
+      data.readCount = data.maxReadIndex + 1;
+    }
+
+    return data;
+  }
+
+  /**
+   * Envia progresso de leitura para roteiristas (Local + Internet).
+   * Payload: { maxReadIndex, readPercent, readIndices } ou número legado.
+   */
+  function broadcastReadProgressUpdate(payload) {
+    const data = normalizeReadProgressPayload(payload);
+
+    ipcRenderer.send("send-read-progress-to-remote", data);
 
     if (signalingSocket && signalingSocket.connected) {
-      signalingSocket.emit("read-progress", { readIndices });
+      signalingSocket.emit("read-progress", data);
     }
 
     Object.keys(peers).forEach((id) => {
       const peer = peers[id];
       if (peer.dataChannel && peer.dataChannel.readyState === "open") {
-        peer.dataChannel.send(JSON.stringify({ type: "read-progress", readIndices }));
+        peer.dataChannel.send(JSON.stringify({ type: "read-progress", ...data }));
       }
     });
   }
