@@ -1583,9 +1583,13 @@ ipcMain.handle('toggle-server', async (event, mode) => {
               socket.userName = userData.name || "Anonymous";
               socket.emit('login-success', true);
 
-              if (currentReadProgress) {
-                socket.emit('server-read-progress', currentReadProgress);
-              }
+              // Sempre envia o estado atual — se não há progresso, envia zero
+              // para garantir que o remoto sincronize (evita dados de sessão anterior).
+              socket.emit('server-read-progress', currentReadProgress || {
+                readCount: 0, maxReadIndex: -1, totalBlocks: 0,
+                scrollRatio: 0, readPercent: 0, readLinePx: 0,
+                contentHeightPx: 0, scrollPos: 0, isScrolling: false
+              });
 
               // Busca janela ativa no momento (não guarda referência antiga)
               const mainWin = BrowserWindow.getAllWindows().find(w => !w.isDestroyed());
@@ -1658,12 +1662,26 @@ ipcMain.handle('toggle-server', async (event, mode) => {
   }
 });
 
+let _lastEmitLogTime = 0;
+
 function emitReadProgressToRemotes() {
   if (!remoteIo || currentReadProgress == null) return;
   if (currentSessionID) {
     remoteIo.to(currentSessionID).emit('server-read-progress', currentReadProgress);
   }
   remoteIo.emit('server-read-progress', currentReadProgress);
+
+  const now = Date.now();
+  if (now - _lastEmitLogTime > 3000) {
+    _lastEmitLogTime = now;
+    console.log('[ReadProgress] emitted to remotes:', {
+      readCount: currentReadProgress.readCount,
+      scrollRatio: currentReadProgress.scrollRatio,
+      readLinePx: currentReadProgress.readLinePx,
+      scrollPos: currentReadProgress.scrollPos,
+      isScrolling: currentReadProgress.isScrolling
+    });
+  }
 }
 
 function applyReadProgressFromPayload(payload) {

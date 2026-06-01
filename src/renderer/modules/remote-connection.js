@@ -269,6 +269,28 @@ const RemoteConnectionModule = (function() {
     // ============================================================
     // MODO INTERNET (WEBRTC) - FUNÇÕES
     // ============================================================
+
+    function getStyledEditorHtml(editor) {
+        if (!editor) return "";
+
+        const html = editor.innerHTML || "";
+        const computed = window.getComputedStyle(editor);
+        const styleParts = [];
+
+        if (computed.fontWeight && computed.fontWeight !== "400" && computed.fontWeight !== "normal") {
+            styleParts.push(`font-weight:${computed.fontWeight}`);
+        }
+        if (computed.fontStyle && computed.fontStyle !== "normal") {
+            styleParts.push(`font-style:${computed.fontStyle}`);
+        }
+        if (computed.textDecorationLine && computed.textDecorationLine !== "none") {
+            styleParts.push(`text-decoration:${computed.textDecoration}`);
+        }
+
+        return styleParts.length
+            ? `<div data-host-style="1" style="${styleParts.join(";")}">${html}</div>`
+            : html;
+    }
     
     async function startWebRTCConnection() {
         const hasInternet = await checkInternetConnection();
@@ -543,7 +565,7 @@ const RemoteConnectionModule = (function() {
             if (editor) {
                 channel.send(JSON.stringify({ 
                     type: 'update', 
-                    content: editor.innerHTML 
+                    content: getStyledEditorHtml(editor)
                 }));
             }
             
@@ -794,7 +816,7 @@ const RemoteConnectionModule = (function() {
         ipcRenderer.on("request-text-for-remote", () => {
             const editor = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
             if (editor) {
-                ipcRenderer.send("send-text-to-remote", editor.innerHTML);
+                ipcRenderer.send("send-text-to-remote", getStyledEditorHtml(editor));
             }
         });
 

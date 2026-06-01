@@ -160,8 +160,19 @@ const DocumentManager = (function() {
         
         // Evento: Colar texto (limpa formatação indesejada apenas do conteúdo colado)
         editor.addEventListener("paste", (e) => {
+            // ===================================================================
+            // PROTEÇÃO DE PASTE: Evitar reset de scroll durante playback
+            // ===================================================================
             // Marca os elementos existentes antes do paste
             const existingElements = new Set(editor.querySelectorAll("*"));
+            
+            // Capturar estado de playback ANTES do paste
+            const wasScrolling = typeof ScrollEngine !== "undefined" && ScrollEngine.isRunning;
+            const scrollPosBefore = (typeof ScrollEngine !== "undefined") ? ScrollEngine.decimalScroll : 0;
+            
+            if (wasScrolling) {
+              console.log(`📋 Paste detectado durante playback. Scroll protegido em: ${scrollPosBefore}px`);
+            }
             
             setTimeout(() => {
                 // Só limpa formatação dos elementos NOVOS (colados)
@@ -179,7 +190,32 @@ const DocumentManager = (function() {
                 window.getSelection().removeAllRanges();
                 if (syncContentToPrompter) syncContentToPrompter();
                 if (updateFormatMenuState) updateFormatMenuState();
-            }, 10);
+                
+                // ===================================================================
+                // Ativar proteção de scroll MAIS LONGA para paste (400ms vs 250ms)
+                // Paste é uma mudança maior, precisa de mais tempo
+                // ===================================================================
+                if (wasScrolling && typeof ScrollEngine !== "undefined") {
+                  ScrollEngine.protectScrollDuringUpdate(400);
+                  console.log(`✅ Proteção de scroll PASTE ativada por 400ms`);
+                  
+                  // Verificação extra após o paste
+                  requestAnimationFrame(() => {
+                    const control = document.getElementById("prompterText-control");
+                    const container = document.querySelector(".prompter-in-control");
+                    if (control && container && ScrollEngine.isRunning) {
+                      const scrollDiff = Math.abs(ScrollEngine.decimalScroll - scrollPosBefore);
+                      if (scrollDiff > 15) {
+                        console.warn(`⚠️ Paste causou alteração de scroll (${scrollDiff}px). Restaurando...`);
+                        ScrollEngine.decimalScroll = scrollPosBefore;
+                        control.style.transform = `translate3d(0, -${scrollPosBefore}px, 0)`;
+                      } else {
+                        console.log(`✅ Scroll mantido após paste: ${ScrollEngine.decimalScroll}px`);
+                      }
+                    }
+                  });
+                }
+            }, 20);  // Aumentado de 10ms para 20ms (paste é mudança maior)
         });
 
         // Evento: Digitação (marca como não salvo)

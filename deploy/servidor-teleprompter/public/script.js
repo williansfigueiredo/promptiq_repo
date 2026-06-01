@@ -184,7 +184,7 @@ function getBlockElementsDirect(container) {
 
         if (/^DIV$/i.test(child.tagName)) {
             const inner = Array.from(child.children).filter(
-                (el) => el.nodeType === 1 && (STRUCTURAL.test(el.tagName) || hasBlockText(el))
+                (el) => el.nodeType === 1 && STRUCTURAL.test(el.tagName)
             );
             if (inner.length > 0) {
                 inner.forEach((el) => blocks.push(el));
@@ -198,6 +198,38 @@ function getBlockElementsDirect(container) {
     if (blocks.length > 0) return blocks;
     if (container.children.length > 0) return Array.from(container.children);
     return [container];
+}
+
+function normalizeReadBlocksIfNeeded() {
+    if (!editor) return;
+    const blocks = getBlockElementsDirect(editor);
+    if (blocks.length > 1) return;
+
+    const target = blocks[0] || editor;
+    const html = target === editor ? editor.innerHTML : target.innerHTML;
+    if (!html || !/<br\s*\/?>/i.test(html)) return;
+
+    const parts = html
+        .split(/<br\s*\/?>/i)
+        .map((part) => part.trim())
+        .filter((part) => part && part !== '&nbsp;');
+
+    if (parts.length <= 1) return;
+
+    const fragment = document.createDocumentFragment();
+    parts.forEach((part) => {
+        const div = document.createElement('div');
+        div.setAttribute('data-read-block', '1');
+        div.innerHTML = part;
+        fragment.appendChild(div);
+    });
+
+    if (target === editor) {
+        editor.innerHTML = '';
+        editor.appendChild(fragment);
+    } else {
+        target.replaceWith(fragment);
+    }
 }
 
 function resolveMaxReadIdx(payload, blockCount) {
@@ -335,6 +367,7 @@ function indexEditorBlocks() {
 
 function ensureBlockIndexing() {
     if (!editor) return [];
+    normalizeReadBlocksIfNeeded();
     const blocks = getBlockElementsDirect(editor);
     blocks.forEach((block, i) => {
         block.setAttribute('data-para-idx', String(i));
@@ -441,53 +474,52 @@ function computeReadCountFromPayload(payload, blocks) {
     if (blockCount <= 0 || !payload || typeof payload !== 'object') return 0;
 
     const totalHeight = blocks.reduce((sum, block) => sum + block.offsetHeight, 0);
-    if (totalHeight <= 0) return 0;
-
-    const scrolling =
-        payload.isScrolling === true ||
-        (typeof payload.scrollPos === 'number' && payload.scrollPos > 1) ||
-        (typeof payload.readCount === 'number' && payload.readCount > 0) ||
-        (typeof payload.maxReadIndex === 'number' && payload.maxReadIndex >= 0);
-
-    let readLinePx = 0;
-    if (scrolling) {
-        if (typeof payload.readLinePx === 'number' && payload.readLinePx > 0) {
-            const opHeight =
-                typeof payload.contentHeightPx === 'number' && payload.contentHeightPx > 0
-                    ? payload.contentHeightPx
-                    : totalHeight;
-            readLinePx = (payload.readLinePx / opHeight) * totalHeight;
-        } else if (typeof payload.scrollRatio === 'number' && payload.scrollRatio > 0) {
-            readLinePx = payload.scrollRatio * totalHeight;
-        } else if (typeof payload.readPercent === 'number' && payload.readPercent > 0) {
-            readLinePx = payload.readPercent * totalHeight;
+    if (totalHeight <= 0) {
+        const scrolled = payload.isScrolling === true ||
+            (typeof payload.scrollPos === 'number' && payload.scrollPos > 1);
+        if (!scrolled) return 0;
+        if (typeof payload.readCount === 'number' && payload.readCount > 0) {
+            if (payload.totalBlocks > 0 && payload.totalBlocks !== blockCount) {
+                return Math.min(blockCount, Math.max(1, Math.round((payload.readCount / payload.totalBlocks) * blockCount)));
+            }
+            return Math.min(payload.readCount, blockCount);
         }
+        if (typeof payload.scrollRatio === 'number' && payload.scrollRatio > 0.01) {
+            return Math.min(blockCount, Math.max(1, Math.round(payload.scrollRatio * blockCount)));
+        }
+        return 0;
     }
 
-    if (readLinePx > 0) {
-        let readCount = 0;
-        let accumulated = 0;
-        blocks.forEach((block, idx) => {
-            accumulated += block.offsetHeight;
-            if (accumulated <= readLinePx + 1) readCount = idx + 1;
+    // 1) Fonte principal: pixels reais já scrollados no Operator.
+    if (typeof payload.readLinePx === 'number' && payload.readLinePx > 1) {
+        const opH = (typeof payload.contentHeightPx === 'number' && payload.contentHeightPx > 10)
+            ? payload.contentHeightPx : totalHeight;
+        const px = (payload.readLinePx / opH) * totalHeight;
+        let count = 0, acc = 0;
+        blocks.forEach((b, i) => {
+            acc += b.offsetHeight;
+            if (acc <= px + 1) count = i + 1;
         });
-        if (readCount > 0) return readCount;
+        if (count > 0) return count;
     }
 
+    // 2) Fallback por proporção real do scroll.
+    if (typeof payload.scrollRatio === 'number' && payload.scrollRatio > 0.001) {
+        const px = payload.scrollRatio * totalHeight;
+        let count = 0, acc = 0;
+        blocks.forEach((b, i) => {
+            acc += b.offsetHeight;
+            if (acc <= px + 1) count = i + 1;
+        });
+        if (count > 0) return count;
+    }
+
+    // 3) Último fallback: contagem de blocos enviada pelo Operator.
     if (typeof payload.readCount === 'number' && payload.readCount > 0) {
         if (payload.totalBlocks > 0 && payload.totalBlocks !== blockCount) {
-            const ratio = payload.readCount / payload.totalBlocks;
-            return Math.min(blockCount, Math.max(0, Math.round(ratio * blockCount)));
+            return Math.min(blockCount, Math.max(0, Math.round((payload.readCount / payload.totalBlocks) * blockCount)));
         }
         return Math.min(payload.readCount, blockCount);
-    }
-
-    if (typeof payload.maxReadIndex === 'number' && payload.maxReadIndex >= 0) {
-        if (payload.totalBlocks > 0 && payload.totalBlocks !== blockCount) {
-            const ratio = (payload.maxReadIndex + 1) / payload.totalBlocks;
-            return Math.min(blockCount, Math.max(0, Math.round(ratio * blockCount)));
-        }
-        return Math.min(payload.maxReadIndex + 1, blockCount);
     }
 
     return 0;

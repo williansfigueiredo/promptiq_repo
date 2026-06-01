@@ -64,21 +64,33 @@ const TabNavigationManager = {
     // =========================================
     // RASTREIO DO CARET (CURSOR PISCANDO) NO EDITOR
     // =========================================
-    // Rastreia o caret no editor (usado apenas por APIs explícitas, ex. menu
-    // "Go to Operator"). Trocar de aba NÃO deve saltar o scroll do Operator.
-    document.addEventListener('selectionchange', () => {
+    // Rastreia o caret no editor de forma mais robusta
+    // Ativa em múltiplos eventos para garantir captura
+    const updateCaretPosition = () => {
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) return;
-      const range = sel.getRangeAt(0);
-      const node = range.startContainer;
-      const parent = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-      const editor = parent && parent.closest ? parent.closest('.text-editor-area') : null;
-      if (editor) {
-        this.lastCaretEditor = editor;
-        this.lastCaretNode = node;
-        this.lastCaretOffset = range.startOffset;
+      
+      try {
+        const range = sel.getRangeAt(0);
+        const node = range.startContainer;
+        const parent = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+        const editor = parent && parent.closest ? parent.closest('.text-editor-area') : null;
+        
+        if (editor && editor.contains(node)) {
+          this.lastCaretEditor = editor;
+          this.lastCaretNode = node;
+          this.lastCaretOffset = range.startOffset;
+        }
+      } catch (err) {
+        // Ignorar erros de seleção inválida
       }
-    });
+    };
+    
+    // Rastreia em múltiplos eventos para máxima cobertura
+    document.addEventListener('selectionchange', updateCaretPosition);
+    document.addEventListener('click', updateCaretPosition);
+    document.addEventListener('keyup', updateCaretPosition);
+    document.addEventListener('mouseup', updateCaretPosition);
 
     // =========================================
     // EVENTOS DE TROCA DE ABA
@@ -146,6 +158,15 @@ const TabNavigationManager = {
     if (tabOperatorTrigger) {
       // Pré-aplica posição ANTES da aba aparecer (evita salto visual)
       tabOperatorTrigger.addEventListener('show.bs.tab', () => {
+        // ===================================================================
+        // CORREÇÃO: Tentar usar caret do editor se não há navegação pendente
+        // ===================================================================
+        // Se o usuário saiu da aba edit deixando o cursor em uma posição,
+        // detectar isso e navegar automaticamente
+        if (this.pendingWordIndex === null) {
+          this.tryUseCaretAsPendingNavigation();
+        }
+        
         // Restaura a posição salva ao voltar — sem saltar para o caret do Edit.
         // Navegação por palavra só via menu "Go to Operator" ou navigateToWordIndex().
         this.preApplyScrollPosition();
@@ -256,19 +277,30 @@ const TabNavigationManager = {
    */
   tryUseCaretAsPendingNavigation: function () {
     // Se já há navegação pendente (vinda do menu de contexto), respeita.
-    if (this.pendingWordIndex !== null) return;
-    if (!this.lastCaretEditor || !this.lastCaretNode) return;
+    if (this.pendingWordIndex !== null) {
+      console.log('ℹ️ Navegação pendente já existe, ignorando caret');
+      return;
+    }
+    if (!this.lastCaretEditor || !this.lastCaretNode) {
+      console.log('ℹ️ Nenhum caret rastreado no editor');
+      return;
+    }
+    
     // Confirma que o caret ainda está num elemento existente no DOM.
     if (!document.contains(this.lastCaretEditor) || !document.contains(this.lastCaretNode)) {
+      console.log('⚠️ Caret armazenado não está mais no DOM');
       this.lastCaretEditor = null;
       this.lastCaretNode = null;
       return;
     }
+    
     try {
       const fakeRange = document.createRange();
       fakeRange.setStart(this.lastCaretNode, this.lastCaretOffset);
       fakeRange.collapse(true);
+      
       const wordIndex = this.calculateWordIndex(this.lastCaretEditor, fakeRange);
+      
       if (wordIndex !== null && wordIndex >= 0) {
         // Pega um texto de contexto perto do caret (até 30 chars) para
         // fallback em findWordByText caso o índice não bata.
@@ -276,12 +308,20 @@ const TabNavigationManager = {
           .substr(Math.max(0, this.lastCaretOffset - 15), 30)
           .trim()
           .split(/\s+/)[0] || '';
+        
         this.pendingWordIndex = wordIndex;
         this.pendingNavigationContext = { text: contextText, timestamp: Date.now() };
-        console.log(`📍 Caret detectado no editor — navegando para palavra #${wordIndex} ("${contextText}")`);
+        
+        console.log(`✅ Caret detectado no editor — navegando para palavra #${wordIndex} ("${contextText}")`);
+        return;
+      } else {
+        console.warn('⚠️ calculateWordIndex retornou null ou index inválido');
       }
     } catch (err) {
-      console.warn('tryUseCaretAsPendingNavigation: range inválido', err);
+      console.warn('⚠️ tryUseCaretAsPendingNavigation: erro ao processar caret', err);
+      // Limpar dados inválidos
+      this.lastCaretEditor = null;
+      this.lastCaretNode = null;
     }
   },
 
@@ -300,6 +340,12 @@ const TabNavigationManager = {
    */
   calculateWordIndex: function (editor, range) {
     try {
+      // Validação básica
+      if (!editor || !range || !range.startContainer) {
+        console.warn('calculateWordIndex: editor ou range inválido');
+        return null;
+      }
+
       const walker = document.createTreeWalker(
         editor,
         NodeFilter.SHOW_TEXT,
@@ -309,29 +355,37 @@ const TabNavigationManager = {
 
       let wordIndex = 0;
       let node;
-      let foundNode = range.startContainer;
-      let foundOffset = range.startOffset;
+      const foundNode = range.startContainer;
+      const foundOffset = range.startOffset;
 
       // Percorre todos os nós de texto
       while ((node = walker.nextNode())) {
-        const text = node.textContent;
-
+        // Verifica se é o nó procurado
         if (node === foundNode) {
-          // Conta palavras até o offset da seleção
-          const textBeforeCursor = text.substring(0, foundOffset);
-          const wordsBeforeCursor = textBeforeCursor.split(/\s+/).filter(w => w.length > 0);
+          // Pega texto ANTES do offset
+          const textBeforeCursor = node.textContent.substring(0, foundOffset);
+          
+          // Separa em palavras e conta (remove palavras vazias)
+          const wordsBeforeCursor = textBeforeCursor
+            .split(/\s+/)
+            .filter(w => w.length > 0);
+          
           wordIndex += wordsBeforeCursor.length;
 
-          // Se o cursor está no meio de uma palavra, não adiciona
-          // Se está no início de uma palavra, o índice já está correto
+          console.log(`📊 calculateWordIndex: Encontrou nó. Palavras antes: ${wordsBeforeCursor.length}, total: ${wordIndex}`);
+          
           return wordIndex;
         }
 
         // Conta todas as palavras deste nó
-        const words = text.split(/\s+/).filter(w => w.length > 0);
+        const words = (node.textContent || '')
+          .split(/\s+/)
+          .filter(w => w.length > 0);
+        
         wordIndex += words.length;
       }
 
+      console.warn('calculateWordIndex: Nó procurado não encontrado na árvore');
       return null;
     } catch (error) {
       console.error('Erro ao calcular índice da palavra:', error);
@@ -350,10 +404,15 @@ const TabNavigationManager = {
    * 
    * @param {HTMLElement} container - Container do prompter
    * @param {number} targetIndex - Índice da palavra a encontrar
-   * @returns {Object|null} - {node, startOffset, endOffset} ou null
+   * @returns {Object|null} - {node, startOffset, endOffset, word} ou null
    */
   findWordByIndex: function (container, targetIndex) {
     try {
+      if (!container || targetIndex < 0) {
+        console.warn('findWordByIndex: container inválido ou índice negativo');
+        return null;
+      }
+
       const walker = document.createTreeWalker(
         container,
         NodeFilter.SHOW_TEXT,
@@ -375,6 +434,8 @@ const TabNavigationManager = {
             const wordStart = text.indexOf(words[i], offset);
             const wordEnd = wordStart + words[i].length;
 
+            console.log(`✅ findWordByIndex: Encontrou palavra #${targetIndex}: "${words[i]}" no nó de texto`);
+
             return {
               node: node,
               startOffset: wordStart,
@@ -388,6 +449,7 @@ const TabNavigationManager = {
         }
       }
 
+      console.warn(`⚠️ findWordByIndex: Palavra #${targetIndex} não encontrada (total de palavras: ${currentWordIndex})`);
       return null;
     } catch (error) {
       console.error('Erro ao encontrar palavra por índice:', error);
@@ -483,6 +545,21 @@ const TabNavigationManager = {
   },
 
   // ============================================================
+  // FUNÇÃO: Limpar navegação pendente
+  // ============================================================
+  /**
+   * clearPendingNavigation
+   * ----------------------
+   * Reseta o estado de navegação pendente.
+   * Usado quando sai da aba Operator para evitar navegação indesejada.
+   */
+  clearPendingNavigation: function () {
+    this.pendingWordIndex = null;
+    this.pendingNavigationContext = null;
+    console.log('🧹 Navegação pendente limpa');
+  },
+
+  // ============================================================
   // FUNÇÃO: Salvar posição do scroll do Operator
   // ============================================================
   /**
@@ -563,6 +640,11 @@ const TabNavigationManager = {
     // PARA O SCROLL SE ESTIVER RODANDO
     // ============================================
     if (typeof ScrollEngine !== 'undefined' && ScrollEngine.isRunning) {
+      // Para o heartbeat de leitura (evita cálculo com aba oculta)
+      if (typeof ScrollEngine.stopReadProgressHeartbeat === 'function') {
+        ScrollEngine.stopReadProgressHeartbeat();
+      }
+
       // Para o scroll MAS preserva a posição
       ScrollEngine.isRunning = false;
       ScrollEngine.setSpeed(0);
@@ -729,14 +811,17 @@ const TabNavigationManager = {
   /**
    * restoreOrNavigate
    * ------------------
-   * Se há uma palavra pendente para navegação (duplo clique),
+   * Se há uma palavra pendente para navegação (do caret ou menu),
    * navega para ela. Caso contrário, restaura a posição salva.
    */
   restoreOrNavigate: function () {
     const container = document.querySelector('.prompter-in-control');
     const textControl = document.getElementById('prompterText-control');
 
-    if (!container || !textControl) return;
+    if (!container || !textControl) {
+      console.warn('restoreOrNavigate: container ou textControl não encontrado');
+      return;
+    }
 
     // =========================================
     // NAVEGAÇÃO PARA PALAVRA ESPECÍFICA
@@ -744,16 +829,19 @@ const TabNavigationManager = {
     if (this.pendingWordIndex !== null) {
       const targetIndex = this.pendingWordIndex;
       const context = this.pendingNavigationContext;
+      
       // Limpa para não repetir
       this.pendingWordIndex = null;
       this.pendingNavigationContext = null;
+
+      console.log(`🎯 Tentando navegar para palavra #${targetIndex}...`);
 
       // Tenta encontrar a palavra no Operator pelo índice
       let wordLocation = this.findWordByIndex(textControl, targetIndex);
 
       // Se não encontrou pelo índice, tenta buscar pelo texto
       if (!wordLocation && context && context.text) {
-        console.log(`⚠️ Palavra #${targetIndex} não encontrada por índice, tentando por texto...`);
+        console.log(`⚠️ Palavra #${targetIndex} não encontrada por índice, tentando por texto ("${context.text}")...`);
         wordLocation = this.findWordByText(textControl, context.text, targetIndex);
       }
 
@@ -762,15 +850,21 @@ const TabNavigationManager = {
         const range = document.createRange();
         range.setStart(wordLocation.node, wordLocation.startOffset);
         range.setEnd(wordLocation.node, wordLocation.endOffset);
+        
         const rect = range.getBoundingClientRect();
         const containerRect = container.getBoundingClientRect();
+        
         // Calcula scroll para centralizar a palavra na tela
         const currentScroll = typeof ScrollEngine !== 'undefined'
           ? ScrollEngine.decimalScroll
           : container.scrollTop;
+        
         // Centraliza: pega a posição relativa e subtrai metade da altura do container
         const targetScroll = currentScroll + (rect.top - containerRect.top) - (container.clientHeight / 2);
         const finalScroll = Math.max(0, targetScroll);
+        
+        console.log(`📍 Navegando para: "${wordLocation.word}" | Scroll: ${currentScroll.toFixed(0)}px → ${finalScroll.toFixed(0)}px`);
+        
         // Aplica o scroll
         if (typeof ScrollEngine !== 'undefined') {
           ScrollEngine.decimalScroll = finalScroll;
@@ -809,12 +903,14 @@ const TabNavigationManager = {
             }
           });
         });
-        console.log(`🎯 Navegado para palavra #${targetIndex}: "${wordLocation.word}" (scroll: ${finalScroll.toFixed(0)}px)`);
+        
+        console.log(`✅ Navegado com sucesso para palavra #${targetIndex}: "${wordLocation.word}"`);
+        
         // Salva a nova posição
         this.operatorSavedScrollPosition = finalScroll;
         return;
       } else {
-        console.warn(`⚠️ Palavra #${targetIndex} não encontrada no Operator`);
+        console.warn(`❌ Palavra #${targetIndex} não encontrada no Operator - usando posição salva`);
       }
     }
 
@@ -822,6 +918,8 @@ const TabNavigationManager = {
     // RESTAURAÇÃO DE POSIÇÃO SALVA
     // =========================================
     if (this.operatorSavedScrollPosition > 0) {
+      console.log(`♻️ Restaurando posição salva: ${this.operatorSavedScrollPosition}px`);
+      
       // Garante que está em modo scroll manual (não transform)
       container.style.overflowY = 'auto';
       textControl.style.transform = 'none';
@@ -835,7 +933,9 @@ const TabNavigationManager = {
         ScrollEngine.isRunning = false;
       }
 
-      console.log('♻️ Posição do Operator restaurada:', this.operatorSavedScrollPosition);
+      console.log(`✅ Posição restaurada com sucesso`);
+    } else {
+      console.log(`ℹ️ Sem posição salva - permanecendo no início`);
     }
   },
 

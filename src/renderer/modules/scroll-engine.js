@@ -31,6 +31,7 @@ const ScrollEngine = {
   lastFrameTime: 0,       // Timestamp do último frame (para deltaTime)
   decimalScroll: 0,       // Posição de scroll com precisão decimal
   animationFrameId: null, // ID do requestAnimationFrame
+  _scrollLockTimer: null, // Timer para proteção de scroll durante atualizações remotas
 
   // ============================================================
   // REFERÊNCIAS EXTERNAS (injetadas na inicialização)
@@ -324,6 +325,38 @@ const ScrollEngine = {
     this.globalPrefs = options.globalPrefs || {};
     this.updateProgressBar = options.updateProgressBar;
     this.handlePlaybackTimer = options.handlePlaybackTimer;
+  },
+
+  // ============================================================
+  // FUNÇÃO: Proteger Scroll Durante Atualizações Remotas
+  // ============================================================
+  /**
+   * protectScrollDuringUpdate
+   * -------------------------
+   * Bloqueia alterações de scroll durante 250ms.
+   * Útil para garantir que edições remotas não causem jumps de scroll.
+   * 
+   * @param {number} duration - Duração da proteção em ms (padrão 250)
+   */
+  protectScrollDuringUpdate: function(duration = 250) {
+    if (this._scrollLockTimer) clearTimeout(this._scrollLockTimer);
+    
+    const savedPosition = this.decimalScroll;
+    const textEl = this.getTextElement();
+    const container = document.querySelector(".prompter-in-control");
+    
+    // Reforçar posição a cada 16ms durante a proteção
+    const protectionInterval = setInterval(() => {
+      if (this.decimalScroll !== savedPosition && this.isRunning && textEl && container) {
+        this.decimalScroll = savedPosition;
+        textEl.style.transform = `translate3d(0, -${savedPosition}px, 0)`;
+      }
+    }, 16);
+    
+    this._scrollLockTimer = setTimeout(() => {
+      clearInterval(protectionInterval);
+      this._scrollLockTimer = null;
+    }, duration);
   }
 };
 

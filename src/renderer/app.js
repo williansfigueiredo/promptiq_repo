@@ -59,6 +59,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let voiceModeActive = false;
 
   let currentFontSizePT = 12;
+  let currentLineSpacing = 0;
 
   // Evita sync duplicado durante transformações em massa (ex.: Uppercase em roteiro inteiro)
   let _bulkEditDepth = 0;
@@ -104,6 +105,7 @@ document.addEventListener("DOMContentLoaded", () => {
       temp.querySelectorAll("font[face]").forEach((el) => el.removeAttribute("face"));
       temp.querySelectorAll("[data-para-idx]").forEach((el) => el.removeAttribute("data-para-idx"));
       temp.querySelectorAll(".script-read").forEach((el) => el.classList.remove("script-read"));
+      temp.querySelectorAll("[data-read]").forEach((el) => el.removeAttribute("data-read"));
       return temp.innerHTML;
     } catch (_) {
       return html;
@@ -158,17 +160,63 @@ document.addEventListener("DOMContentLoaded", () => {
     const normalized = normalizeRemoteEditorHtml(newHtml);
     if (editor.innerHTML === normalized) return false;
 
+    // ===================================================================
+    // Capturar posição de scroll ANTES de qualquer mudança
+    // ===================================================================
+    const wasScrolling = ScrollEngine.isRunning;
+    const scrollPosBefore = ScrollEngine.decimalScroll || 0;
+    
+    if (wasScrolling) {
+      console.log(`🔒 Sincronizando edição remota. Scroll protegido em: ${scrollPosBefore}px`);
+    }
+
     runWithoutRemoteBroadcast(() => {
       beginBulkEdit();
       editor.innerHTML = normalized;
       applyOperatorEditorTypography(editor);
       endBulkEdit(() => {
         if (typeof syncContentToPrompter === "function") {
-          syncContentToPrompter({ skipRemoteBroadcast: true, skipReadProgressRebroadcast: true });
+          // Forçar manutenção de scroll mesmo durante playback ativo
+          syncContentToPrompter({ 
+            skipRemoteBroadcast: true, 
+            skipReadProgressRebroadcast: true,
+            preserveScrollDuringRemoteEdit: wasScrolling 
+          });
         }
         if (typeof applyExactFontSizeToOperator === "function") {
           applyExactFontSizeToOperator(getOperatorFontSizePt());
         }
+        
+        // ===================================================================
+        // Proteger scroll durante 250ms após a atualização
+        // Isso garante que o scroll não sofra jumps causados por re-layout
+        // ===================================================================
+        if (wasScrolling && typeof ScrollEngine !== "undefined") {
+          ScrollEngine.protectScrollDuringUpdate(250);
+          console.log(`✅ Proteção de scroll ativada por 250ms`);
+        }
+        
+        // ===================================================================
+        // Verificação adicional: garantir que o scroll foi restaurado
+        // ===================================================================
+        requestAnimationFrame(() => {
+          if (wasScrolling && ScrollEngine.isRunning) {
+            const control = document.getElementById("prompterText-control");
+            const container = document.querySelector(".prompter-in-control");
+            if (control && container) {
+              // Verificar se a posição mudou significativamente
+              const scrollPosDiff = Math.abs(ScrollEngine.decimalScroll - scrollPosBefore);
+              if (scrollPosDiff > 10) {
+                console.warn(`⚠️ Detectada alteração de scroll (${scrollPosDiff}px). Restaurando...`);
+                ScrollEngine.decimalScroll = scrollPosBefore;
+                control.style.transform = `translate3d(0, -${scrollPosBefore}px, 0)`;
+              } else {
+                console.log(`✅ Scroll mantido corretamente em ${ScrollEngine.decimalScroll}px`);
+              }
+            }
+          }
+        });
+        
         rebroadcastReadProgress();
       });
     });
@@ -191,7 +239,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (typeof scheduleAutoSave === "function") scheduleAutoSave();
     if (isInternetServerActive && typeof broadcastTextUpdate === "function") {
-      broadcastTextUpdate(getCleanContent(editor));
+      broadcastTextUpdate(getRemoteSyncContent());
     }
   }
 
@@ -419,6 +467,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const prevDefaultFontSize = globalPrefs ? globalPrefs.defaultFontSize : null;
 
     globalPrefs = settings;
+
+    // Atualiza lineSpacing se veio das Preferences (e não foi alterado manualmente na sessão)
+    if (settings.lineSpacing && !currentLineSpacing) {
+      currentLineSpacing = parseFloat(settings.lineSpacing) || 0;
+    }
 
     // Aplica o tema salvo
     if (settings.appTheme) {
@@ -867,7 +920,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const safeZoneArrow = 20;
       prompterText.style.paddingLeft = `${userMargin + safeZoneArrow}px`;
       prompterText.style.paddingRight = `${userMargin}px`;
-      prompterText.style.lineHeight = prefs.lineSpacing || 1.5;
+      prompterText.style.lineHeight = currentLineSpacing || prefs.lineSpacing || 1.5;
 
       applyPrompterTextAlign(getEditorTextAlign(getActiveTextEditorArea()));
 
@@ -1904,7 +1957,6 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         },
         previousLine: () => {
-          // Volta UMA linha (parado ou rodando).
           const container = document.querySelector(".prompter-in-control");
           const textEl = document.getElementById("prompterText-control");
           if (!container || !textEl) return;
@@ -1914,12 +1966,18 @@ document.addEventListener("DOMContentLoaded", () => {
             ScrollEngine.decimalScroll = Math.max(0, ScrollEngine.decimalScroll - lineHeight);
             textEl.style.transform = `translate3d(0, -${ScrollEngine.decimalScroll}px, 0)`;
           } else {
+            // Garante estado scrollável (corrige overflow:hidden residual do modo GPU)
+            if (container.style.overflowY === "hidden") {
+              textEl.style.transform = "none";
+              textEl.style.willChange = "auto";
+              container.style.overflowY = "auto";
+              container.scrollTop = ScrollEngine.decimalScroll || 0;
+            }
             container.scrollTop = Math.max(0, container.scrollTop - lineHeight);
             ScrollEngine.decimalScroll = container.scrollTop;
           }
         },
         nextLine: () => {
-          // Avança UMA linha (parado ou rodando).
           const container = document.querySelector(".prompter-in-control");
           const textEl = document.getElementById("prompterText-control");
           if (!container || !textEl) return;
@@ -1930,6 +1988,13 @@ document.addEventListener("DOMContentLoaded", () => {
             ScrollEngine.decimalScroll = Math.min(maxScroll, ScrollEngine.decimalScroll + lineHeight);
             textEl.style.transform = `translate3d(0, -${ScrollEngine.decimalScroll}px, 0)`;
           } else {
+            // Garante estado scrollável (corrige overflow:hidden residual do modo GPU)
+            if (container.style.overflowY === "hidden") {
+              textEl.style.transform = "none";
+              textEl.style.willChange = "auto";
+              container.style.overflowY = "auto";
+              container.scrollTop = ScrollEngine.decimalScroll || 0;
+            }
             container.scrollTop = Math.min(maxScroll, container.scrollTop + lineHeight);
             ScrollEngine.decimalScroll = container.scrollTop;
           }
@@ -2412,8 +2477,19 @@ document.addEventListener("DOMContentLoaded", () => {
     editor.spellcheck = true;
 
     editor.addEventListener("paste", (e) => {
+      // ===================================================================
+      // PROTEÇÃO DE PASTE: Evitar reset de scroll durante playback
+      // ===================================================================
       // Marca os elementos existentes antes do paste
       const existingElements = new Set(editor.querySelectorAll("*"));
+      
+      // Capturar estado de playback ANTES do paste
+      const wasScrolling = typeof ScrollEngine !== "undefined" && ScrollEngine.isRunning;
+      const scrollPosBefore = (typeof ScrollEngine !== "undefined") ? ScrollEngine.decimalScroll : 0;
+      
+      if (wasScrolling) {
+        console.log(`📋 Paste detectado durante playback. Scroll protegido em: ${scrollPosBefore}px`);
+      }
 
       setTimeout(() => {
         // Só limpa formatação dos elementos NOVOS (colados)
@@ -2429,9 +2505,42 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         });
         window.getSelection().removeAllRanges();
-        syncContentToPrompter();
-        updateFormatMenuState();
-      }, 10);
+        
+        // ===================================================================
+        // Sincronizar com PROTEÇÃO especial para paste
+        // ===================================================================
+        if (typeof syncContentToPrompter === "function") {
+          syncContentToPrompter();
+        }
+        if (typeof updateFormatMenuState === "function") {
+          updateFormatMenuState();
+        }
+        
+        // ===================================================================
+        // Ativar proteção de scroll MAIS LONGA para paste (400ms vs 250ms)
+        // Paste é uma mudança maior, precisa de mais tempo
+        // ===================================================================
+        if (wasScrolling && typeof ScrollEngine !== "undefined") {
+          ScrollEngine.protectScrollDuringUpdate(400);
+          console.log(`✅ Proteção de scroll PASTE ativada por 400ms`);
+          
+          // Verificação extra após o paste
+          requestAnimationFrame(() => {
+            const control = document.getElementById("prompterText-control");
+            const container = document.querySelector(".prompter-in-control");
+            if (control && container && ScrollEngine.isRunning) {
+              const scrollDiff = Math.abs(ScrollEngine.decimalScroll - scrollPosBefore);
+              if (scrollDiff > 15) {
+                console.warn(`⚠️ Paste causou alteração de scroll (${scrollDiff}px). Restaurando...`);
+                ScrollEngine.decimalScroll = scrollPosBefore;
+                control.style.transform = `translate3d(0, -${scrollPosBefore}px, 0)`;
+              } else {
+                console.log(`✅ Scroll mantido após paste: ${ScrollEngine.decimalScroll}px`);
+              }
+            }
+          });
+        }
+      }, 20);  // Aumentado de 10ms para 20ms (paste é mudança maior)
     });
 
     editor.addEventListener("input", () => {
@@ -2577,6 +2686,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (container) container.classList.add("active");
 
     activeDocumentId = targetId;
+    _lastLocalReadCount = -1;
     const doc = getActiveDocument();
     if (doc) {
       updateTitle();
@@ -2821,6 +2931,13 @@ document.addEventListener("DOMContentLoaded", () => {
     restoreSelection();
     const editor = getActiveTextEditorArea();
     if (!editor) return;
+
+    const numVal = parseFloat(value);
+    if (!isNaN(numVal) && numVal > 0) {
+      currentLineSpacing = numVal;
+      if (globalPrefs) globalPrefs.lineSpacing = numVal;
+    }
+
     applyStyle("formatBlock", "div");
     const selection = window.getSelection();
     if (selection.rangeCount > 0) {
@@ -2876,7 +2993,23 @@ document.addEventListener("DOMContentLoaded", () => {
     const editor = getActiveTextEditorArea();
     if (!editor) return "";
     const content = getCleanContent(editor);
-    return typeof processPrompterHtml === "function" ? processPrompterHtml(content) : content;
+    const html = typeof processPrompterHtml === "function" ? processPrompterHtml(content) : content;
+    const computed = window.getComputedStyle(editor);
+    const styleParts = [];
+
+    if (computed.fontWeight && computed.fontWeight !== "400" && computed.fontWeight !== "normal") {
+      styleParts.push(`font-weight:${computed.fontWeight}`);
+    }
+    if (computed.fontStyle && computed.fontStyle !== "normal") {
+      styleParts.push(`font-style:${computed.fontStyle}`);
+    }
+    if (computed.textDecorationLine && computed.textDecorationLine !== "none") {
+      styleParts.push(`text-decoration:${computed.textDecoration}`);
+    }
+
+    return styleParts.length
+      ? `<div data-host-style="1" style="${styleParts.join(";")}">${html}</div>`
+      : html;
   }
 
   function getCleanContent(editor) {
@@ -2892,6 +3025,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     clone.querySelectorAll(".script-read").forEach((el) => {
       el.classList.remove("script-read");
+    });
+    clone.querySelectorAll("[data-read]").forEach((el) => {
+      el.removeAttribute("data-read");
     });
     return clone.innerHTML;
   }
@@ -3659,7 +3795,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (typeof currentFontSizePT !== "undefined" && currentFontSizePT > 0) {
       control.style.fontSize = `${getOperatorFontSizePt()}pt`;
-      control.style.lineHeight = "1.4";
+      control.style.lineHeight = currentLineSpacing || (globalPrefs && globalPrefs.lineSpacing) || 1.5;
     }
 
     applyPrompterTextAlign(getEditorTextAlign(editor));
@@ -3695,6 +3831,9 @@ document.addEventListener("DOMContentLoaded", () => {
   /**
    * Sincroniza conteúdo do editor com o prompter
    * Limpa formatação desnecessária e envia para main process
+   * 
+   * IMPORTANTE: Esta função agora preserva a posição de scroll
+   * mesmo durante atualizações remotas enquanto o teleprompter está em playback!
    */
   function syncContentToPrompter(options = {}) {
     const editor = getActiveTextEditorArea();
@@ -3731,7 +3870,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     ipcRenderer.send("update-prompter-content", finalContent);
     if (!skipRemoteBroadcast) {
-      ipcRenderer.send("send-text-to-remote", finalContent);
+      ipcRenderer.send("send-text-to-remote", getRemoteSyncContent());
     }
 
     if (typeof currentFontSizePT !== "undefined" && currentFontSizePT > 0) {
@@ -3740,15 +3879,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (control) {
       const container = document.querySelector(".prompter-in-control");
-      const savedScroll =
-        (typeof TabNavigationManager !== "undefined" &&
-          TabNavigationManager.operatorSavedScrollPosition > 0)
-          ? TabNavigationManager.operatorSavedScrollPosition
-          : ScrollEngine.decimalScroll ||
-            (container ? container.scrollTop : 0) ||
-            0;
+      
+      // ===================================================================
+      // CORREÇÃO: Sempre usar ScrollEngine.decimalScroll como fonte da verdade
+      // Não usar TabNavigationManager.operatorSavedScrollPosition durante playback
+      // ===================================================================
       const wasRunning = ScrollEngine.isRunning;
+      const savedScroll = ScrollEngine.decimalScroll || (container ? container.scrollTop : 0) || 0;
 
+      // ===================================================================
+      // Atualizar conteúdo no DOM
+      // ===================================================================
       control.innerHTML = finalContent;
 
       clearParaIndexing(control);
@@ -3766,14 +3907,24 @@ document.addEventListener("DOMContentLoaded", () => {
       ensureParaIndexing();
       ScrollEngine.invalidateMetrics();
 
+      // ===================================================================
+      // Restaurar posição de scroll imediatamente
+      // ===================================================================
       if (wasRunning) {
         const containerHeight = container ? container.clientHeight : 0;
         const contentHeight = control.offsetHeight;
         const maxScroll = Math.max(0, contentHeight - containerHeight + containerHeight / 2);
         const clampedScroll = Math.min(savedScroll, maxScroll);
+        
+        // Restaurar posição de scroll SEM DELAY
         ScrollEngine.decimalScroll = clampedScroll;
         control.style.willChange = "transform";
         control.style.transform = `translate3d(0, -${clampedScroll}px, 0)`;
+        
+        // Garantir que o scroll continue suave no próximo frame
+        requestAnimationFrame(() => {
+          ScrollEngine.decimalScroll = clampedScroll;
+        });
       } else if (savedScroll > 0 && container) {
         container.style.overflowY = "auto";
         control.style.transform = "none";
@@ -3797,6 +3948,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let _lastReadUpdateTime = 0;
   const READ_UPDATE_INTERVAL = 100;
+  let _readProgressBaseline = -1;
 
   /**
    * Distância do topo do container até o centro do cue marker (px).
@@ -3845,13 +3997,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function computeReadLinePx(textEl) {
     if (!textEl) return 0;
-    const cueOffset = getCueOffsetInContainer();
     const container = document.querySelector(".prompter-in-control");
     let scrollPos = ScrollEngine.decimalScroll || 0;
-    if (!ScrollEngine.isRunning && container) {
-      scrollPos = container.scrollTop || scrollPos;
+    if (container) {
+      scrollPos = Math.max(scrollPos, container.scrollTop || 0);
+
+      // Fallback visual: quando o texto está se movendo por transform/GPU,
+      // a posição real pode estar no getBoundingClientRect mesmo se o estado
+      // interno ainda estiver 0. Isso evita enviar progresso zerado ao roteirista.
+      const containerRect = container.getBoundingClientRect();
+      const textRect = textEl.getBoundingClientRect();
+      if (containerRect.height > 0 && textRect.height > 0) {
+        const visualScroll = Math.max(0, containerRect.top - textRect.top);
+        scrollPos = Math.max(scrollPos, visualScroll);
+      }
     }
-    return Math.max(0, scrollPos + cueOffset);
+    // Usa apenas scrollPos — o texto "lido" é somente o que MOVEU
+    // para cima da seta por causa do scroll, não o que já estava acima dela.
+    return Math.max(0, scrollPos);
   }
 
   /**
@@ -3868,7 +4031,9 @@ document.addEventListener("DOMContentLoaded", () => {
       let readCount = 0;
       let maxReadIndex = -1;
       blocks.forEach((block, i) => {
-        if (block.getBoundingClientRect().bottom <= cueY + 2) {
+        const rect = block.getBoundingClientRect();
+        const midpoint = rect.top + rect.height * 0.5;
+        if (midpoint <= cueY + 2) {
           maxReadIndex = i;
           readCount = i + 1;
         }
@@ -3928,7 +4093,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (/^DIV$/i.test(child.tagName)) {
         const inner = Array.from(child.children).filter(
-          (el) => el.nodeType === 1 && (STRUCTURAL.test(el.tagName) || hasBlockText(el))
+          (el) => el.nodeType === 1 && STRUCTURAL.test(el.tagName)
         );
         if (inner.length > 0) {
           inner.forEach((el) => blocks.push(el));
@@ -3999,6 +4164,9 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
+  let _cachedContentHeightPx = 0;
+  let _cachedTotalBlocks = 0;
+
   /**
    * Calcula payload de progresso de leitura a partir do scroll atual do Operator.
    */
@@ -4007,12 +4175,22 @@ document.addEventListener("DOMContentLoaded", () => {
     const container = document.querySelector(".prompter-in-control");
     if (!textEl) return null;
 
+    // Se a aba Operator está oculta (display:none), os offsetHeight retornam 0.
+    // Nesse caso NÃO recalcular — retorna null para manter o último estado válido.
+    if (container && container.offsetHeight === 0) return null;
+
     const prompterBlocks = getBlockElements(textEl);
     if (prompterBlocks.length === 0) return null;
 
     const blockHeightSum = prompterBlocks.reduce((sum, block) => sum + block.offsetHeight, 0);
-    const contentHeightPx = Math.max(textEl.scrollHeight || 0, blockHeightSum, 1);
+    const rawContentH = Math.max(textEl.scrollHeight || 0, blockHeightSum);
+    if (rawContentH <= 10) return null;
+    const contentHeightPx = rawContentH;
+    _cachedContentHeightPx = rawContentH;
+
     const total = prompterBlocks.length;
+    if (total > 0) _cachedTotalBlocks = total;
+
     const readLinePx = computeReadLinePx(textEl);
 
     let scrollPos = ScrollEngine.decimalScroll || 0;
@@ -4023,32 +4201,25 @@ document.addEventListener("DOMContentLoaded", () => {
     let readCount = 0;
     let maxReadIdx = -1;
 
-    // Tempo real: compara posição visual dos blocos com a seta verde
-    if (ScrollEngine.isRunning || scrollPos > 0) {
-      const passed = countBlocksPassedCue(prompterBlocks);
-      readCount = passed.readCount;
-      maxReadIdx = passed.maxReadIndex;
-    }
-
-    // Fallback por pixels (scroll via transform) quando a detecção visual falha
+    // Pixels de conteúdo ACIMA da seta = scrollPos + offset da seta no container.
+    // É a medida mais precisa: independe da quantidade/tamanho dos blocos.
     const cueOffset = getCueOffsetInContainer();
-    if (readCount === 0 && readLinePx > cueOffset + 1) {
+    const readLinePxReal = scrollPos > 1 ? (scrollPos + cueOffset) : 0;
+
+    if (readLinePxReal > 1) {
       let accumulated = 0;
       prompterBlocks.forEach((block, i) => {
         accumulated += block.offsetHeight;
-        if (accumulated <= readLinePx + 1) {
+        if (accumulated <= readLinePxReal + 1) {
           maxReadIdx = i;
           readCount = i + 1;
         }
       });
     }
 
-    const scrollRatio =
-      contentHeightPx > 0
-        ? Math.min(1, Math.max(0, readLinePx / contentHeightPx))
-        : total > 0 && readCount > 0
-          ? readCount / total
-          : 0;
+    const scrollRatio = contentHeightPx > 0 && readLinePxReal > 0
+      ? Math.min(1, readLinePxReal / contentHeightPx)
+      : 0;
 
     return {
       maxReadIndex: maxReadIdx,
@@ -4056,7 +4227,7 @@ document.addEventListener("DOMContentLoaded", () => {
       totalBlocks: total,
       readPercent: scrollRatio,
       scrollRatio,
-      readLinePx,
+      readLinePx: readLinePxReal,
       contentHeightPx,
       scrollPos,
       isScrolling: ScrollEngine.isRunning || scrollPos > 1,
@@ -4099,6 +4270,36 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /**
+   * Aplica marcação visual .script-read nos blocos do editor local (aba Edit).
+   * Usa o mesmo readCount já calculado pelo Operator — sem recalcular.
+   * @param {number} readCount - quantidade de blocos já lidos (passaram pela seta)
+   */
+  let _lastLocalReadCount = -1;
+  function applyReadProgressToLocalEditor(readCount) {
+    const editor = getActiveTextEditorArea();
+    if (!editor) return;
+
+    if (readCount === _lastLocalReadCount) return;
+    _lastLocalReadCount = readCount;
+
+    const blocks = getBlockElements(editor);
+    if (blocks.length === 0) return;
+
+    const count = Math.min(readCount || 0, blocks.length);
+    blocks.forEach((block, idx) => {
+      const shouldBeRead = idx < count;
+      const isRead = block.classList.contains("script-read");
+      if (shouldBeRead && !isRead) {
+        block.classList.add("script-read");
+        block.setAttribute("data-read", "1");
+      } else if (!shouldBeRead && isRead) {
+        block.classList.remove("script-read");
+        block.removeAttribute("data-read");
+      }
+    });
+  }
+
+  /**
    * Reseta o progresso de leitura (envia lista vazia para roteiristas).
    */
   function clearReadProgress() {
@@ -4108,6 +4309,8 @@ document.addEventListener("DOMContentLoaded", () => {
     _lastReadPercent = 0;
     _lastReadLinePx = 0;
     _lastContentHeightPx = 0;
+    _lastLocalReadCount = -1;
+    _readProgressBaseline = -1;
     broadcastReadProgressUpdate({
       maxReadIndex: -1,
       readCount: 0,
@@ -6240,6 +6443,7 @@ document.addEventListener("DOMContentLoaded", () => {
   ipcRenderer.on("request-full-state-for-remote", () => {
     const editor = getActiveTextEditorArea();
     if (!editor) return;
+    const computedStyle = window.getComputedStyle(editor);
 
     // Coleta o estado atual do editor
     const fullState = {
@@ -6247,6 +6451,9 @@ document.addEventListener("DOMContentLoaded", () => {
       fontSize: parseInt(editor.style.fontSize) || currentFontSizePT || 24,
       fontFamily: editor.style.fontFamily || "Arial",
       textAlign: editor.style.textAlign || "left",
+      fontWeight: computedStyle.fontWeight || editor.style.fontWeight || "normal",
+      fontStyle: computedStyle.fontStyle || editor.style.fontStyle || "normal",
+      textDecoration: computedStyle.textDecoration || editor.style.textDecoration || "none",
       readProgress:
         typeof computeReadProgressPayload === "function"
           ? computeReadProgressPayload()
@@ -6263,10 +6470,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!editor) return;
 
     clearTimeout(_remoteUpdateTimer);
+    // Aumentado de 80ms para 120ms para sincronização melhor do scroll
+    // Especialmente importante durante playback ativo
     _remoteUpdateTimer = setTimeout(() => {
       if (!applyRemoteEditorUpdate(newText)) return;
       afterRemoteEditorApplied(editor);
-    }, 80);
+    }, 120);
   });
 
   // ✅ SOLUÇÃO 2: Quando recebe atualização de ESTILO do roteirista (fonte, tamanho)
@@ -6770,10 +6979,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         afterRemoteEditorApplied(editor);
 
-        broadcastTextUpdate(getCleanContent(editor), userId);
+        broadcastTextUpdate(getRemoteSyncContent(), userId);
 
         if (isLocalServerActive && shouldBroadcastToRemotes()) {
-          ipcRenderer.send('send-text-to-remote', getCleanContent(editor));
+          ipcRenderer.send('send-text-to-remote', getRemoteSyncContent());
         }
 
         const remoteName = (peers[userId] && peers[userId].userName) ? peers[userId].userName : "Roteirista (Web)";
@@ -6831,12 +7040,24 @@ document.addEventListener("DOMContentLoaded", () => {
     return data;
   }
 
+  let _lastReadProgressLogTime = 0;
+
   /**
    * Envia progresso de leitura para roteiristas (Local + Internet).
    * Payload: { maxReadIndex, readPercent, readIndices } ou número legado.
    */
   function broadcastReadProgressUpdate(payload) {
     const data = normalizeReadProgressPayload(payload);
+
+    const now = Date.now();
+    if (now - _lastReadProgressLogTime > 2000) {
+      _lastReadProgressLogTime = now;
+      console.log("[ReadProgress] →", {
+        readCount: data.readCount, scrollRatio: data.scrollRatio?.toFixed(3),
+        readLinePx: Math.round(data.readLinePx || 0), contentH: Math.round(data.contentHeightPx || 0),
+        scrollPos: Math.round(data.scrollPos || 0), isScrolling: data.isScrolling
+      });
+    }
 
     ipcRenderer.send("send-read-progress-to-remote", data);
 
