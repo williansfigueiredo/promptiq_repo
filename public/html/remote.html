@@ -7,6 +7,8 @@
     
     <!-- Fontes (Fallback para CJK) -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;700&family=Noto+Sans+TC:wght@400;700&family=Noto+Sans+JP:wght@400;700&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Fonte customizada OpenDyslexic (servida pelo servidor Wi-Fi local) -->
+    <link rel="stylesheet" href="/css/fonts/opendyslexic.css">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     
@@ -899,8 +901,10 @@
                 }
             }
             
-            // 3. Aplica a fontFamily (respeita cadeado)
-            if (state.fontFamily && !window.fontSizeLocked) {
+            // 3. Aplica a fontFamily SEMPRE (o cadeado trava só o TAMANHO da fonte,
+            //    não a família). Assim a fonte escolhida pelo operador é mantida
+            //    inclusive ao atualizar/recarregar a página do roteirista.
+            if (state.fontFamily) {
                 editor.style.fontFamily = state.fontFamily;
                 updateFontUI(state.fontFamily);
             }
@@ -1868,9 +1872,13 @@
         
         function applyEditorStyles(styles) {
             if (!styles || !editor) return;
-            // Cadeado fechado: NÃO aplica fontFamily/fontSize vindos do operador
+            // A família da fonte SEMPRE segue o operador (cadeado trava só o tamanho)
+            if (styles.fontFamily) {
+                editor.style.fontFamily = styles.fontFamily;
+                updateFontUI(styles.fontFamily);
+            }
+            // Cadeado fechado: NÃO aplica o TAMANHO vindo do operador
             if (!window.fontSizeLocked) {
-                if (styles.fontFamily) editor.style.fontFamily = styles.fontFamily;
                 if (styles.fontSize) editor.style.fontSize = styles.fontSize + 'pt';
             }
             if (styles.fontColor) editor.style.color = styles.fontColor;
@@ -1898,6 +1906,14 @@
                 tpl.querySelectorAll('.script-read').forEach((el) => el.classList.remove('script-read'));
                 tpl.querySelectorAll('[data-read]').forEach((el) => el.removeAttribute('data-read'));
                 tpl.querySelectorAll('[data-para-idx]').forEach((el) => el.removeAttribute('data-para-idx'));
+                // Remove SEMPRE a fonte inline (face/font-family) para que a fonte
+                // escolhida pelo operador (aplicada no container) prevaleça mesmo
+                // em documentos antigos com <font face> embutido.
+                tpl.querySelectorAll('font[face]').forEach((el) => el.removeAttribute('face'));
+                tpl.querySelectorAll('[style*="font-family"]').forEach((el) => {
+                    el.style.removeProperty('font-family');
+                    if (!el.getAttribute('style')) el.removeAttribute('style');
+                });
                 return tpl.innerHTML;
             } catch (_) {
                 return html;

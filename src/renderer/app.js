@@ -60,6 +60,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let currentFontSizePT = 12;
   let currentLineSpacing = 0;
+  // Fonte escolhida na sessão pelo operador. Preserva a fonte mesmo quando outras
+  // preferências (ex.: Line Spacing) são salvas e reaplicadas. "" = usa o padrão.
+  let currentFontFamily = "";
 
   // Evita sync duplicado durante transformações em massa (ex.: Uppercase em roteiro inteiro)
   let _bulkEditDepth = 0;
@@ -149,8 +152,59 @@ document.addEventListener("DOMContentLoaded", () => {
     currentFontSizePT = size;
     editor.style.fontSize = `${size}pt`;
     editor.style.lineHeight = prompter?.style.lineHeight || editor.style.lineHeight || "1.4";
-    if (prompter?.style.fontFamily) editor.style.fontFamily = prompter.style.fontFamily;
+    // Preserva a fonte escolhida pelo operador (container-level) mesmo após edições
+    // remotas que removem as tags <font face> inline.
+    const font =
+      currentFontFamily ||
+      prompter?.style.fontFamily ||
+      editor.style.fontFamily ||
+      (typeof globalPrefs !== "undefined" && globalPrefs ? globalPrefs.defaultFont : "");
+    if (font) {
+      editor.style.fontFamily = font;
+      if (prompter && !prompter.style.fontFamily) prompter.style.fontFamily = font;
+    }
     if (prompter?.style.textAlign) editor.style.textAlign = prompter.style.textAlign;
+  }
+
+  /**
+   * Aplica a fonte escolhida pelo operador em TODO o roteiro, fixando no container
+   * (editor + prompter) e nas preferências globais. Remove tags/estilos de fonte
+   * inline para que a fonte seja uniforme e sobreviva às edições do roteirista.
+   * Retorna o nome da fonte aplicada.
+   */
+  function applyOperatorFontFamily(fontName) {
+    if (!fontName) return null;
+    const editor = getActiveTextEditorArea();
+    const prompter = document.getElementById("prompterText-control");
+
+    if (editor) {
+      // Remove fontes inline conflitantes (mantém o restante do estilo intacto)
+      editor.querySelectorAll("font[face]").forEach((el) => el.removeAttribute("face"));
+      editor.querySelectorAll('[style*="font-family"]').forEach((el) => {
+        el.style.removeProperty("font-family");
+        if (!el.getAttribute("style")) el.removeAttribute("style");
+      });
+      editor.style.fontFamily = fontName;
+    }
+    if (prompter) prompter.style.fontFamily = fontName;
+    if (typeof globalPrefs !== "undefined" && globalPrefs) {
+      globalPrefs.defaultFont = fontName;
+    }
+    // Guarda a fonte da sessão para que ela não seja perdida quando outras
+    // preferências (Line Spacing, etc.) forem salvas e reaplicadas.
+    currentFontFamily = fontName;
+    // Persiste a fonte nas configurações para sobreviver a reinícios.
+    try {
+      ipcRenderer.send("save-settings", { defaultFont: fontName });
+    } catch (_) {}
+
+    if (typeof syncContentToPrompter === "function") syncContentToPrompter();
+    if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
+      markDocumentAsUnsaved(activeDocumentId);
+    }
+    if (typeof scheduleAutoSave === "function") scheduleAutoSave();
+
+    return fontName;
   }
 
   function applyRemoteEditorUpdate(newHtml) {
@@ -176,47 +230,26 @@ document.addEventListener("DOMContentLoaded", () => {
       applyOperatorEditorTypography(editor);
       endBulkEdit(() => {
         if (typeof syncContentToPrompter === "function") {
-          // Forçar manutenção de scroll mesmo durante playback ativo
-          syncContentToPrompter({ 
-            skipRemoteBroadcast: true, 
+          // Preserva o PONTO DE LEITURA (parágrafo sob a seta) via âncora de
+          // conteúdo, para o texto não saltar quando o roteirista edita.
+          // OBS: o tamanho/espaçamento do prompter já são aplicados dentro de
+          // syncContentToPrompter (applyPrompterContainerStyles) ANTES da
+          // âncora ser restaurada, mantendo o reposicionamento preciso. Por
+          // isso não chamamos applyExactFontSizeToOperator aqui (evita mudar o
+          // layout depois da âncora e causar pequeno salto).
+          syncContentToPrompter({
+            skipRemoteBroadcast: true,
             skipReadProgressRebroadcast: true,
-            preserveScrollDuringRemoteEdit: wasScrolling 
+            // Sempre preserva o ponto de leitura em edição remota (playback ou
+            // scroll manual). A âncora cuida do caso "no topo" sem efeito.
+            preserveScrollDuringRemoteEdit: true,
           });
         }
-        if (typeof applyExactFontSizeToOperator === "function") {
-          applyExactFontSizeToOperator(getOperatorFontSizePt());
-        }
-        
-        // ===================================================================
-        // Proteger scroll durante 250ms após a atualização
-        // Isso garante que o scroll não sofra jumps causados por re-layout
-        // ===================================================================
-        if (wasScrolling && typeof ScrollEngine !== "undefined") {
-          ScrollEngine.protectScrollDuringUpdate(250);
-          console.log(`✅ Proteção de scroll ativada por 250ms`);
-        }
-        
-        // ===================================================================
-        // Verificação adicional: garantir que o scroll foi restaurado
-        // ===================================================================
-        requestAnimationFrame(() => {
-          if (wasScrolling && ScrollEngine.isRunning) {
-            const control = document.getElementById("prompterText-control");
-            const container = document.querySelector(".prompter-in-control");
-            if (control && container) {
-              // Verificar se a posição mudou significativamente
-              const scrollPosDiff = Math.abs(ScrollEngine.decimalScroll - scrollPosBefore);
-              if (scrollPosDiff > 10) {
-                console.warn(`⚠️ Detectada alteração de scroll (${scrollPosDiff}px). Restaurando...`);
-                ScrollEngine.decimalScroll = scrollPosBefore;
-                control.style.transform = `translate3d(0, -${scrollPosBefore}px, 0)`;
-              } else {
-                console.log(`✅ Scroll mantido corretamente em ${ScrollEngine.decimalScroll}px`);
-              }
-            }
-          }
-        });
-        
+
+        // A âncora de conteúdo (em syncContentToPrompter) já reposicionou o
+        // scroll para manter o mesmo parágrafo sob a seta. Não forçamos pixel
+        // antigo nem congelamos a rolagem — o playback continua suave.
+
         rebroadcastReadProgress();
       });
     });
@@ -466,11 +499,39 @@ document.addEventListener("DOMContentLoaded", () => {
     // para detectar se o usuário realmente alterou o tamanho nas Preferences.
     const prevDefaultFontSize = globalPrefs ? globalPrefs.defaultFontSize : null;
 
+    const prevDefaultFont = globalPrefs ? globalPrefs.defaultFont : null;
+
+    const prevLineSpacing = globalPrefs ? globalPrefs.lineSpacing : null;
+
     globalPrefs = settings;
 
-    // Atualiza lineSpacing se veio das Preferences (e não foi alterado manualmente na sessão)
-    if (settings.lineSpacing && !currentLineSpacing) {
-      currentLineSpacing = parseFloat(settings.lineSpacing) || 0;
+    // Preserva a fonte ativa da sessão: se o usuário escolheu uma fonte na toolbar
+    // e o salvamento de preferências (ex.: Line Spacing) não alterou a fonte,
+    // mantém a fonte da sessão para não voltar ao padrão (Arial).
+    if (currentFontFamily) {
+      const fontChangedInPrefs =
+        settings.defaultFont && prevDefaultFont && settings.defaultFont !== prevDefaultFont;
+      if (fontChangedInPrefs) {
+        currentFontFamily = settings.defaultFont;
+      } else {
+        globalPrefs.defaultFont = currentFontFamily;
+      }
+    }
+
+    // Atualiza o espaçamento de linha (Line Spacing) vindo das Preferences.
+    // Antes só atualizava quando currentLineSpacing era 0, o que travava o valor
+    // após o primeiro carregamento e fazia a mudança não funcionar quando aberta
+    // pela aba Operator. Agora atualiza quando: (a) ainda não há valor de sessão,
+    // OU (b) o usuário realmente mudou o valor nas Preferences.
+    if (settings.lineSpacing) {
+      const ls = parseFloat(settings.lineSpacing);
+      if (!isNaN(ls) && ls > 0) {
+        const prevLs = parseFloat(prevLineSpacing);
+        const changedInPrefs = isNaN(prevLs) || ls !== prevLs;
+        if (!currentLineSpacing || changedInPrefs) {
+          currentLineSpacing = ls;
+        }
+      }
     }
 
     // Aplica o tema salvo
@@ -853,13 +914,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // --- A. ABA EDIT (EDITOR) ---
     const editors = document.querySelectorAll('.text-editor-area');
     editors.forEach(editor => {
-      editor.style.fontFamily = prefs.defaultFont;
+      editor.style.fontFamily = currentFontFamily || prefs.defaultFont;
       // Usa o tamanho global se existir, senão usa o padrão das prefs
       editor.style.fontSize = (typeof currentFontSizePT !== 'undefined' && currentFontSizePT > 0)
         ? `${currentFontSizePT}pt`
         : `${prefs.defaultFontSize}pt`;
 
-      editor.style.lineHeight = prefs.lineSpacing;
+      editor.style.lineHeight = currentLineSpacing || prefs.lineSpacing;
       editor.style.backgroundColor = '#FFFFFF';
       editor.style.color = '#000000';
       editor.style.paddingTop = '40px';
@@ -877,7 +938,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const prompterContainer = document.querySelector('.prompter-in-control');
 
     if (prompterText && prompterContainer) {
-      prompterText.style.fontFamily = prefs.defaultFont;
+      prompterText.style.fontFamily = currentFontFamily || prefs.defaultFont;
       prompterText.style.color = prefs.defaultFontColor;
       prompterContainer.style.backgroundColor = prefs.backgroundColor;
 
@@ -3888,6 +3949,14 @@ document.addEventListener("DOMContentLoaded", () => {
       const savedScroll = ScrollEngine.decimalScroll || (container ? container.scrollTop : 0) || 0;
 
       // ===================================================================
+      // ÂNCORA: durante edição remota, preserva o PARÁGRAFO sob a seta
+      // (e não o pixel) para o texto não saltar quando inserem/removem
+      // trecho acima do ponto de leitura. Capturada ANTES de trocar o HTML.
+      // ===================================================================
+      const preserveAnchor = options.preserveScrollDuringRemoteEdit === true;
+      const cueAnchor = preserveAnchor ? captureCueAnchor() : null;
+
+      // ===================================================================
       // Atualizar conteúdo no DOM
       // ===================================================================
       control.innerHTML = finalContent;
@@ -3910,7 +3979,24 @@ document.addEventListener("DOMContentLoaded", () => {
       // ===================================================================
       // Restaurar posição de scroll imediatamente
       // ===================================================================
-      if (wasRunning) {
+      const anchored = preserveAnchor && cueAnchor && restoreCueAnchor(cueAnchor);
+
+      if (anchored) {
+        // Posição já ajustada pela âncora de conteúdo (mantém o ponto de leitura).
+        const fixedScroll = ScrollEngine.decimalScroll;
+        if (wasRunning) {
+          requestAnimationFrame(() => {
+            ScrollEngine.decimalScroll = fixedScroll;
+          });
+        }
+
+        // Corrige IMEDIATAMENTE a janela de projeção/saída (o que o repórter lê):
+        // envia a posição já ancorada como proporção, evitando que a TV fique
+        // no pixel antigo (que causa o salto) após a troca de conteúdo.
+        const contentH = control.offsetHeight || control.scrollHeight || 1;
+        const textPercent = Math.min(1, Math.max(0, fixedScroll / contentH));
+        ipcRenderer.send("sync-scroll-position", { textPercent });
+      } else if (wasRunning) {
         const containerHeight = container ? container.clientHeight : 0;
         const contentHeight = control.offsetHeight;
         const maxScroll = Math.max(0, contentHeight - containerHeight + containerHeight / 2);
@@ -4077,6 +4163,152 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const cr = container.getBoundingClientRect();
     return cr.top + container.clientHeight * 0.5;
+  }
+
+  // ============================================================
+  // ÂNCORA DE LEITURA (preserva o ponto sob a seta em edições remotas)
+  // ============================================================
+  // Quando o roteirista edita o texto enquanto o operador está passando o
+  // roteiro, a posição em pixels deixa de apontar para o mesmo trecho (texto
+  // inserido/removido acima empurra o conteúdo). Estas funções "ancoram" no
+  // parágrafo que está sob a seta verde para que ele permaneça no mesmo lugar.
+
+  let _lastAnchorLogTime = 0;
+
+  function normalizeAnchorText(t) {
+    return (t || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  }
+
+  /**
+   * Captura o parágrafo atualmente sob a seta (cue) no prompter e a fração
+   * vertical dentro dele. Usa getBoundingClientRect (preciso, considera margens
+   * e padding). Deve ser chamada ANTES de trocar o conteúdo.
+   */
+  function captureCueAnchor() {
+    const control = document.getElementById("prompterText-control");
+    const container = document.querySelector(".prompter-in-control");
+    if (!control || !container) return null;
+
+    const blocks = getBlockElements(control);
+    if (!blocks.length) return null;
+
+    const cueY = getCueViewportY();
+
+    let chosen = -1;
+    for (let i = 0; i < blocks.length; i++) {
+      const r = blocks[i].getBoundingClientRect();
+      if (cueY < r.bottom || i === blocks.length - 1) {
+        chosen = i;
+        break;
+      }
+    }
+    if (chosen < 0) chosen = blocks.length - 1;
+
+    const r = blocks[chosen].getBoundingClientRect();
+    const h = r.height || 1;
+    const fraction = Math.max(0, Math.min(1, (cueY - r.top) / h));
+
+    return {
+      idx: chosen,
+      fraction,
+      text: normalizeAnchorText(blocks[chosen].textContent),
+      prevText: chosen > 0 ? normalizeAnchorText(blocks[chosen - 1].textContent) : "",
+    };
+  }
+
+  /** Encontra, no novo conteúdo, o bloco que corresponde à âncora. */
+  function findAnchorBlockIndex(blocks, anchor) {
+    // 1) Texto exato do bloco-âncora (escolhe o índice mais próximo do antigo)
+    if (anchor.text) {
+      let best = -1;
+      let bestDist = Infinity;
+      blocks.forEach((b, i) => {
+        if (normalizeAnchorText(b.textContent) === anchor.text) {
+          const d = Math.abs(i - anchor.idx);
+          if (d < bestDist) {
+            bestDist = d;
+            best = i;
+          }
+        }
+      });
+      if (best >= 0) return best;
+    }
+    // 2) Se a própria linha foi editada, ancora pelo bloco anterior + 1
+    if (anchor.prevText) {
+      let best = -1;
+      let bestDist = Infinity;
+      blocks.forEach((b, i) => {
+        if (normalizeAnchorText(b.textContent) === anchor.prevText) {
+          const d = Math.abs(i - (anchor.idx - 1));
+          if (d < bestDist) {
+            bestDist = d;
+            best = i;
+          }
+        }
+      });
+      if (best >= 0) return Math.min(best + 1, blocks.length - 1);
+    }
+    // 3) Fallback: mesmo índice
+    return Math.min(anchor.idx, blocks.length - 1);
+  }
+
+  /**
+   * Reposiciona a rolagem para que o parágrafo-âncora volte para EXATAMENTE sob
+   * a seta verde no novo conteúdo. Usa a posição real (getBoundingClientRect) do
+   * bloco e um deslocamento por delta até a seta — robusto a margens/padding e a
+   * inserções/remoções acima. Deve ser chamada DEPOIS de trocar o conteúdo.
+   */
+  function restoreCueAnchor(anchor) {
+    if (!anchor) return false;
+    const control = document.getElementById("prompterText-control");
+    const container = document.querySelector(".prompter-in-control");
+    if (!control || !container) return false;
+
+    const blocks = getBlockElements(control);
+    if (!blocks.length) return false;
+
+    const targetIdx = findAnchorBlockIndex(blocks, anchor);
+    const cueY = getCueViewportY();
+
+    // Posição atual (viewport) do ponto-âncora dentro do bloco correspondente.
+    const r = blocks[targetIdx].getBoundingClientRect();
+    const anchorViewportY = r.top + anchor.fraction * (r.height || 0);
+
+    // Quanto precisamos rolar para levar esse ponto de volta à seta.
+    const delta = anchorViewportY - cueY;
+
+    const running = ScrollEngine.isRunning;
+    const curScroll = running
+      ? ScrollEngine.decimalScroll || 0
+      : container.scrollTop || ScrollEngine.decimalScroll || 0;
+
+    const containerHeight = container.clientHeight || 0;
+    const contentHeight = control.offsetHeight || control.scrollHeight || 0;
+    const maxScroll = Math.max(0, contentHeight - containerHeight + containerHeight / 2);
+    const newScroll = Math.max(0, Math.min(curScroll + delta, maxScroll));
+
+    ScrollEngine.decimalScroll = newScroll;
+    if (running) {
+      control.style.willChange = "transform";
+      control.style.transform = `translate3d(0, -${newScroll}px, 0)`;
+    } else {
+      control.style.transform = "none";
+      container.style.overflowY = "auto";
+      container.scrollTop = newScroll;
+    }
+
+    const now = Date.now();
+    if (now - _lastAnchorLogTime > 1500) {
+      _lastAnchorLogTime = now;
+      console.log("[CueAnchor] mantido:", {
+        idxAntigo: anchor.idx,
+        idxNovo: targetIdx,
+        totalBlocos: blocks.length,
+        delta: Math.round(delta),
+        novoScroll: Math.round(newScroll),
+      });
+    }
+    return true;
   }
 
   /**
@@ -4425,9 +4657,20 @@ document.addEventListener("DOMContentLoaded", () => {
         applyStyle("underline");
         break;
       case "set-font":
-        document.execCommand("fontName", false, value);
+        applyOperatorFontFamily(value);
         // Sincroniza a barra visualmente
         updateFontUIState(value, document.getElementById('font-size-select')?.value);
+        // Sincroniza o select da toolbar
+        const fontSelectMenu = document.getElementById('font-family-select');
+        if (fontSelectMenu) fontSelectMenu.value = value;
+        // Envia para os roteiristas Wi-Fi local
+        ipcRenderer.send('send-style-to-remote', {
+          type: 'fontFamily',
+          value: value,
+          name: 'Host'
+        });
+        // Envia para os roteiristas via internet (WebRTC)
+        if (typeof broadcastStylesUpdate === 'function') broadcastStylesUpdate();
         break;
       case "set-size":
         // CHAMA A FUNÇÃO DE TAMANHO REAL (PT)
@@ -4608,8 +4851,8 @@ document.addEventListener("DOMContentLoaded", () => {
   if (toolbarFontSelect) {
     toolbarFontSelect.addEventListener('change', (e) => {
       const val = e.target.value;
-      // Aplica fonte
-      document.execCommand("fontName", false, val);
+      // Aplica a fonte em todo o roteiro (container-level) e fixa nas prefs
+      applyOperatorFontFamily(val);
 
       // Sincroniza UI (Pega o tamanho atual para não perder)
       const currentSize = toolbarSizeSelect ? toolbarSizeSelect.value : null;
@@ -4637,7 +4880,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
   fontFamilySelect?.addEventListener("change", () => {
-    applyStyle("fontName", fontFamilySelect.value);
+    // A aplicação da fonte (container-level) já é feita pelo listener acima
+    // (toolbarFontSelect). Evita reintroduzir tags <font face> inline com execCommand.
     getActiveTextEditorArea()?.focus();
   });
 
@@ -6445,11 +6689,18 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!editor) return;
     const computedStyle = window.getComputedStyle(editor);
 
+    const prompterEl = document.getElementById("prompterText-control");
+    const resolvedFont =
+      editor.style.fontFamily ||
+      (prompterEl && prompterEl.style.fontFamily) ||
+      (typeof globalPrefs !== "undefined" && globalPrefs && globalPrefs.defaultFont) ||
+      "Arial";
+
     // Coleta o estado atual do editor
     const fullState = {
       htmlContent: getRemoteSyncContent(),
       fontSize: parseInt(editor.style.fontSize) || currentFontSizePT || 24,
-      fontFamily: editor.style.fontFamily || "Arial",
+      fontFamily: resolvedFont,
       textAlign: editor.style.textAlign || "left",
       fontWeight: computedStyle.fontWeight || editor.style.fontWeight || "normal",
       fontStyle: computedStyle.fontStyle || editor.style.fontStyle || "normal",
@@ -6567,7 +6818,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const styles = {
       fontColor: globalPrefs.defaultFontColor || '#FFFFFF',
-      fontFamily: globalPrefs.defaultFont || 'Arial',
+      fontFamily: currentFontFamily || editor.style.fontFamily || globalPrefs.defaultFont || 'Arial',
       fontSize: currentFontSizePT || parseInt(editor.style.fontSize) || 24,
       lineSpacing: globalPrefs.lineSpacing || 1.6,
       textAlign: editor.style.textAlign || 'left',
@@ -6577,6 +6828,16 @@ document.addEventListener("DOMContentLoaded", () => {
     // Envia para todos os peers WebRTC
     if (typeof RemoteConnectionModule !== 'undefined' && RemoteConnectionModule.broadcastStylesUpdate) {
       RemoteConnectionModule.broadcastStylesUpdate(styles);
+    }
+
+    // Envia pela INTERNET (WebRTC dataChannel) para cada roteirista conectado
+    if (typeof peers === 'object' && peers) {
+      Object.keys(peers).forEach((id) => {
+        const peer = peers[id];
+        if (peer && peer.dataChannel && peer.dataChannel.readyState === 'open') {
+          peer.dataChannel.send(JSON.stringify({ type: 'style-update', styles }));
+        }
+      });
     }
 
     // Envia para o servidor local (via IPC)
@@ -6922,6 +7183,24 @@ document.addEventListener("DOMContentLoaded", () => {
       if (editor) {
         channel.send(JSON.stringify({ type: 'update', content: editor.innerHTML }));
       }
+
+      // Envia a fonte/estilo atual para o roteirista que acabou de conectar,
+      // garantindo que ele veja a mesma fonte do operador desde o início.
+      try {
+        const styleEditor = editor || getActiveTextEditorArea();
+        channel.send(JSON.stringify({
+          type: 'style-update',
+          styles: {
+            fontFamily:
+              currentFontFamily ||
+              (styleEditor && styleEditor.style.fontFamily) ||
+              (globalPrefs && globalPrefs.defaultFont) ||
+              'Arial',
+            fontSize: currentFontSizePT || (styleEditor && parseInt(styleEditor.style.fontSize)) || 24,
+            textAlign: (styleEditor && styleEditor.style.textAlign) || 'left',
+          }
+        }));
+      } catch (_) {}
 
       const readSnapshot = getReadProgressSnapshot();
       if (readSnapshot) {
@@ -7567,7 +7846,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const prompterText = document.getElementById('prompterText-control');
     if (prompterText) {
       prompterText.style.fontSize = sizeInPt + "pt";
-      prompterText.style.lineHeight = "1.2";
+      // Respeita o espaçamento de linha escolhido (Preferences), em vez de forçar 1.2
+      prompterText.style.lineHeight =
+        currentLineSpacing || (globalPrefs && globalPrefs.lineSpacing) || 1.4;
     }
 
     // 4. Sincroniza o número exibido na caixinha da barra e no menu Format
@@ -7819,7 +8100,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (prompterText) {
       // APLICAÇÃO DIRETA E FORÇADA
       prompterText.style.fontSize = `${sizeInPt}pt`;
-      prompterText.style.lineHeight = "1.4"; // Mantém espaçamento legível
+      // Respeita o espaçamento de linha escolhido (Preferences), em vez de forçar 1.4
+      prompterText.style.lineHeight =
+        currentLineSpacing || (globalPrefs && globalPrefs.lineSpacing) || 1.4;
     }
 
     console.log(`✅ Font Size Operator atualizado para: ${sizeInPt}pt`);

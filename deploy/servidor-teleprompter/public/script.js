@@ -612,6 +612,8 @@ function setupChannel() {
         } else if (data.type === 'read-progress') {
             applyReadProgress(data);
             requestAnimationFrame(() => applyReadProgressNow(_serverReadPayload));
+        } else if (data.type === 'style-update') {
+            applyRemoteStyles(data.styles || data);
         }
     };
 
@@ -917,10 +919,41 @@ function stripReadProgressMarkup(html) {
         tmp.innerHTML = html;
         tmp.querySelectorAll('.script-read').forEach((el) => el.classList.remove('script-read'));
         tmp.querySelectorAll('[data-para-idx]').forEach((el) => el.removeAttribute('data-para-idx'));
+        // Remove SEMPRE a fonte inline para que a fonte escolhida pelo operador
+        // (aplicada no container do editor) prevaleça.
+        tmp.querySelectorAll('font[face]').forEach((el) => el.removeAttribute('face'));
+        tmp.querySelectorAll('[style*="font-family"]').forEach((el) => {
+            el.style.removeProperty('font-family');
+            if (!el.getAttribute('style')) el.removeAttribute('style');
+        });
         return tmp.innerHTML;
     } catch (e) {
         return html;
     }
+}
+
+// ============================================================
+// APLICA ESTILOS VINDOS DO OPERADOR (fonte / tamanho / alinhamento)
+// ============================================================
+// A família da fonte SEMPRE segue o operador. O cadeado trava apenas o TAMANHO.
+function applyRemoteStyles(styles) {
+    if (!styles || !editor) return;
+    if (styles.fontFamily) {
+        editor.style.fontFamily = styles.fontFamily;
+        const sel = document.getElementById('remote-font-select');
+        if (sel) sel.value = styles.fontFamily;
+    }
+    if (!window.fontSizeLocked && styles.fontSize) {
+        const size = parseInt(styles.fontSize);
+        if (size >= 8 && size <= 200) {
+            editor.style.fontSize = size + 'pt';
+            if (typeof updateSizeUI === 'function') updateSizeUI(size);
+        }
+    }
+    if (styles.textAlign) editor.style.textAlign = styles.textAlign;
+    if (styles.fontColor) editor.style.color = styles.fontColor;
+    if (styles.lineSpacing) editor.style.lineHeight = styles.lineSpacing;
+    if (typeof flashSyncIndicator === 'function') flashSyncIndicator();
 }
 
 function sanitizeHtmlIfFontLocked(html) {

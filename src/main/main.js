@@ -1575,6 +1575,10 @@ ipcMain.handle('toggle-server', async (event, mode) => {
           res.sendFile(remotePagePath);
         });
 
+        // Serve CSS e fontes (OpenDyslexic, etc.) para o roteirista renderizar
+        // a mesma fonte escolhida pelo operador.
+        remoteApp.use('/css', express.static(path.join(__dirname, '../../public/css')));
+
         remoteIo.on('connection', (socket) => {
 
           socket.on('join-session', (userData) => {
@@ -1711,6 +1715,35 @@ ipcMain.on('send-full-state-to-remote', (event, state) => {
     if (state.readProgress) {
       applyReadProgressFromPayload(state.readProgress);
     }
+  }
+});
+
+// Guarda o último estado de estilo para reenviar a quem conectar depois
+let currentRemoteStyle = { fontFamily: null, fontSize: null, alignment: null };
+
+// Envia mudança de estilo individual (fonte, tamanho, alinhamento) para roteiristas Wi-Fi
+ipcMain.on('send-style-to-remote', (event, styleData) => {
+  if (!remoteIo || !styleData) return;
+  if (styleData.type === 'fontFamily') currentRemoteStyle.fontFamily = styleData.value;
+  else if (styleData.type === 'fontSize') currentRemoteStyle.fontSize = styleData.value;
+  else if (styleData.type === 'alignment') currentRemoteStyle.alignment = styleData.value;
+  remoteIo.emit('server-style-update', styleData);
+});
+
+// Envia o conjunto de estilos (full styles) para roteiristas Wi-Fi
+ipcMain.on('broadcast-styles-to-remote', (event, styles) => {
+  if (!remoteIo || !styles) return;
+  if (styles.fontFamily) {
+    currentRemoteStyle.fontFamily = styles.fontFamily;
+    remoteIo.emit('server-style-update', { type: 'fontFamily', value: styles.fontFamily, name: 'Host' });
+  }
+  if (styles.fontSize) {
+    currentRemoteStyle.fontSize = styles.fontSize;
+    remoteIo.emit('server-style-update', { type: 'fontSize', value: styles.fontSize, name: 'Host' });
+  }
+  if (styles.textAlign) {
+    currentRemoteStyle.alignment = styles.textAlign;
+    remoteIo.emit('server-style-update', { type: 'alignment', value: styles.textAlign, name: 'Host' });
   }
 });
 
