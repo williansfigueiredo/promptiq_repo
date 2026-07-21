@@ -1991,8 +1991,13 @@ document.addEventListener("DOMContentLoaded", () => {
         stopExit: () => {
           // Sai do fullscreen ou para o scroll
           if (document.body.classList.contains("operator-fullscreen-mode")) {
-            document.body.classList.remove("operator-fullscreen-mode");
-            ipcRenderer.send("control-window", "fullscreen");
+            const run = (typeof runFullscreenChangePreservingAnchor === "function")
+              ? runFullscreenChangePreservingAnchor
+              : (fn) => fn();
+            run(() => {
+              document.body.classList.remove("operator-fullscreen-mode");
+              ipcRenderer.send("control-window", "fullscreen");
+            });
           } else {
             ScrollEngine.stop();
           }
@@ -2160,8 +2165,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // Só trata Escape para fullscreen (resto é pelo HotkeyHandler)
     if (e.key === "Escape") {
       if (document.body.classList.contains("operator-fullscreen-mode")) {
-        document.body.classList.remove("operator-fullscreen-mode");
-        ipcRenderer.send("control-window", "fullscreen");
+        const run = (typeof runFullscreenChangePreservingAnchor === "function")
+          ? runFullscreenChangePreservingAnchor
+          : (fn) => fn();
+        run(() => {
+          document.body.classList.remove("operator-fullscreen-mode");
+          ipcRenderer.send("control-window", "fullscreen");
+        });
       }
     }
   });
@@ -3719,10 +3729,38 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // ============================================================
+  // FULLSCREEN preservando o PONTO DE LEITURA (âncora de conteúdo)
+  // ============================================================
+  // Entrar/sair de fullscreen redimensiona a janela e re-quebra as linhas,
+  // mudando a altura do conteúdo. Como a posição é em pixels, o mesmo pixel
+  // passaria a apontar para outro trecho (salto). Aqui capturamos o parágrafo
+  // sob a seta ANTES e o reposicionamos DEPOIS que o redimensionamento conclui.
+  function runFullscreenChangePreservingAnchor(applyChange) {
+    const anchor =
+      typeof captureCueAnchor === "function" ? captureCueAnchor() : null;
+
+    applyChange();
+
+    if (!anchor || typeof restoreCueAnchor !== "function") return;
+
+    // O fullscreen do SO é assíncrono; reaplica em alguns instantes até a
+    // janela estabilizar (cobre ~600ms da transição) sem congelar de vez.
+    const checkpoints = [0, 120, 300, 550];
+    checkpoints.forEach((ms) => {
+      setTimeout(() => {
+        if (typeof ScrollEngine !== "undefined") ScrollEngine.invalidateMetrics();
+        restoreCueAnchor(anchor);
+      }, ms);
+    });
+  }
+
   if (opBtnFullscreen) {
     opBtnFullscreen.addEventListener("click", () => {
-      document.body.classList.toggle("operator-fullscreen-mode");
-      ipcRenderer.send("control-window", "fullscreen");
+      runFullscreenChangePreservingAnchor(() => {
+        document.body.classList.toggle("operator-fullscreen-mode");
+        ipcRenderer.send("control-window", "fullscreen");
+      });
     });
   }
 
@@ -3731,8 +3769,10 @@ document.addEventListener("DOMContentLoaded", () => {
       e.key === "Escape" &&
       document.body.classList.contains("operator-fullscreen-mode")
     ) {
-      document.body.classList.remove("operator-fullscreen-mode");
-      ipcRenderer.send("control-window", "fullscreen");
+      runFullscreenChangePreservingAnchor(() => {
+        document.body.classList.remove("operator-fullscreen-mode");
+        ipcRenderer.send("control-window", "fullscreen");
+      });
     }
   });
 
@@ -4672,10 +4712,18 @@ document.addEventListener("DOMContentLoaded", () => {
         // Envia para os roteiristas via internet (WebRTC)
         if (typeof broadcastStylesUpdate === 'function') broadcastStylesUpdate();
         break;
-      case "set-size":
-        // CHAMA A FUNÇÃO DE TAMANHO REAL (PT)
-        applyExactFontSize(value);
+      case "set-size": {
+        // Usa a função parcial-aware: se houver seleção, aplica só nela.
+        const sizeVal = parseInt(value);
+        if (sizeVal > 0) {
+          const partial = applyExactFontSizeToEditor(sizeVal);
+          if (!partial) {
+            applyExactFontSizeToOperator(sizeVal);
+            updateFontUIState(null, sizeVal);
+          }
+        }
         break;
+      }
       case "align-left":
         applyStyle("justifyLeft");
         break;
@@ -7790,19 +7838,14 @@ document.addEventListener("DOMContentLoaded", () => {
       // 1. RESTAURA A SELEÇÃO
       restoreSelection();
 
-      // 2. APLICA NO EDITOR (ABA EDIT)
-      applyExactFontSizeToEditor(val);
+      // 2. APLICA NO EDITOR (ABA EDIT). Retorna true se foi só na SELEÇÃO.
+      const partial = applyExactFontSizeToEditor(val);
 
-      // 3. APLICA NO OPERATOR (ABA OPERATOR)
-      applyExactFontSizeToOperator(val);
-
-      // 4. ✅ SINCRONIZA COM O PROMPTER (ISSO ERA O QUE FALTAVA!)
-      if (typeof syncContentToPrompter === "function") {
-        syncContentToPrompter();
+      // 3. Só força o tamanho GLOBAL no prompter/UI quando NÃO há seleção.
+      if (!partial) {
+        applyExactFontSizeToOperator(val);
+        updateFontUIState(null, val);
       }
-
-      // 5. SINCRONIZA A INTERFACE
-      updateFontUIState(null, val);
 
       // 6. Coloca o foco de volta no editor
       const editor = getActiveTextEditorArea();
@@ -7957,29 +8000,25 @@ document.addEventListener("DOMContentLoaded", () => {
       // Validação: não deixar menor que 8 ou maior que 100
       if (valor < 8 || valor > 100) return;
 
-      // 1. ATUALIZA A MEMÓRIA GLOBAL
-      currentFontSizePT = valor;
+      // 1. APLICA NO EDITOR (ABA EDIT). Retorna true se foi só na SELEÇÃO.
+      const partial = applyExactFontSizeToEditor(valor);
 
-      // 2. APLICA NO EDITOR (ABA EDIT) - TEXTO VISÍVEL
-      applyExactFontSizeToEditor(valor);
+      // 2. Se foi parcial (só a seleção), NÃO mexe no tamanho global do
+      //    prompter, nem nas preferências, nem envia fontSize global ao
+      //    remoto — a seleção já vai no conteúdo (span inline) sincronizado.
+      if (!partial) {
+        currentFontSizePT = valor;
+        applyExactFontSizeToOperator(valor);
+        updateFontUIState(null, valor);
+        ipcRenderer.send('save-settings', { defaultFontSize: valor });
+        ipcRenderer.send('send-style-to-remote', {
+          type: 'fontSize',
+          value: valor,
+          name: 'Host'
+        });
+      }
 
-      // 3. APLICA NO OPERATOR (ABA OPERATOR) - TEXTO DO PROMPTER
-      applyExactFontSizeToOperator(valor);
-
-      // 4. SINCRONIZA A INTERFACE
-      updateFontUIState(null, valor);
-
-      // 5. SALVA NAS PREFERÊNCIAS (Optional - se usar localStorage/ipc)
-      ipcRenderer.send('save-settings', { defaultFontSize: valor });
-
-      // 6. ENVIA PARA OS REMOTOS (Roteiristas conectados)
-      ipcRenderer.send('send-style-to-remote', {
-        type: 'fontSize',
-        value: valor,
-        name: 'Host'
-      });
-
-      // 7. Marca como não salvo e agenda autosave
+      // 3. Marca como não salvo e agenda autosave
       if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
         markDocumentAsUnsaved(activeDocumentId);
       }
@@ -8025,6 +8064,8 @@ document.addEventListener("DOMContentLoaded", () => {
       } catch (e) { /* range inválido */ }
     }
 
+    let appliedPartial = false;
+
     if (workingRange) {
       // ── MODO PARCIAL: aplica APENAS no texto selecionado ─────────────
       try {
@@ -8062,8 +8103,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // Atualiza o range salvo para a próxima operação
         lastEditorRange = newRange.cloneRange();
 
-        // Atualiza variável global, mas NÃO mexe no container do editor
-        currentFontSizePT = sizeInPt;
+        // IMPORTANTE: NÃO altera currentFontSizePT nem o container do editor.
+        // O tamanho base (global) continua o mesmo; apenas a seleção muda.
+        appliedPartial = true;
 
       } catch (err) {
         console.error('Erro ao aplicar font-size na seleção:', err);
@@ -8089,6 +8131,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (typeof syncContentToPrompter === "function") syncContentToPrompter();
     if (activeDocumentId) markDocumentAsUnsaved(activeDocumentId);
+
+    // Retorna true quando aplicou SOMENTE na seleção (parcial), para o chamador
+    // NÃO forçar o tamanho global no prompter/preferências.
+    return appliedPartial;
   }
 
   /**
@@ -8169,10 +8215,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
         console.log("📐 Tamanho pré-definido selecionado:", val);
 
-        // Aplica em tudo
-        applyExactFontSizeToEditor(val);
-        applyExactFontSizeToOperator(val);
-        updateFontUIState(null, val);
+        // Aplica no editor; só força o global se NÃO houver seleção.
+        const partial = applyExactFontSizeToEditor(val);
+        if (!partial) {
+          applyExactFontSizeToOperator(val);
+          updateFontUIState(null, val);
+        }
 
         // Limpa e sincroniza o input customizado com o mesmo valor
         if (fontSizeCustom) fontSizeCustom.value = val;
@@ -8198,9 +8246,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const val = parseInt(e.target.value);
         if (val >= 8 && val <= 100) {
           console.log("📐 Tamanho customizado confirmado:", val);
-          applyExactFontSizeToEditor(val);
-          applyExactFontSizeToOperator(val);
-          updateFontUIState(null, val);
+          const partial = applyExactFontSizeToEditor(val);
+          if (!partial) {
+            applyExactFontSizeToOperator(val);
+            updateFontUIState(null, val);
+          }
           if (fontSizePreset) fontSizePreset.value = "";
           if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
             markDocumentAsUnsaved(activeDocumentId);
@@ -8217,9 +8267,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (val && val >= 8 && val <= 100) {
         console.log("📐 Tamanho customizado aplicado (blur):", val);
-        applyExactFontSizeToEditor(val);
-        applyExactFontSizeToOperator(val);
-        updateFontUIState(null, val);
+        const partial = applyExactFontSizeToEditor(val);
+        if (!partial) {
+          applyExactFontSizeToOperator(val);
+          updateFontUIState(null, val);
+        }
         if (fontSizePreset) fontSizePreset.value = "";
         if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
           markDocumentAsUnsaved(activeDocumentId);
@@ -8749,7 +8801,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // F11: Tela Cheia (Fullscreen)
     if (e.key === 'F11') {
       e.preventDefault();
-      ipcRenderer.send("control-window", "fullscreen"); // Garanta que esse handler existe no main.js
+      const run = (typeof runFullscreenChangePreservingAnchor === "function")
+        ? runFullscreenChangePreservingAnchor
+        : (fn) => fn();
+      run(() => {
+        ipcRenderer.send("control-window", "fullscreen"); // Garanta que esse handler existe no main.js
+      });
       return;
     }
 
