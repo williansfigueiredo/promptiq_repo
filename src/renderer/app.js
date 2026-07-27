@@ -4105,6 +4105,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const contentH = control.offsetHeight || control.scrollHeight || 1;
         const textPercent = Math.min(1, Math.max(0, fixedScroll / contentH));
         ipcRenderer.send("sync-scroll-position", { textPercent });
+
+        // Faz 2 passes extras para absorver reflow tardio (ex.: espaço/paste)
+        // e tornar a atualização visualmente imperceptível.
+        stabilizeCueAnchorAfterRemoteEdit(cueAnchor, 2);
       } else if (wasRunning) {
         const containerHeight = container ? container.clientHeight : 0;
         const contentHeight = control.offsetHeight;
@@ -4418,6 +4422,29 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
     return true;
+  }
+
+  function stabilizeCueAnchorAfterRemoteEdit(anchor, passes = 2) {
+    if (!anchor || passes <= 0) return;
+
+    let remaining = passes;
+    const step = () => {
+      const anchored = restoreCueAnchor(anchor);
+      if (anchored) {
+        const control = document.getElementById("prompterText-control");
+        if (control) {
+          const contentH = control.offsetHeight || control.scrollHeight || 1;
+          const stableScroll = ScrollEngine.decimalScroll || 0;
+          const textPercent = Math.min(1, Math.max(0, stableScroll / contentH));
+          ipcRenderer.send("sync-scroll-position", { textPercent });
+        }
+      }
+
+      remaining -= 1;
+      if (remaining > 0) requestAnimationFrame(step);
+    };
+
+    requestAnimationFrame(step);
   }
 
   /**
