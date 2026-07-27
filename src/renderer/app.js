@@ -3895,7 +3895,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 200);
   }
 
-  function applyPrompterContainerStyles(control, editor) {
+  function applyPrompterContainerStyles(control, editor, skipFontSize = false) {
     if (!control) return;
 
     const baseColor = operatorState.isInverted ? "#000000" : "#FFFFFF";
@@ -3908,7 +3908,12 @@ document.addEventListener("DOMContentLoaded", () => {
       if (prompterWrapper) prompterWrapper.style.backgroundColor = bgColor;
     }
 
-    if (typeof currentFontSizePT !== "undefined" && currentFontSizePT > 0) {
+    // ===================================================================
+    // CORREÇÃO: Preservar font size durante edições remotas
+    // ===================================================================
+    // skipFontSize=true: Não sobrescreve font size (durante edição remota)
+    // skipFontSize=false: Aplica font size normalmente (comportamento padrão)
+    if (!skipFontSize && typeof currentFontSizePT !== "undefined" && currentFontSizePT > 0) {
       control.style.fontSize = `${getOperatorFontSizePt()}pt`;
       control.style.lineHeight = currentLineSpacing || (globalPrefs && globalPrefs.lineSpacing) || 1.5;
     }
@@ -3968,13 +3973,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const content = getCleanContent(editor);
     if (content === _lastPrompterHtml) {
-      applyPrompterContainerStyles(control, editor);
+      const isRemoteEdit = options.preserveScrollDuringRemoteEdit === true;
+      applyPrompterContainerStyles(control, editor, isRemoteEdit);
       return;
     }
 
     const finalContent = processPrompterHtml(content);
     if (finalContent === _lastPrompterHtml) {
-      applyPrompterContainerStyles(control, editor);
+      const isRemoteEdit = options.preserveScrollDuringRemoteEdit === true;
+      applyPrompterContainerStyles(control, editor, isRemoteEdit);
       return;
     }
 
@@ -4025,7 +4032,12 @@ document.addEventListener("DOMContentLoaded", () => {
         p.style.marginTop = "0";
       });
 
-      applyPrompterContainerStyles(control, editor);
+      // ===================================================================
+      // CORREÇÃO: skipFontSize=true durante edição remota
+      // Preserva font size ao invés de sobrescrever com font do operador
+      // ===================================================================
+      const isRemoteEdit = options.preserveScrollDuringRemoteEdit === true;
+      applyPrompterContainerStyles(control, editor, isRemoteEdit);
 
       ensureParaIndexing();
       ScrollEngine.invalidateMetrics();
