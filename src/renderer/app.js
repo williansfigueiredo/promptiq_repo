@@ -145,12 +145,22 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  function applyOperatorEditorTypography(editor) {
+  function applyOperatorEditorTypography(editor, preserveFontSize = false) {
     if (!editor) return;
     const prompter = document.getElementById("prompterText-control");
-    const size = getOperatorFontSizePt();
-    currentFontSizePT = size;
-    editor.style.fontSize = `${size}pt`;
+    
+    // ===================================================================
+    // CORREÇÃO: Preservar o tamanho de fonte do editor durante edições remotas
+    // ===================================================================
+    // Quando o roteirista edita remotamente, não queremos que o font size
+    // seja sobrescrito com o do operador. Isso evita que um texto de 48pt
+    // caia para 30pt apenas porque o operador tem tamanho diferente.
+    if (!preserveFontSize) {
+      const size = getOperatorFontSizePt();
+      currentFontSizePT = size;
+      editor.style.fontSize = `${size}pt`;
+    }
+    
     editor.style.lineHeight = prompter?.style.lineHeight || editor.style.lineHeight || "1.4";
     // Preserva a fonte escolhida pelo operador (container-level) mesmo após edições
     // remotas que removem as tags <font face> inline.
@@ -196,7 +206,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Persiste a fonte nas configurações para sobreviver a reinícios.
     try {
       ipcRenderer.send("save-settings", { defaultFont: fontName });
-    } catch (_) {}
+    } catch (_) { }
 
     if (typeof syncContentToPrompter === "function") syncContentToPrompter();
     if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
@@ -219,7 +229,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // ===================================================================
     const wasScrolling = ScrollEngine.isRunning;
     const scrollPosBefore = ScrollEngine.decimalScroll || 0;
-    
+
     if (wasScrolling) {
       console.log(`🔒 Sincronizando edição remota. Scroll protegido em: ${scrollPosBefore}px`);
     }
@@ -227,7 +237,11 @@ document.addEventListener("DOMContentLoaded", () => {
     runWithoutRemoteBroadcast(() => {
       beginBulkEdit();
       editor.innerHTML = normalized;
-      applyOperatorEditorTypography(editor);
+      // ===================================================================
+      // CORREÇÃO: Preserve o tamanho de fonte durante edição remota
+      // Passa true para preserveFontSize para não sobrescrever com font do operador
+      // ===================================================================
+      applyOperatorEditorTypography(editor, true);
       endBulkEdit(() => {
         if (typeof syncContentToPrompter === "function") {
           // Preserva o PONTO DE LEITURA (parágrafo sob a seta) via âncora de
@@ -1005,7 +1019,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Verifica se deve mostrar o cue marker (padrão: true)
       const shouldShowCue = prefs.showCueMarker !== false;
       cueMarker.style.display = shouldShowCue ? 'flex' : 'none';
-      
+
       if (shouldShowCue) {
         cueMarker.style.alignItems = 'center';
         cueMarker.style.color = prefs.cueColor || '#00FF00';
@@ -1979,7 +1993,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function readCurrentScrollY(container, textEl) {
     if (ScrollEngine.isRunning) return ScrollEngine.decimalScroll || 0;
     const scrollTop = container.scrollTop || 0;
-    const decimal  = ScrollEngine.decimalScroll || 0;
+    const decimal = ScrollEngine.decimalScroll || 0;
     return Math.max(scrollTop, decimal);
   }
 
@@ -2553,11 +2567,11 @@ document.addEventListener("DOMContentLoaded", () => {
       // ===================================================================
       // Marca os elementos existentes antes do paste
       const existingElements = new Set(editor.querySelectorAll("*"));
-      
+
       // Capturar estado de playback ANTES do paste
       const wasScrolling = typeof ScrollEngine !== "undefined" && ScrollEngine.isRunning;
       const scrollPosBefore = (typeof ScrollEngine !== "undefined") ? ScrollEngine.decimalScroll : 0;
-      
+
       if (wasScrolling) {
         console.log(`📋 Paste detectado durante playback. Scroll protegido em: ${scrollPosBefore}px`);
       }
@@ -2576,7 +2590,7 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         });
         window.getSelection().removeAllRanges();
-        
+
         // ===================================================================
         // Sincronizar com PROTEÇÃO especial para paste
         // ===================================================================
@@ -2586,7 +2600,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (typeof updateFormatMenuState === "function") {
           updateFormatMenuState();
         }
-        
+
         // ===================================================================
         // Ativar proteção de scroll MAIS LONGA para paste (400ms vs 250ms)
         // Paste é uma mudança maior, precisa de mais tempo
@@ -2594,7 +2608,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (wasScrolling && typeof ScrollEngine !== "undefined") {
           ScrollEngine.protectScrollDuringUpdate(400);
           console.log(`✅ Proteção de scroll PASTE ativada por 400ms`);
-          
+
           // Verificação extra após o paste
           requestAnimationFrame(() => {
             const control = document.getElementById("prompterText-control");
@@ -3980,7 +3994,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (control) {
       const container = document.querySelector(".prompter-in-control");
-      
+
       // ===================================================================
       // CORREÇÃO: Sempre usar ScrollEngine.decimalScroll como fonte da verdade
       // Não usar TabNavigationManager.operatorSavedScrollPosition durante playback
@@ -4041,12 +4055,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const contentHeight = control.offsetHeight;
         const maxScroll = Math.max(0, contentHeight - containerHeight + containerHeight / 2);
         const clampedScroll = Math.min(savedScroll, maxScroll);
-        
+
         // Restaurar posição de scroll SEM DELAY
         ScrollEngine.decimalScroll = clampedScroll;
         control.style.willChange = "transform";
         control.style.transform = `translate3d(0, -${clampedScroll}px, 0)`;
-        
+
         // Garantir que o scroll continue suave no próximo frame
         requestAnimationFrame(() => {
           ScrollEngine.decimalScroll = clampedScroll;
@@ -5698,14 +5712,14 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         // Chama o IPC para abrir diálogo e ler o arquivo
         const result = await ipcRenderer.invoke('import-diff-document');
-        
+
         if (result.canceled) return;
-        
+
         if (!result.success) {
           alert('Erro ao importar documento: ' + (result.error || 'Erro desconhecido'));
           return;
         }
-        
+
         // Adiciona o documento à lista de importados
         const importedDoc = {
           id: `imported-${Date.now()}`,
@@ -5717,17 +5731,17 @@ document.addEventListener("DOMContentLoaded", () => {
           timestamp: Date.now() - 50,
           filePath: result.filePath
         };
-        
+
         importedDiffDocuments.push(importedDoc);
-        
+
         // Re-renderiza a lista com o novo documento
         const doc = getActiveDocument();
         if (doc) {
           renderTimelineList(doc);
         }
-        
+
         console.log('[Timeline] Documento importado:', result.fileName);
-        
+
       } catch (err) {
         console.error('Erro ao importar documento:', err);
         alert('Erro ao importar documento: ' + err.message);
@@ -6000,7 +6014,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     diff.forEach((part) => {
       const span = document.createElement("span");
-      
+
       if (part.removed) {
         // Texto que existia em v1 mas NÃO existe em v2 = REMOVIDO
         span.className = "diff-inline-removed";
@@ -6015,7 +6029,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Texto igual em ambos
         span.innerText = part.value;
       }
-      
+
       rightContainer.appendChild(span);
     });
 
@@ -7248,7 +7262,7 @@ document.addEventListener("DOMContentLoaded", () => {
             textAlign: (styleEditor && styleEditor.style.textAlign) || 'left',
           }
         }));
-      } catch (_) {}
+      } catch (_) { }
 
       const readSnapshot = getReadProgressSnapshot();
       if (readSnapshot) {
@@ -7981,7 +7995,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Clique FORA do editor: salva a seleção ANTES de ela ser descartada
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0 && !sel.getRangeAt(0).collapsed
-        && editorEl.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+      && editorEl.contains(sel.getRangeAt(0).commonAncestorContainer)) {
       lastEditorRange = sel.getRangeAt(0).cloneRange();
     }
   }, true); // ← useCapture=true para pegar ANTES de o foco mudar
