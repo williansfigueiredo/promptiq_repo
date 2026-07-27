@@ -681,6 +681,21 @@
 
             <div class="toolbar-separator"></div>
 
+            <!-- Grupo: Formatação de Texto (Negrito, Itálico, Sublinhado) -->
+            <div class="toolbar-group">
+                <button type="button" id="remote-bold-btn" class="toolbar-btn" title="Negrito (Ctrl+B)">
+                    <i class="bi bi-type-bold" style="font-size: 14px;"></i>
+                </button>
+                <button type="button" id="remote-italic-btn" class="toolbar-btn" title="Itálico (Ctrl+I)">
+                    <i class="bi bi-type-italic" style="font-size: 14px;"></i>
+                </button>
+                <button type="button" id="remote-underline-btn" class="toolbar-btn" title="Sublinhado (Ctrl+U)">
+                    <i class="bi bi-type-underline" style="font-size: 14px;"></i>
+                </button>
+            </div>
+
+            <div class="toolbar-separator"></div>
+
             <!-- Grupo: Tamanho da fonte do roteirista (local) -->
             <div class="toolbar-group">
                 <button type="button" id="remote-size-decrease" class="toolbar-btn" title="Diminuir tamanho da fonte (-2pt)">
@@ -1674,6 +1689,55 @@
         });
         
         // ============================================================
+        // FORMATAÇÃO DE TEXTO (Negrito, Itálico, Sublinhado)
+        // ============================================================
+        document.getElementById('remote-bold-btn').addEventListener('click', () => {
+            document.execCommand('bold', false, null);
+            toggleToolbarButtonState('remote-bold-btn');
+            editor.focus();
+        });
+        
+        document.getElementById('remote-italic-btn').addEventListener('click', () => {
+            document.execCommand('italic', false, null);
+            toggleToolbarButtonState('remote-italic-btn');
+            editor.focus();
+        });
+        
+        document.getElementById('remote-underline-btn').addEventListener('click', () => {
+            document.execCommand('underline', false, null);
+            toggleToolbarButtonState('remote-underline-btn');
+            editor.focus();
+        });
+        
+        // Função auxiliar para alternar estado visual do botão
+        function toggleToolbarButtonState(buttonId) {
+            const btn = document.getElementById(buttonId);
+            if (btn) {
+                btn.classList.toggle('active');
+            }
+        }
+        
+        // Atualiza estado dos botões de formatação quando a seleção muda
+        editor.addEventListener('mouseup', updateFormattingButtonStates);
+        editor.addEventListener('keyup', updateFormattingButtonStates);
+        
+        function updateFormattingButtonStates() {
+            const boldBtn = document.getElementById('remote-bold-btn');
+            const italicBtn = document.getElementById('remote-italic-btn');
+            const underlineBtn = document.getElementById('remote-underline-btn');
+            
+            if (boldBtn) {
+                boldBtn.classList.toggle('active', document.queryCommandState('bold'));
+            }
+            if (italicBtn) {
+                italicBtn.classList.toggle('active', document.queryCommandState('italic'));
+            }
+            if (underlineBtn) {
+                underlineBtn.classList.toggle('active', document.queryCommandState('underline'));
+            }
+        }
+        
+        // ============================================================
         // PALETA DE 60+ CORES
         // ============================================================
         const BASIC_COLORS = [
@@ -1956,6 +2020,25 @@
             if (prefs.theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
             else document.documentElement.removeAttribute('data-theme');
         }
+        
+        // ============================================================
+        // ATALHOS DE TECLADO PARA FORMATAÇÃO
+        // ============================================================
+        document.addEventListener('keydown', (e) => {
+            // Detecta Ctrl (Windows/Linux) ou Cmd (Mac)
+            const ctrlOrCmd = e.ctrlKey || e.metaKey;
+            
+            if (ctrlOrCmd && e.key.toLowerCase() === 'b') {
+                e.preventDefault();
+                document.getElementById('remote-bold-btn').click();
+            } else if (ctrlOrCmd && e.key.toLowerCase() === 'i') {
+                e.preventDefault();
+                document.getElementById('remote-italic-btn').click();
+            } else if (ctrlOrCmd && e.key.toLowerCase() === 'u') {
+                e.preventDefault();
+                document.getElementById('remote-underline-btn').click();
+            }
+        });
         
         // Inicialização do editor
         document.execCommand('styleWithCSS', false, true);

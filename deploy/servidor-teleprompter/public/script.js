@@ -963,6 +963,9 @@ function applyRemoteStyles(styles) {
   if (styles.textAlign) editor.style.textAlign = styles.textAlign;
   if (styles.fontColor) editor.style.color = styles.fontColor;
   if (styles.lineSpacing) editor.style.lineHeight = styles.lineSpacing;
+  if (styles.fontWeight) editor.style.fontWeight = styles.fontWeight;
+  if (styles.fontStyle) editor.style.fontStyle = styles.fontStyle;
+  if (styles.textDecoration) editor.style.textDecoration = styles.textDecoration;
   if (typeof flashSyncIndicator === 'function') flashSyncIndicator();
 }
 
