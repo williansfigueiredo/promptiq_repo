@@ -12,21 +12,21 @@ Write-Host ""
 # 1. LIMPEZA
 Write-Host "[1/5] Removendo artifacts antigos..." -ForegroundColor Yellow
 $artifacts = @(
-    "src\main\main.jsc",
-    "src\main\main.cjs",
-    "src\renderer\app.jsc",
-    "src\renderer\app.cjs",
-    "src\main\license-dist\gate.jsc",
-    "src\main\license-dist\gate.cjs",
-    "dist",
-    "node_modules\.cache"
+  "src\main\main.jsc",
+  "src\main\main.cjs",
+  "src\renderer\app.jsc",
+  "src\renderer\app.cjs",
+  "src\main\license-dist\gate.jsc",
+  "src\main\license-dist\gate.cjs",
+  "dist",
+  "node_modules\.cache"
 )
 
 foreach ($artifact in $artifacts) {
-    if (Test-Path $artifact) {
-        Remove-Item $artifact -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "  OK: $artifact"
-    }
+  if (Test-Path $artifact) {
+    Remove-Item $artifact -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "  OK: $artifact"
+  }
 }
 Write-Host ""
 
@@ -51,10 +51,9 @@ npm run bundle:license
 Write-Host "  OK: License gate compilado" -ForegroundColor Green
 Write-Host ""
 
-# 5. BUILD
-Write-Host "[5/5] Gerando instalador..." -ForegroundColor Yellow
-npm run dist:publish
-Write-Host "  OK: EXE gerado com sucesso" -ForegroundColor Green
+# 5. FINALIZAR SEM INSTALADOR
+Write-Host "[5/5] Finalizando build sem instalador..." -ForegroundColor Yellow
+Write-Host "  OK: Bytecode gerado sem empacotar instalador" -ForegroundColor Green
 Write-Host ""
 
 # RESULTADO
@@ -63,7 +62,7 @@ Write-Host "BUILD COMPLETO!" -ForegroundColor Green
 Write-Host "======================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Proximos passos:" -ForegroundColor Yellow
-Write-Host "  1. Teste o EXE localmente"
+Write-Host "  1. Teste o app localmente"
 Write-Host "  2. Verifique que a correcao funciona"
-Write-Host "  3. Envie para cliente"
+Write-Host "  3. Gere instalador por outro fluxo apenas se precisar"
 Write-Host ""

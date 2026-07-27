@@ -919,13 +919,6 @@ function stripReadProgressMarkup(html) {
         tmp.innerHTML = html;
         tmp.querySelectorAll('.script-read').forEach((el) => el.classList.remove('script-read'));
         tmp.querySelectorAll('[data-para-idx]').forEach((el) => el.removeAttribute('data-para-idx'));
-        // Remove SEMPRE a fonte inline para que a fonte escolhida pelo operador
-        // (aplicada no container do editor) prevaleça.
-        tmp.querySelectorAll('font[face]').forEach((el) => el.removeAttribute('face'));
-        tmp.querySelectorAll('[style*="font-family"]').forEach((el) => {
-            el.style.removeProperty('font-family');
-            if (!el.getAttribute('style')) el.removeAttribute('style');
-        });
         return tmp.innerHTML;
     } catch (e) {
         return html;

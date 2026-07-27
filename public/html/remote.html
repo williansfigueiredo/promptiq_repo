@@ -1906,14 +1906,6 @@
                 tpl.querySelectorAll('.script-read').forEach((el) => el.classList.remove('script-read'));
                 tpl.querySelectorAll('[data-read]').forEach((el) => el.removeAttribute('data-read'));
                 tpl.querySelectorAll('[data-para-idx]').forEach((el) => el.removeAttribute('data-para-idx'));
-                // Remove SEMPRE a fonte inline (face/font-family) para que a fonte
-                // escolhida pelo operador (aplicada no container) prevaleça mesmo
-                // em documentos antigos com <font face> embutido.
-                tpl.querySelectorAll('font[face]').forEach((el) => el.removeAttribute('face'));
-                tpl.querySelectorAll('[style*="font-family"]').forEach((el) => {
-                    el.style.removeProperty('font-family');
-                    if (!el.getAttribute('style')) el.removeAttribute('style');
-                });
                 return tpl.innerHTML;
             } catch (_) {
                 return html;

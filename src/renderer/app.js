@@ -99,6 +99,7 @@ document.addEventListener("DOMContentLoaded", () => {
       temp.querySelectorAll("[style]").forEach((el) => {
         let s = el.getAttribute("style") || "";
         s = s.replace(/font-size\s*:[^;]+;?/gi, "");
+        s = s.replace(/font-family\s*:[^;]+;?/gi, "");
         s = s.replace(/line-height\s*:[^;]+;?/gi, "");
         s = s.trim().replace(/\s*;\s*;/g, ";");
         if (s.replace(/;/g, "").trim()) el.setAttribute("style", s);
@@ -129,6 +130,33 @@ document.addEventListener("DOMContentLoaded", () => {
     return size;
   }
 
+  function getStableOperatorFontSizePt() {
+    const toolbarInput = document.getElementById("font-size-toolbar-fix");
+    const toolbarSize = parseInt(toolbarInput?.value, 10);
+    if (toolbarSize > 0) return toolbarSize;
+
+    if (typeof currentFontSizePT === "number" && currentFontSizePT > 0) {
+      return currentFontSizePT;
+    }
+
+    return getOperatorFontSizePt();
+  }
+
+  function getVisibleEditorFontSizePt(editor) {
+    if (!editor) return 0;
+
+    const probe =
+      editor.querySelector('[style*="font-size"]') ||
+      editor.querySelector('font[size]') ||
+      editor.querySelector('p, div, span, h1, h2, h3') ||
+      editor;
+
+    const px = parseFloat(window.getComputedStyle(probe).fontSize) || 0;
+    if (px <= 0) return 0;
+
+    return Math.round((px / 96) * 72);
+  }
+
   function rebroadcastReadProgress() {
     _lastReadUpdateTime = 0;
     requestAnimationFrame(() => {
@@ -148,7 +176,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function applyOperatorEditorTypography(editor, preserveFontSize = false) {
     if (!editor) return;
     const prompter = document.getElementById("prompterText-control");
-    
+
     // ===================================================================
     // CORREÇÃO: Preservar o tamanho de fonte do editor durante edições remotas
     // ===================================================================
@@ -160,7 +188,7 @@ document.addEventListener("DOMContentLoaded", () => {
       currentFontSizePT = size;
       editor.style.fontSize = `${size}pt`;
     }
-    
+
     editor.style.lineHeight = prompter?.style.lineHeight || editor.style.lineHeight || "1.4";
     // Preserva a fonte escolhida pelo operador (container-level) mesmo após edições
     // remotas que removem as tags <font face> inline.
@@ -237,14 +265,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // ===================================================================
     // CORREÇÃO: Preservar o fontSize do container ANTES de substituir o HTML
     // ===================================================================
-    const currentEditorFontSize = editor.style.fontSize || `${currentFontSizePT || 30}pt`;
     const prompterEl = document.getElementById("prompterText-control");
-    const currentPrompterFontSize = prompterEl?.style.fontSize || "";
-    const preservedPrompterSize = parseInt(currentPrompterFontSize, 10);
-    if (preservedPrompterSize > 0) {
-      // Mantém o tamanho ativo como fonte de verdade durante a sync remota.
-      currentFontSizePT = preservedPrompterSize;
-    }
+    const visibleEditorPt = getVisibleEditorFontSizePt(editor);
+    const preservedPt = visibleEditorPt || getStableOperatorFontSizePt() || 30;
+    const preservedFontSize = `${preservedPt}pt`;
+    currentFontSizePT = preservedPt;
 
     runWithoutRemoteBroadcast(() => {
       beginBulkEdit();
@@ -253,7 +278,8 @@ document.addEventListener("DOMContentLoaded", () => {
       // CORREÇÃO: RESTAURAR o tamanho de fonte do editor após substituir o HTML
       // Passa true para preserveFontSize para não sobrescrever com font do operador
       // ===================================================================
-      editor.style.fontSize = currentEditorFontSize;
+      editor.style.fontSize = preservedFontSize;
+      if (prompterEl) prompterEl.style.fontSize = preservedFontSize;
       applyOperatorEditorTypography(editor, true);
       endBulkEdit(() => {
         if (typeof syncContentToPrompter === "function") {
