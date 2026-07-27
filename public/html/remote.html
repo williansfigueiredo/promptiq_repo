@@ -960,6 +960,8 @@
                 editor.innerHTML = sanitizeHtmlIfFontLocked(content);
                 indexEditorBlocks();
                 reapplyReadProgress();
+                // Segundo passe de reaplicação após DOM estabilizar
+                requestAnimationFrame(() => reapplyReadProgress());
                 restoreEditorViewState(viewState);
                 flashSyncIndicator();
                 updateLastSync();
