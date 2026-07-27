@@ -6820,41 +6820,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const editor = getActiveTextEditorArea();
     if (!editor) return;
 
+    // ===================================================================
+    // CORREÇÃO CRÍTICA: O operador NUNCA deve receber fontSize do roteirista
+    // O roteirista tem seu próprio fontSize, o operador mantém o dele
+    // Isso evita que o font size do operador (ex: 48pt) caia para o do
+    // roteirista (ex: 30pt) quando o roteirista edita o texto
+    // ===================================================================
     if (styleData.type === 'fontSize') {
-      const size = parseInt(styleData.value);
-      if (size >= 8 && size <= 200) {
-        // Atualiza a variável global
-        currentFontSizePT = size;
-
-        // Atualiza o tamanho no editor (usar PT, não PX!)
-        editor.style.fontSize = size + 'pt';
-
-        // Sincroniza a UI - Input de tamanho na toolbar
-        const toolbarSizeInput = document.getElementById('font-size-toolbar-fix');
-        if (toolbarSizeInput) {
-          toolbarSizeInput.value = size;
-        }
-
-        // Sincroniza a UI - Select de tamanho (se existir)
-        const toolbarSizeSelect = document.getElementById('font-size-select');
-        if (toolbarSizeSelect) {
-          const option = toolbarSizeSelect.querySelector(`option[value="${size}"]`);
-          if (option) {
-            toolbarSizeSelect.value = size;
-          }
-        }
-
-        // Atualiza também o prompter (aba operator)
-        const prompterText = document.getElementById('prompterText-control');
-        if (prompterText) {
-          prompterText.style.fontSize = size + 'pt';
-        }
-
-        // Feedback visual
-        flashRedBorder(editor);
-
-        console.log('📥 Estilo recebido do remoto: fontSize =', size + 'pt');
-      }
+      // NÃO APLICAR fontSize recebido do remoto - manter fontSize do operador
+      console.log('🔒 BLOQUEADO: fontSize do roteirista não é aplicado ao operador');
     } else if (styleData.type === 'fontFamily') {
       // Atualiza a fonte no editor
       editor.style.fontFamily = styleData.value;
