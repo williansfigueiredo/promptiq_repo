@@ -238,6 +238,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // CORREÇÃO: Preservar o fontSize do container ANTES de substituir o HTML
     // ===================================================================
     const currentEditorFontSize = editor.style.fontSize || `${currentFontSizePT || 30}pt`;
+    const prompterEl = document.getElementById("prompterText-control");
+    const currentPrompterFontSize = prompterEl?.style.fontSize || "";
+    const preservedPrompterSize = parseInt(currentPrompterFontSize, 10);
+    if (preservedPrompterSize > 0) {
+      // Mantém o tamanho ativo como fonte de verdade durante a sync remota.
+      currentFontSizePT = preservedPrompterSize;
+    }
 
     runWithoutRemoteBroadcast(() => {
       beginBulkEdit();
