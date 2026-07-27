@@ -3909,12 +3909,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // ===================================================================
-    // CORREÇÃO: Preservar font size durante edições remotas
-    // ===================================================================
-    // skipFontSize=true: Não sobrescreve font size (durante edição remota)
-    // skipFontSize=false: Aplica font size normalmente (comportamento padrão)
-    if (!skipFontSize && typeof currentFontSizePT !== "undefined" && currentFontSizePT > 0) {
-      control.style.fontSize = `${getOperatorFontSizePt()}pt`;
+    // CORREÇÃO: Sincronização de CONTEÚDO nunca deve mexer no TAMANHO da
+    // fonte. O font size é responsabilidade exclusiva de funções dedicadas
+    // (applyExactFontSizeToOperator, handler de fonte remota via toolbar,
+    // settings-updated-globally, etc). Antes, toda edição de texto (local
+    // OU remota) reaplicava aqui o fontSize via getOperatorFontSizePt(),
+    // o que podia resetar o tamanho ativo (ex.: 48pt -> 30pt) sempre que o
+    // roteirista editava o texto. Mantemos apenas o lineHeight, que é
+    // inofensivo e não sofre o mesmo problema.
+    // skipFontSize é mantido só por compatibilidade de assinatura.
+    if (typeof currentFontSizePT !== "undefined" && currentFontSizePT > 0) {
       control.style.lineHeight = currentLineSpacing || (globalPrefs && globalPrefs.lineSpacing) || 1.5;
     }
 
