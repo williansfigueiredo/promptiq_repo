@@ -234,13 +234,19 @@ document.addEventListener("DOMContentLoaded", () => {
       console.log(`🔒 Sincronizando edição remota. Scroll protegido em: ${scrollPosBefore}px`);
     }
 
+    // ===================================================================
+    // CORREÇÃO: Preservar o fontSize do container ANTES de substituir o HTML
+    // ===================================================================
+    const currentEditorFontSize = editor.style.fontSize || `${currentFontSizePT || 30}pt`;
+
     runWithoutRemoteBroadcast(() => {
       beginBulkEdit();
       editor.innerHTML = normalized;
       // ===================================================================
-      // CORREÇÃO: Preserve o tamanho de fonte durante edição remota
+      // CORREÇÃO: RESTAURAR o tamanho de fonte do editor após substituir o HTML
       // Passa true para preserveFontSize para não sobrescrever com font do operador
       // ===================================================================
+      editor.style.fontSize = currentEditorFontSize;
       applyOperatorEditorTypography(editor, true);
       endBulkEdit(() => {
         if (typeof syncContentToPrompter === "function") {
