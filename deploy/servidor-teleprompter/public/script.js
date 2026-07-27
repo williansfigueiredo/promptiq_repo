@@ -359,8 +359,7 @@ function createPeer(senderId) {
 
 function indexEditorBlocks() {
   if (!editor) return;
-  editor.querySelectorAll('.script-read').forEach((el) => el.classList.remove('script-read'));
-  editor.querySelectorAll('[data-read]').forEach((el) => el.removeAttribute('data-read'));
+  // NÃO remove .script-read aqui - deixa applyReadProgressNow gerenciar
   editor.querySelectorAll('[data-para-idx]').forEach((el) => el.removeAttribute('data-para-idx'));
   ensureBlockIndexing();
 }
@@ -545,6 +544,15 @@ function applyReadProgressNow(payload, retryCount) {
   }
 
   const readCount = computeReadCountFromPayload(payload, blocks);
+  console.log('[DEBUG ReadProgress] applyReadProgressNow:', {
+    blocks: blocks.length,
+    readCount,
+    payload: payload ? {
+      readCount: payload.readCount,
+      scrollRatio: payload.scrollRatio,
+      readLinePx: payload.readLinePx
+    } : null
+  });
   const viewState = saveEditorViewState();
 
   editor.querySelectorAll('.script-read').forEach((el) => el.classList.remove('script-read'));
@@ -558,7 +566,13 @@ function applyReadProgressNow(payload, retryCount) {
 }
 
 function reapplyReadProgress() {
-  if (!editor || !_serverReadPayload) return;
+  if (!editor || !_serverReadPayload) {
+    console.log('[DEBUG ReadProgress] reapplyReadProgress SKIP:', {
+      hasEditor: !!editor,
+      hasPayload: !!_serverReadPayload
+    });
+    return;
+  }
   requestAnimationFrame(() => applyReadProgressNow(_serverReadPayload));
 }
 
@@ -605,8 +619,9 @@ function setupChannel() {
         editor.innerHTML = incoming;
         indexEditorBlocks();
         reapplyReadProgress();
-        // Segundo passe de reaplicação após DOM estabilizar
+        // Reaplicação adicional para garantir que marcação persista
         requestAnimationFrame(() => reapplyReadProgress());
+        setTimeout(() => reapplyReadProgress(), 50);
         restoreEditorViewState(viewState);
         flashSyncIndicator();
         updateLastSync();

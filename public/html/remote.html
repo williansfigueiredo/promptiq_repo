@@ -960,8 +960,9 @@
                 editor.innerHTML = sanitizeHtmlIfFontLocked(content);
                 indexEditorBlocks();
                 reapplyReadProgress();
-                // Segundo passe de reaplicação após DOM estabilizar
+                // Reaplicação adicional para garantir que marcação persista
                 requestAnimationFrame(() => reapplyReadProgress());
+                setTimeout(() => reapplyReadProgress(), 50);
                 restoreEditorViewState(viewState);
                 flashSyncIndicator();
                 updateLastSync();
@@ -1044,8 +1045,7 @@
 
         function indexEditorBlocks() {
             if (!editor) return;
-            editor.querySelectorAll('.script-read').forEach((el) => el.classList.remove('script-read'));
-            editor.querySelectorAll('[data-read]').forEach((el) => el.removeAttribute('data-read'));
+            // NÃO remove .script-read aqui - deixa applyReadProgressNow gerenciar
             editor.querySelectorAll('[data-para-idx]').forEach((el) => el.removeAttribute('data-para-idx'));
             ensureBlockIndexing();
         }
