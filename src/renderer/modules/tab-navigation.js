@@ -36,6 +36,10 @@ const TabNavigationManager = {
   lastCaretNode: null,
   lastCaretOffset: 0,
 
+  // Sincronização Operator → Edit: índice da palavra visível no Operator
+  // quando o usuário sair dessa aba, para sincronizar com o Editor
+  operatorVisibleWordIndex: null,
+
   // ============================================================
   // FUNÇÃO: Inicializar o módulo
   // ============================================================
@@ -102,6 +106,9 @@ const TabNavigationManager = {
         // Para o scroll e salva posição ANTES de sair da aba Operator
         this.clearPendingNavigation();
         this.stopScrollIfRunning();
+        
+        // 🆕 Captura qual palavra está visível no Operator para sincronizar com o Editor
+        this.captureOperatorVisibleWord();
       });
 
       tabEditTrigger.addEventListener('shown.bs.tab', () => {
@@ -110,6 +117,11 @@ const TabNavigationManager = {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             this.forceEditTabReflow();
+
+            // 🆕 Sincroniza a posição do Editor com o Operator
+            setTimeout(() => {
+              this.syncOperatorPositionToEditor();
+            }, 100);
 
             // Dispara resize para recalcular layouts
             window.dispatchEvent(new Event('resize'));
@@ -132,6 +144,9 @@ const TabNavigationManager = {
         // Para o scroll e salva posição ANTES de sair da aba Operator
         this.clearPendingNavigation();
         this.stopScrollIfRunning();
+        
+        // 🆕 Captura qual palavra está visível no Operator para possível sincronização futura
+        this.captureOperatorVisibleWord();
       });
 
       tabHomeTrigger.addEventListener('shown.bs.tab', () => {
@@ -158,6 +173,9 @@ const TabNavigationManager = {
     if (tabOperatorTrigger) {
       // Pré-aplica posição ANTES da aba aparecer (evita salto visual)
       tabOperatorTrigger.addEventListener('show.bs.tab', () => {
+        // Limpa palavra capturada do Operator (não queremos sincronizar ao voltar)
+        this.operatorVisibleWordIndex = null;
+        
         // ===================================================================
         // CORREÇÃO: Tentar usar caret do editor se não há navegação pendente
         // ===================================================================
@@ -670,6 +688,160 @@ const TabNavigationManager = {
   },
 
   // ============================================================
+  // FUNÇÃO: Capturar palavra visível no Operator
+  // ============================================================
+  /**
+   * captureOperatorVisibleWord
+   * ---------------------------
+   * Detecta qual palavra está visível no centro/topo do Operator
+   * quando o usuário sair da aba, para poder sincronizar com o Editor.
+   */
+  captureOperatorVisibleWord: function () {
+    console.log('🎬 captureOperatorVisibleWord: INICIANDO captura...');
+    
+    const container = document.querySelector('.prompter-in-control');
+    const textControl = document.getElementById('prompterText-control');
+    
+    if (!container) {
+      console.log('❌ captureOperatorVisibleWord: container (.prompter-in-control) não encontrado');
+      return;
+    }
+    
+    if (!textControl) {
+      console.log('❌ captureOperatorVisibleWord: textControl (#prompterText-control) não encontrado');
+      return;
+    }
+
+    console.log('✅ Elementos encontrados:', {
+      container: container.className,
+      textControl: textControl.id
+    });
+
+    // Obtém a posição de scroll atual
+    let currentPosition = 0;
+    
+    if (typeof ScrollEngine !== 'undefined' && ScrollEngine.decimalScroll > 0) {
+      currentPosition = ScrollEngine.decimalScroll;
+      console.log(`📊 Posição via ScrollEngine.decimalScroll: ${currentPosition}px`);
+    } else {
+      currentPosition = container.scrollTop;
+      console.log(`📊 Posição via container.scrollTop: ${currentPosition}px`);
+    }
+
+    // Se está no início, não precisa sincronizar
+    if (currentPosition < 10) {
+      this.operatorVisibleWordIndex = null;
+      console.log('ℹ️ Operator no início (< 10px) - nenhuma sincronização necessária');
+      return;
+    }
+
+    // Calcula a posição vertical do centro da viewport
+    const containerRect = container.getBoundingClientRect();
+    const targetY = containerRect.top + (container.clientHeight * 0.3); // 30% do topo
+
+    console.log(`🎯 Buscando palavra na posição Y: ${targetY}px (30% do topo da viewport)`);
+    console.log(`📐 Container rect:`, {
+      top: containerRect.top,
+      height: container.clientHeight
+    });
+
+    // Encontra qual palavra está nessa posição
+    const wordIndex = this.findWordAtPosition(textControl, targetY, containerRect);
+    
+    if (wordIndex !== null && wordIndex >= 0) {
+      this.operatorVisibleWordIndex = wordIndex;
+      console.log(`✅✅ CAPTURADA palavra visível no Operator: índice ${wordIndex}`);
+    } else {
+      this.operatorVisibleWordIndex = null;
+      console.log('❌ Não foi possível capturar palavra visível no Operator');
+    }
+  },
+
+  // ============================================================
+  // FUNÇÃO: Encontrar palavra em uma posição Y específica
+  // ============================================================
+  /**
+   * findWordAtPosition
+   * -------------------
+   * Encontra qual palavra está em uma posição Y específica da tela.
+   * 
+   * @param {HTMLElement} container - Container com o texto
+   * @param {number} targetY - Posição Y na tela
+   * @param {DOMRect} containerRect - Retângulo do container
+   * @returns {number|null} - Índice da palavra ou null
+   */
+  findWordAtPosition: function (container, targetY, containerRect) {
+    try {
+      console.log('🔍 findWordAtPosition: Buscando palavra...');
+      
+      const walker = document.createTreeWalker(
+        container,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+      );
+
+      let wordIndex = 0;
+      let node;
+      let closestWord = null;
+      let minDistance = Infinity;
+      let totalWordsChecked = 0;
+      let visibleWordsCount = 0;
+
+      while ((node = walker.nextNode())) {
+        const text = node.textContent;
+        const words = text.match(/\S+/g) || [];
+
+        let offset = 0;
+        for (let i = 0; i < words.length; i++) {
+          const word = words[i];
+          const wordStart = text.indexOf(word, offset);
+          totalWordsChecked++;
+          
+          try {
+            // Cria um range para obter a posição da palavra
+            const range = document.createRange();
+            range.setStart(node, wordStart);
+            range.setEnd(node, wordStart + word.length);
+            
+            const rect = range.getBoundingClientRect();
+            
+            // Verifica se a palavra está visível
+            if (rect.top >= containerRect.top && rect.bottom <= containerRect.bottom) {
+              visibleWordsCount++;
+              const distance = Math.abs(rect.top - targetY);
+              
+              if (distance < minDistance) {
+                minDistance = distance;
+                closestWord = wordIndex;
+                
+                console.log(`🎯 Nova palavra mais próxima: #${wordIndex} "${word}" (distância: ${distance.toFixed(0)}px, top: ${rect.top.toFixed(0)}px)`);
+              }
+            }
+          } catch (e) {
+            // Ignora erros de range
+          }
+          
+          offset = wordStart + word.length;
+          wordIndex++;
+        }
+      }
+
+      console.log(`📊 Estatísticas da busca:`, {
+        totalPalavras: totalWordsChecked,
+        palavrasVisiveis: visibleWordsCount,
+        palavraMaisProxima: closestWord,
+        distanciaMinima: minDistance.toFixed(0) + 'px'
+      });
+
+      return closestWord;
+    } catch (error) {
+      console.error('❌ Erro ao encontrar palavra na posição:', error);
+      return null;
+    }
+  },
+
+  // ============================================================
   // FUNÇÃO: Pré-aplicar posição antes da aba aparecer
   // ============================================================
   /**
@@ -803,6 +975,158 @@ const TabNavigationManager = {
     }
 
     console.log('✅ forceEditTabReflow executado');
+  },
+
+  // ============================================================
+  // FUNÇÃO: Sincronizar posição do Operator para o Editor
+  // ============================================================
+  /**
+   * syncOperatorPositionToEditor
+   * -----------------------------
+   * Quando voltar do Operator para o Edit, sincroniza a posição
+   * do texto no Editor para mostrar a palavra que estava visível
+   * no Operator.
+   */
+  syncOperatorPositionToEditor: function () {
+    console.log('🔄 syncOperatorPositionToEditor: INICIANDO sincronização...');
+    
+    // Se não há palavra capturada, não faz nada
+    if (this.operatorVisibleWordIndex === null) {
+      console.log('ℹ️ Nenhuma palavra do Operator para sincronizar com o Editor (operatorVisibleWordIndex é null)');
+      return;
+    }
+
+    console.log(`📍 Palavra capturada do Operator: índice ${this.operatorVisibleWordIndex}`);
+
+    const editor = document.querySelector('.editor-container.active .text-editor-area');
+    if (!editor) {
+      console.log('❌ syncOperatorPositionToEditor: editor ativo não encontrado');
+      console.log('Tentando buscar qualquer .text-editor-area...');
+      const anyEditor = document.querySelector('.text-editor-area');
+      if (anyEditor) {
+        console.log('⚠️ Encontrado .text-editor-area mas sem .editor-container.active');
+      } else {
+        console.log('❌ Nenhum .text-editor-area encontrado no DOM');
+      }
+      return;
+    }
+
+    console.log('✅ Editor ativo encontrado:', editor.className);
+
+    const targetIndex = this.operatorVisibleWordIndex;
+    console.log(`🎯 Buscando palavra #${targetIndex} no Editor...`);
+
+    // Encontra a palavra no editor
+    const wordLocation = this.findWordByIndexInEditor(editor, targetIndex);
+    
+    if (wordLocation) {
+      console.log(`✅ Palavra encontrada no Editor: "${wordLocation.word}" (node: ${wordLocation.node.nodeType})`);
+      
+      try {
+        // Cria um range para obter a posição Y da palavra
+        const range = document.createRange();
+        range.setStart(wordLocation.node, wordLocation.startOffset);
+        range.setEnd(wordLocation.node, wordLocation.endOffset);
+        
+        // Obtém a posição da palavra no editor
+        const rect = range.getBoundingClientRect();
+        const editorRect = editor.getBoundingClientRect();
+        
+        console.log('📐 Posições:', {
+          wordRect: { top: rect.top, bottom: rect.bottom },
+          editorRect: { top: editorRect.top, height: editor.clientHeight },
+          editorScrollTop: editor.scrollTop
+        });
+        
+        // Calcula o scroll necessário para posicionar a palavra próxima ao topo (30%)
+        const targetScroll = editor.scrollTop + (rect.top - editorRect.top) - (editor.clientHeight * 0.3);
+        const finalScroll = Math.max(0, targetScroll);
+        
+        console.log(`📍 Scroll calculado: atual=${editor.scrollTop}px, alvo=${finalScroll.toFixed(0)}px`);
+        console.log(`🎬 Aplicando scroll para: ${finalScroll.toFixed(0)}px (palavra: "${wordLocation.word}")`);
+        
+        // Aplica o scroll suavemente (o próprio editor é scrollável)
+        editor.scrollTo({
+          top: finalScroll,
+          behavior: 'smooth'
+        });
+        
+        // Verifica após um momento se o scroll foi aplicado
+        setTimeout(() => {
+          console.log(`✅ Scroll aplicado. Posição final: ${editor.scrollTop}px`);
+        }, 300);
+        
+        console.log(`✅✅ Editor sincronizado com sucesso para palavra #${targetIndex}`);
+      } catch (error) {
+        console.error('❌ Erro ao sincronizar posição:', error);
+      }
+    } else {
+      console.warn(`❌ Palavra #${targetIndex} não encontrada no Editor`);
+    }
+
+    // Limpa a palavra capturada após usar
+    console.log('🧹 Limpando operatorVisibleWordIndex...');
+    this.operatorVisibleWordIndex = null;
+  },
+
+  // ============================================================
+  // FUNÇÃO: Encontrar palavra por índice no Editor
+  // ============================================================
+  /**
+   * findWordByIndexInEditor
+   * ------------------------
+   * Similar ao findWordByIndex, mas otimizado para o Editor
+   * que pode ter formatação HTML complexa.
+   * 
+   * @param {HTMLElement} editor - Elemento do editor
+   * @param {number} targetIndex - Índice da palavra
+   * @returns {Object|null} - {node, startOffset, endOffset, word} ou null
+   */
+  findWordByIndexInEditor: function (editor, targetIndex) {
+    try {
+      if (!editor || targetIndex < 0) {
+        return null;
+      }
+
+      const walker = document.createTreeWalker(
+        editor,
+        NodeFilter.SHOW_TEXT,
+        null,
+        false
+      );
+
+      let currentWordIndex = 0;
+      let node;
+
+      while ((node = walker.nextNode())) {
+        const text = node.textContent;
+        const words = text.match(/\S+/g) || [];
+
+        let offset = 0;
+        for (let i = 0; i < words.length; i++) {
+          if (currentWordIndex === targetIndex) {
+            // Encontrou a palavra!
+            const wordStart = text.indexOf(words[i], offset);
+            const wordEnd = wordStart + words[i].length;
+
+            return {
+              node: node,
+              startOffset: wordStart,
+              endOffset: wordEnd,
+              word: words[i]
+            };
+          }
+
+          offset = text.indexOf(words[i], offset) + words[i].length;
+          currentWordIndex++;
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Erro ao encontrar palavra no editor:', error);
+      return null;
+    }
   },
 
   // ============================================================
@@ -1066,6 +1390,7 @@ const TabNavigationManager = {
     this.operatorSavedScrollPosition = 0;
     this.pendingWordIndex = null;
     this.pendingNavigationContext = null;
+    this.operatorVisibleWordIndex = null;
     console.log('🔄 TabNavigationManager resetado');
   }
 };

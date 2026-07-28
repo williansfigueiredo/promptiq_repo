@@ -3494,3 +3494,113 @@ body.dark-mode .key-capture-box {
   cursor: pointer;
   caret-color: transparent;
 }
+/* ==========================================================================
+   MODAL: LIMPAR ESCALETA - Estilos Espec�ficos
+   ========================================================================== */
+
+#cleanScriptModal .btn-check:checked + label {
+  background-color: var(--bs-primary);
+  color: white;
+}
+
+#cleanScriptModal #columnPreview {
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+#cleanScriptModal #columnPreview strong {
+  color: var(--bs-primary);
+  display: inline-block;
+  min-width: 80px;
+}
+
+#cleanScriptModal .form-check-label {
+  font-size: 0.9rem;
+}
+
+#cleanScriptModal .alert-info {
+  border-left: 4px solid var(--bs-info);
+}
+
+#cleanScriptModal #selectedTablesList {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+#cleanScriptModal #selectedTablesList > div:not(#emptyTablesMessage) {
+  transition: all 0.2s ease;
+}
+
+#cleanScriptModal #selectedTablesList > div:not(#emptyTablesMessage):hover {
+  background-color: #f8f9fa !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+#cleanScriptModal #addTableBtn {
+  white-space: nowrap;
+}
+
+#cleanScriptModal #cleanPreview {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: #1a1a1a;
+  padding: 1.5rem;
+}
+
+#cleanScriptModal #cleanPreview strong {
+  display: inline-block;
+  font-weight: 700;
+}
+
+#cleanScriptModal #cleanPreview > div {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Dark Mode */
+[data-theme='dark'] #cleanScriptModal #columnPreview,
+body.dark-mode #cleanScriptModal #columnPreview {
+  background-color: #14161C;
+  border-color: #2D323E;
+  color: #e8eaed;
+}
+
+[data-theme='dark'] #cleanScriptModal #cleanPreview,
+body.dark-mode #cleanScriptModal #cleanPreview {
+  background-color: #1e2127;
+  border-color: #2D323E;
+  color: #e8eaed;
+}
+
+[data-theme='dark'] #cleanScriptModal #cleanPreview div[style*="background-color: #f0f0f0"],
+body.dark-mode #cleanScriptModal #cleanPreview div[style*="background-color: #f0f0f0"] {
+  background-color: #2a2d35 !important;
+  border-left-color: #555 !important;
+  color: #aaa !important;
+}
+
+[data-theme='dark'] #cleanScriptModal #cleanPreview div[style*="background: linear-gradient"],
+body.dark-mode #cleanScriptModal #cleanPreview div[style*="background: linear-gradient"] {
+  background: linear-gradient(to right, rgba(0,102,204,0.15), transparent) !important;
+  border-bottom-color: #0066cc !important;
+}
+
+[data-theme='dark'] #cleanScriptModal #selectedTablesList,
+body.dark-mode #cleanScriptModal #selectedTablesList {
+  background-color: #1e2127;
+  border-color: #2D323E;
+}
+
+[data-theme='dark'] #cleanScriptModal #selectedTablesList > div:not(#emptyTablesMessage),
+body.dark-mode #cleanScriptModal #selectedTablesList > div:not(#emptyTablesMessage) {
+  background-color: #14161C !important;
+  border-color: #2D323E !important;
+}
+
+[data-theme='dark'] #cleanScriptModal #selectedTablesList > div:not(#emptyTablesMessage):hover,
+body.dark-mode #cleanScriptModal #selectedTablesList > div:not(#emptyTablesMessage):hover {
+  background-color: #252831 !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}

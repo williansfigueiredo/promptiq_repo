@@ -1972,6 +1972,872 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ============================================================
+  // SEÇÃO 23.0.5: LIMPAR ESCALETA (REMOVER MARCAÇÕES TÉCNICAS)
+  // ============================================================
+  // Remove marcações de LED, SOM, LUZ, ONLINE, horários, etc.
+  // Mantém apenas as falas do MC
+  // Versão 3.0: Preview em tempo real + padrões personalizados
+
+  const cleanScriptBtn = document.getElementById("clean-script-btn");
+  let currentEditorContent = null;
+  let currentEditorTables = [];
+  let cleanedPreviewContent = null;
+  let originalContent = null; // Para desfazer
+  let selectedTables = []; // Array de {tableIndex, columnIndex}
+
+  if (cleanScriptBtn) {
+    cleanScriptBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+
+      const editor = document.querySelector(".text-editor-area");
+      if (!editor) {
+        alert("Nenhum documento aberto!");
+        return;
+      }
+
+      // Salva o conteúdo original para poder desfazer
+      originalContent = editor.innerHTML;
+      currentEditorContent = editor.innerHTML;
+
+      // Reset de tabelas selecionadas
+      selectedTables = [];
+      renderSelectedTablesList();
+
+      // Detecta tabelas no conteúdo
+      const tempDiv = document.createElement("div");
+      tempDiv.innerHTML = currentEditorContent;
+      const tables = tempDiv.querySelectorAll("table");
+      currentEditorTables = Array.from(tables);
+
+      console.log(`📊 Detectadas ${currentEditorTables.length} tabelas no documento`);
+
+      // Atualiza o modal com informações das tabelas
+      const tableCountEl = document.getElementById("tableCount");
+      const tableSelect = document.getElementById("tableSelect");
+      const advancedPanel = document.getElementById("advancedCleanPanel");
+      const applyBtn = document.getElementById("applyCleanScript");
+      const cleanPreview = document.getElementById("cleanPreview");
+
+      if (tableCountEl) tableCountEl.textContent = currentEditorTables.length;
+
+      // Reset do preview e botão
+      if (cleanPreview) {
+        cleanPreview.innerHTML = `
+          <div class="text-center text-muted py-5">
+            <i class="bi bi-eye-slash" style="font-size: 3rem; opacity: 0.3;"></i>
+            <p class="mt-3">Clique em "Gerar Preview" para visualizar o resultado</p>
+          </div>
+        `;
+      }
+      if (applyBtn) applyBtn.disabled = true;
+
+      // Popula select de tabelas
+      if (tableSelect) {
+        tableSelect.innerHTML = "";
+        currentEditorTables.forEach((table, idx) => {
+          const option = document.createElement("option");
+          option.value = idx;
+          option.textContent = `Tabela ${idx + 1}`;
+          tableSelect.appendChild(option);
+        });
+      }
+
+      // Se tem tabelas, atualiza preview da primeira
+      if (currentEditorTables.length > 0) {
+        updateTablePreview(0);
+      } else {
+        // Sem tabelas - oculta opção avançada
+        const advancedModeRadio = document.getElementById("cleanModeAdvanced");
+        if (advancedModeRadio) {
+          advancedModeRadio.disabled = true;
+          advancedModeRadio.parentElement.classList.add("disabled");
+          advancedModeRadio.parentElement.title = "Nenhuma tabela detectada no documento";
+        }
+      }
+
+      // Abre o modal
+      const modal = new bootstrap.Modal(document.getElementById("cleanScriptModal"));
+      modal.show();
+    });
+  }
+
+  // Atualiza preview das colunas da tabela selecionada
+  function updateTablePreview(tableIndex) {
+    if (!currentEditorTables[tableIndex]) return;
+
+    const table = currentEditorTables[tableIndex];
+    const rows = table.querySelectorAll("tr");
+    
+    if (rows.length === 0) return;
+
+    // Pega a primeira linha para contar colunas
+    const firstRow = rows[0];
+    const cells = firstRow.querySelectorAll("td, th");
+    const numColumns = cells.length;
+
+    console.log(`📊 Tabela ${tableIndex + 1}: ${rows.length} linhas, ${numColumns} colunas`);
+
+    // Popula select de colunas
+    const columnSelect = document.getElementById("columnSelect");
+    if (columnSelect) {
+      columnSelect.innerHTML = '<option value="">Detectar automaticamente</option>';
+      
+      for (let i = 0; i < numColumns; i++) {
+        const option = document.createElement("option");
+        option.value = i;
+        option.textContent = `Coluna ${i + 1}`;
+        columnSelect.appendChild(option);
+      }
+    }
+
+    // Cria preview das colunas com melhor visualização
+    const preview = document.getElementById("columnPreview");
+    if (preview) {
+      let previewHTML = "";
+      
+      for (let colIdx = 0; colIdx < numColumns; colIdx++) {
+        previewHTML += `<div class="mb-2"><strong class="text-primary">Col ${colIdx + 1}:</strong> `;
+        
+        // Pega conteúdo das primeiras 2 células desta coluna
+        let samples = [];
+        for (let rowIdx = 0; rowIdx < Math.min(2, rows.length); rowIdx++) {
+          const row = rows[rowIdx];
+          const cell = row.querySelectorAll("td, th")[colIdx];
+          if (cell) {
+            const text = (cell.textContent || "").trim().substring(0, 40);
+            if (text) samples.push(text + (text.length >= 40 ? "..." : ""));
+          }
+        }
+        
+        if (samples.length > 0) {
+          previewHTML += `<span class="text-muted">${samples.join(" • ")}</span>`;
+        } else {
+          previewHTML += "<em class='text-muted'>(vazia)</em>";
+        }
+        
+        previewHTML += "</div>";
+      }
+      
+      preview.innerHTML = previewHTML;
+    }
+  }
+
+  // Renderiza a lista de tabelas selecionadas
+  function renderSelectedTablesList() {
+    const listContainer = document.getElementById("selectedTablesList");
+    const emptyMessage = document.getElementById("emptyTablesMessage");
+    
+    if (!listContainer) return;
+
+    // Remove todos os items exceto a mensagem vazia
+    while (listContainer.children.length > 1) {
+      listContainer.removeChild(listContainer.lastChild);
+    }
+
+    if (selectedTables.length === 0) {
+      if (emptyMessage) emptyMessage.classList.remove("d-none");
+      return;
+    }
+
+    // Oculta mensagem vazia
+    if (emptyMessage) emptyMessage.classList.add("d-none");
+
+    // Adiciona cada tabela selecionada
+    selectedTables.forEach((item, index) => {
+      const div = document.createElement("div");
+      div.className = "d-flex justify-content-between align-items-center p-2 mb-1 bg-white border rounded";
+      
+      const columnText = item.columnIndex !== "" ? `Col ${parseInt(item.columnIndex) + 1}` : "Auto";
+      
+      div.innerHTML = `
+        <span class="small">
+          <i class="bi bi-table text-primary"></i> 
+          <strong>Tabela ${item.tableIndex + 1}</strong> - ${columnText}
+        </span>
+        <button type="button" class="btn btn-sm btn-outline-danger btn-sm" data-index="${index}">
+          <i class="bi bi-trash"></i>
+        </button>
+      `;
+      
+      // Listener para remover
+      const removeBtn = div.querySelector("button");
+      removeBtn.addEventListener("click", () => {
+        selectedTables.splice(index, 1);
+        renderSelectedTablesList();
+      });
+      
+      listContainer.appendChild(div);
+    });
+  }
+
+  // Listener do botão adicionar tabela
+  const addTableBtn = document.getElementById("addTableBtn");
+  if (addTableBtn) {
+    addTableBtn.addEventListener("click", () => {
+      const tableIndex = parseInt(document.getElementById("tableSelect")?.value ?? 0);
+      const columnIndex = document.getElementById("columnSelect")?.value ?? "";
+
+      // Verifica se já foi adicionada
+      const alreadyAdded = selectedTables.some(
+        item => item.tableIndex === tableIndex && item.columnIndex === columnIndex
+      );
+
+      if (alreadyAdded) {
+        alert("⚠️ Esta combinação de tabela e coluna já foi adicionada!");
+        return;
+      }
+
+      // Adiciona à lista
+      selectedTables.push({ tableIndex, columnIndex });
+      renderSelectedTablesList();
+
+      console.log("✅ Adicionada: Tabela", tableIndex + 1, "Coluna", columnIndex || "Auto");
+    });
+  }
+
+  // Listener para mudança de modo
+  document.querySelectorAll('input[name="cleanMode"]').forEach((radio) => {
+    radio.addEventListener("change", (e) => {
+      const advancedPanel = document.getElementById("advancedCleanPanel");
+      const description = document.getElementById("cleanModeDescription");
+      
+      if (e.target.value === "advanced") {
+        advancedPanel?.classList.remove("d-none");
+        if (description) description.textContent = "Selecione qual coluna da tabela contém as falas do MC";
+      } else {
+        advancedPanel?.classList.add("d-none");
+        if (description) description.textContent = "Remove automaticamente todas as marcações técnicas";
+      }
+    });
+  });
+
+  // Listener para mudança de tabela selecionada
+  const tableSelect = document.getElementById("tableSelect");
+  if (tableSelect) {
+    tableSelect.addEventListener("change", (e) => {
+      updateTablePreview(parseInt(e.target.value));
+    });
+  }
+
+  // Listener do botão gerar preview
+  const generatePreviewBtn = document.getElementById("generatePreview");
+  if (generatePreviewBtn) {
+    generatePreviewBtn.addEventListener("click", () => {
+      const mode = document.querySelector('input[name="cleanMode"]:checked')?.value;
+      const formatMCNames = document.getElementById("formatMCNames")?.checked ?? true;
+      const removeEmptyLines = document.getElementById("removeEmptyLines")?.checked ?? true;
+      const addLineBreaks = document.getElementById("addLineBreaks")?.checked ?? true;
+      const removeTechnicalMarks = document.getElementById("removeTechnicalMarks")?.checked ?? true;
+      const removeTimestamps = document.getElementById("removeTimestamps")?.checked ?? true;
+      const mcPatterns = document.getElementById("mcPatterns")?.value || "MC, MC1, MC2, APRESENTADOR";
+
+      let cleanedHTML = "";
+      let stats = { original: 0, cleaned: 0, removed: 0 };
+
+      if (mode === "advanced" && currentEditorTables.length > 0) {
+        // Modo avançado: extrai colunas das tabelas selecionadas
+        if (selectedTables.length === 0) {
+          alert("⚠️ Adicione pelo menos uma tabela antes de gerar o preview!");
+          return;
+        }
+        
+        const result = cleanScriptAdvancedMultiple(
+          selectedTables,
+          formatMCNames,
+          removeEmptyLines,
+          addLineBreaks,
+          removeTechnicalMarks,
+          removeTimestamps,
+          mcPatterns
+        );
+        cleanedHTML = result.html;
+        stats = result.stats;
+      } else {
+        // Modo simples: limpeza automática
+        const result = cleanScriptSimple(
+          formatMCNames,
+          removeEmptyLines,
+          addLineBreaks,
+          removeTechnicalMarks,
+          removeTimestamps,
+          mcPatterns
+        );
+        cleanedHTML = result.html;
+        stats = result.stats;
+      }
+
+      // Atualiza o preview
+      const cleanPreview = document.getElementById("cleanPreview");
+      const previewStats = document.getElementById("previewStats");
+      const applyBtn = document.getElementById("applyCleanScript");
+
+      if (cleanPreview) {
+        cleanPreview.innerHTML = cleanedHTML || '<p class="text-muted">Nenhum conteúdo gerado</p>';
+      }
+
+      if (previewStats) {
+        previewStats.innerHTML = `${stats.cleaned} linhas | ${stats.removed} removidas`;
+        previewStats.className = "badge bg-success small";
+      }
+
+      if (applyBtn) {
+        applyBtn.disabled = !cleanedHTML;
+      }
+
+      // Salva o conteúdo limpo para aplicar depois
+      cleanedPreviewContent = cleanedHTML;
+
+      console.log("✅ Preview gerado:", stats);
+    });
+  }
+
+  // Listener do botão aplicar limpeza
+  const applyCleanBtn = document.getElementById("applyCleanScript");
+  if (applyCleanBtn) {
+    applyCleanBtn.addEventListener("click", () => {
+      if (!cleanedPreviewContent) {
+        alert("⚠️ Gere um preview primeiro!");
+        return;
+      }
+
+      // Aplica o conteúdo limpo ao editor
+      const editor = document.querySelector(".text-editor-area");
+      if (editor) {
+        editor.innerHTML = cleanedPreviewContent;
+
+        // Marca documento como não salvo e sincroniza
+        if (typeof markDocumentAsUnsaved === "function") {
+          const activeDoc = getActiveDocument();
+          if (activeDoc) markDocumentAsUnsaved(activeDoc.id);
+        }
+        if (typeof syncContentToPrompter === "function") syncContentToPrompter();
+      }
+
+      // Fecha o modal
+      const modal = bootstrap.Modal.getInstance(document.getElementById("cleanScriptModal"));
+      modal?.hide();
+
+      alert("✅ Escaleta limpa e aplicada com sucesso!");
+    });
+  }
+
+  // Função de limpeza simples (automática)
+  function cleanScriptSimple(formatMCNames, removeEmptyLines, addLineBreaks, removeTechnicalMarks, removeTimestamps, mcPatternsStr) {
+    console.log("🧹 Modo simples: limpeza automática");
+
+    const tempDiv = document.createElement("div");
+    tempDiv.innerHTML = currentEditorContent;
+    
+    // Substitui <br> por quebras de linha para preservar estrutura
+    tempDiv.querySelectorAll('br').forEach(br => {
+      br.replaceWith('\n');
+    });
+    
+    // Substitui </p>, </div> por quebras de linha
+    tempDiv.querySelectorAll('p, div').forEach(elem => {
+      if (elem.textContent.trim()) {
+        elem.after('\n');
+      }
+    });
+    
+    let textContent = tempDiv.textContent || tempDiv.innerText || "";
+
+    // Separa o texto em linhas, preservando estrutura
+    let lines = textContent.split("\n").map(l => l.trim());
+    const originalCount = lines.length;
+
+    // Filtra as linhas indesejadas
+    lines = lines.filter((line) => {
+      const trimmed = line.trim();
+
+      if (trimmed === "") return true;
+
+      // Preserva marcações de cena/direção
+      if (/^[\[\<\«][\[\<\«].*[\]\>\»][\]\>\»]$/i.test(trimmed) || /^\[.*\]$/i.test(trimmed)) {
+        return true;
+      }
+
+      // Remove timestamps se solicitado
+      if (removeTimestamps) {
+        // Formatos: 21:31, 21:398, HH:MM:SS, 14h00, etc
+        if (/\d{1,2}[h:]\d{1,4}(?:[:\.]?\d{0,3})?(?:')?/i.test(trimmed)) {
+          if (trimmed.length < 20) return false; // Só remove se a linha é curta (provável timestamp isolado)
+        }
+        // Remove horários de intervalo
+        if (/\d{1,2}h\d{0,2}.*?(?:às|[-–—]|a)\s*\d{1,2}h\d{0,2}/i.test(trimmed)) {
+          return false;
+        }
+      }
+
+      // Remove marcações técnicas se solicitado
+      if (removeTechnicalMarks) {
+        const technicalMarkers = [
+          /^\*{0,2}\s*LED\s*[:*]/i,
+          /^\*{0,2}\s*SOM\s*[:*]/i,
+          /^\*{0,2}\s*LUZ\s*[:*]/i,
+          /^\*{0,2}\s*ONLINE\s*[:*]/i,
+          /^\*{0,2}\s*C[ÂA]MERA\s*[:*]/i,
+          /^\*{0,2}\s*VT\s*[:*]/i,
+          /^\*{0,2}\s*V[ÍI]DEO\s*[:*]/i,
+          /^\*{0,2}\s*PROJE[ÇC][ÃA]O\s*[:*]/i,
+          /^\*{0,2}\s*CENOGRAFIA\s*[:*]/i,
+          /^\*{0,2}\s*FIGURINO\s*[:*]/i,
+          /^\*{0,2}\s*ADERE[ÇC]O\s*[:*]/i,
+          /^\*{0,2}\s*A[ÇC][ÃA]O\s*[:*]/i,
+          /^\*{0,2}\s*EFEITO\s*[:*]/i,
+          /^\*{0,2}\s*TRANSI[ÇC][ÃA]O\s*[:*]/i,
+          /^\*{0,2}\s*OBSERVA[ÇC][ÃA]O\s*[:*]/i,
+          /^\*{0,2}\s*OBS\s*[:*]/i,
+          /^\*{0,2}\s*NOTA\s*[:*]/i,
+          /^\*{0,2}\s*AO\s+VIVO\s*[:*]/i,
+          /^\*{0,2}\s*CATEGORIA\s*[:*]/i,
+        ];
+
+        for (const marker of technicalMarkers) {
+          if (marker.test(trimmed)) return false;
+        }
+      }
+
+      // Remove decorações
+      if (/^[\*\-_=\s]+$/.test(trimmed)) return false;
+
+      return true;
+    });
+
+    // Formata nomes de MCs
+    if (formatMCNames) {
+      lines = lines.map((line) => formatMCName(line, mcPatternsStr));
+    }
+
+    // Remove linhas vazias excessivas
+    if (removeEmptyLines) {
+      lines = removeExcessiveEmptyLines(lines);
+    }
+
+    // Adiciona espaçamento entre falas
+    if (addLineBreaks) {
+      lines = addSpacingBetweenSpeeches(lines);
+    }
+
+    const cleanedCount = lines.filter(l => l.trim() !== "").length;
+    const removedCount = originalCount - cleanedCount;
+
+    // Converte para HTML
+    return {
+      html: linesToHTML(lines),
+      stats: { original: originalCount, cleaned: cleanedCount, removed: removedCount }
+    };
+  }
+
+  // Função de limpeza avançada (com seleção de coluna)
+  function cleanScriptAdvanced(tableIndex, columnIndex, formatMCNames, removeEmptyLines, addLineBreaks, removeTechnicalMarks, removeTimestamps, mcPatternsStr) {
+    console.log(`🎯 Modo avançado: extraindo coluna ${columnIndex} da tabela ${tableIndex}`);
+
+    const table = currentEditorTables[tableIndex];
+    if (!table) return { html: "", stats: { original: 0, cleaned: 0, removed: 0 } };
+
+    const rows = table.querySelectorAll("tr");
+    let lines = [];
+
+    // Se columnIndex é vazio, detecta automaticamente
+    let targetColumn = columnIndex !== "" ? parseInt(columnIndex) : null;
+
+    // Detecção automática: procura coluna com mais texto
+    if (targetColumn === null && rows.length > 0) {
+      const firstRow = rows[0];
+      const cells = firstRow.querySelectorAll("td, th");
+      let maxLength = 0;
+      let maxIndex = 0;
+
+      cells.forEach((cell, idx) => {
+        const text = (cell.textContent || "").trim();
+        if (text.length > maxLength) {
+          maxLength = text.length;
+          maxIndex = idx;
+        }
+      });
+
+      targetColumn = maxIndex;
+      console.log(`🔍 Coluna detectada automaticamente: ${targetColumn + 1}`);
+    }
+
+    const originalCount = rows.length;
+
+    // Extrai o conteúdo da coluna selecionada
+    rows.forEach((row) => {
+      const cells = row.querySelectorAll("td, th");
+      const cell = cells[targetColumn];
+      
+      if (cell) {
+        // Clona o elemento para processar seu HTML
+        const cellClone = cell.cloneNode(true);
+        
+        // Substitui <br> por quebras de linha
+        cellClone.querySelectorAll('br').forEach(br => {
+          br.replaceWith('\n');
+        });
+        
+        // Substitui </p>, </div> por quebras de linha
+        cellClone.querySelectorAll('p, div').forEach(elem => {
+          elem.after('\n');
+        });
+        
+        // Pega o texto já com as quebras preservadas
+        let text = (cellClone.textContent || "").trim();
+        
+        if (text) {
+          // Separa por quebras de linha
+          const cellLines = text.split('\n');
+          
+          // Processa cada linha
+          let lastWasEmpty = false;
+          cellLines.forEach(line => {
+            const trimmedLine = line.trim();
+            
+            if (trimmedLine) {
+              lines.push(trimmedLine);
+              lastWasEmpty = false;
+            } else if (!lastWasEmpty) {
+              // Adiciona linha vazia apenas se a anterior não era vazia
+              lines.push("");
+              lastWasEmpty = true;
+            }
+          });
+          
+          // Adiciona espaço extra entre células diferentes (separação de blocos)
+          if (!lastWasEmpty) {
+            lines.push("");
+          }
+        }
+      }
+    });
+
+    // Filtra linhas indesejadas
+    lines = lines.filter((line) => {
+      const trimmed = line.trim();
+      if (trimmed === "") return true;
+      
+      // Preserva marcações de cena/direção
+      if (/^[\[\<\«][\[\<\«].*[\]\>\»][\]\>\»]$/i.test(trimmed) || /^\[.*\]$/i.test(trimmed)) {
+        return true;
+      }
+      
+      if (removeTimestamps && /\d{1,2}[h:]\d{1,4}/i.test(trimmed) && trimmed.length < 20) {
+        return false;
+      }
+      
+      if (removeTechnicalMarks && /^(LED|SOM|LUZ|ONLINE|C[ÂA]MERA|VT|V[ÍI]DEO|AO\s+VIVO|CATEGORIA)[\s:*]/i.test(trimmed)) {
+        return false;
+      }
+      
+      return true;
+    });
+
+    // Formata nomes de MCs
+    if (formatMCNames) {
+      lines = lines.map((line) => formatMCName(line, mcPatternsStr));
+    }
+
+    // Remove linhas vazias excessivas
+    if (removeEmptyLines) {
+      lines = removeExcessiveEmptyLines(lines);
+    }
+
+    // Adiciona espaçamento entre falas
+    if (addLineBreaks) {
+      lines = addSpacingBetweenSpeeches(lines);
+    }
+
+    const cleanedCount = lines.filter(l => l.trim() !== "").length;
+    const removedCount = originalCount - cleanedCount;
+
+    console.log(`✅ Extraídas ${cleanedCount} linhas da coluna`);
+
+    return {
+      html: linesToHTML(lines),
+      stats: { original: originalCount, cleaned: cleanedCount, removed: removedCount }
+    };
+  }
+
+  // Função de limpeza avançada com múltiplas tabelas
+  function cleanScriptAdvancedMultiple(selectedTables, formatMCNames, removeEmptyLines, addLineBreaks, removeTechnicalMarks, removeTimestamps, mcPatternsStr) {
+    console.log(`🎯 Modo avançado múltiplo: processando ${selectedTables.length} tabela(s)`);
+
+    let allLines = [];
+    let totalOriginal = 0;
+
+    // Processa cada tabela selecionada
+    selectedTables.forEach((item, index) => {
+      const table = currentEditorTables[item.tableIndex];
+      if (!table) return;
+
+      const rows = table.querySelectorAll("tr");
+      totalOriginal += rows.length;
+
+      // Se columnIndex é vazio, detecta automaticamente
+      let targetColumn = item.columnIndex !== "" ? parseInt(item.columnIndex) : null;
+
+      // Detecção automática: procura coluna com mais texto
+      if (targetColumn === null && rows.length > 0) {
+        const firstRow = rows[0];
+        const cells = firstRow.querySelectorAll("td, th");
+        let maxLength = 0;
+        let maxIndex = 0;
+
+        cells.forEach((cell, idx) => {
+          const text = (cell.textContent || "").trim();
+          if (text.length > maxLength) {
+            maxLength = text.length;
+            maxIndex = idx;
+          }
+        });
+
+        targetColumn = maxIndex;
+        console.log(`🔍 Tabela ${item.tableIndex + 1}: Coluna ${targetColumn + 1} detectada automaticamente`);
+      }
+
+      // Adiciona separador entre tabelas (exceto na primeira)
+      if (index > 0 && allLines.length > 0) {
+        allLines.push("", ""); // Espaço entre tabelas
+      }
+
+      // Extrai o conteúdo da coluna selecionada
+      rows.forEach((row) => {
+        const cells = row.querySelectorAll("td, th");
+        const cell = cells[targetColumn];
+        
+        if (cell) {
+          // Clona o elemento para processar seu HTML
+          const cellClone = cell.cloneNode(true);
+          
+          // Substitui <br> por quebras de linha
+          cellClone.querySelectorAll('br').forEach(br => {
+            br.replaceWith('\n');
+          });
+          
+          // Substitui </p>, </div> por quebras de linha
+          cellClone.querySelectorAll('p, div').forEach(elem => {
+            elem.after('\n');
+          });
+          
+          // Pega o texto já com as quebras preservadas
+          let text = (cellClone.textContent || "").trim();
+          
+          if (text) {
+            // Separa por quebras de linha
+            const cellLines = text.split('\n');
+            
+            // Processa cada linha
+            let lastWasEmpty = false;
+            cellLines.forEach(line => {
+              const trimmedLine = line.trim();
+              
+              if (trimmedLine) {
+                allLines.push(trimmedLine);
+                lastWasEmpty = false;
+              } else if (!lastWasEmpty) {
+                // Adiciona linha vazia apenas se a anterior não era vazia
+                allLines.push("");
+                lastWasEmpty = true;
+              }
+            });
+            
+            // Adiciona espaço extra entre células diferentes (separação de blocos)
+            if (!lastWasEmpty) {
+              allLines.push("");
+            }
+          }
+        }
+      });
+
+      console.log(`✅ Tabela ${item.tableIndex + 1}: ${rows.length} linhas processadas`);
+    });
+
+    // Filtra linhas indesejadas
+    let lines = allLines.filter((line) => {
+      const trimmed = line.trim();
+      if (trimmed === "") return true;
+      
+      // Preserva marcações de cena/direção
+      if (/^[\[\<\«][\[\<\«].*[\]\>\»][\]\>\»]$/i.test(trimmed) || /^\[.*\]$/i.test(trimmed)) {
+        return true;
+      }
+      
+      if (removeTimestamps && /\d{1,2}[h:]\d{1,4}/i.test(trimmed) && trimmed.length < 20) {
+        return false;
+      }
+      
+      if (removeTechnicalMarks && /^(LED|SOM|LUZ|ONLINE|C[ÂA]MERA|VT|V[ÍI]DEO|AO\s+VIVO|CATEGORIA)[\s:*]/i.test(trimmed)) {
+        return false;
+      }
+      
+      return true;
+    });
+
+    // Formata nomes de MCs
+    if (formatMCNames) {
+      lines = lines.map((line) => formatMCName(line, mcPatternsStr));
+    }
+
+    // Remove linhas vazias excessivas
+    if (removeEmptyLines) {
+      lines = removeExcessiveEmptyLines(lines);
+    }
+
+    // Adiciona espaçamento entre falas
+    if (addLineBreaks) {
+      lines = addSpacingBetweenSpeeches(lines);
+    }
+
+    const cleanedCount = lines.filter(l => l.trim() !== "").length;
+    const removedCount = totalOriginal - cleanedCount;
+
+    console.log(`✅ Total: ${cleanedCount} linhas extraídas de ${selectedTables.length} tabela(s)`);
+
+    return {
+      html: linesToHTML(lines),
+      stats: { original: totalOriginal, cleaned: cleanedCount, removed: removedCount }
+    };
+  }
+
+  // Formata nomes de MCs com padrões personalizados
+  function formatMCName(line, mcPatternsStr) {
+    const trimmed = line.trim();
+    
+    // Detecta marcações de cena/direção entre << >> ou [ ]
+    if (/^[\[\<\«][\[\<\«].*[\]\>\»][\]\>\»]$/i.test(trimmed) || /^\[.*\]$/i.test(trimmed)) {
+      return `<div style="margin-top: 1.5em; margin-bottom: 1em; padding: 0.5em; background-color: #f0f0f0; border-left: 3px solid #999; font-style: italic; color: #666; font-size: 0.95rem;">${trimmed}</div>`;
+    }
+    
+    // Pega os padrões definidos pelo usuário
+    const customPatterns = mcPatternsStr.split(",").map(p => p.trim().toUpperCase()).filter(p => p);
+    
+    // Cria regex dinâmico baseado nos padrões
+    const patternsList = customPatterns.map(p => p.replace(/\s+/g, "\\s*")).join("|");
+    const mcRegex = new RegExp(`^(\\*{0,2}\\s*)(${patternsList})(\\s*\\d*)(\\/?(\\s*\\d+)?)?(\\*{0,2})(\\s*[:]*)?`, "i");
+    
+    if (mcRegex.test(trimmed)) {
+      const match = trimmed.match(mcRegex);
+      if (match) {
+        const mcName = (match[2] + (match[3] || "") + (match[4] || "")).trim().toUpperCase();
+        const restOfLine = trimmed.substring(match[0].length).trim();
+        
+        // Se a linha tem apenas o nome do MC, retorna formatado como título de bloco
+        if (!restOfLine || restOfLine === ":") {
+          return `<div style="margin-top: 2.5em; margin-bottom: 0.8em; padding: 0.5em 0; padding-bottom: 0.4em; border-bottom: 3px solid #0066cc; background: linear-gradient(to right, rgba(0,102,204,0.05), transparent);"><strong style="color: #0066cc; font-size: 1.4em; font-weight: 700; letter-spacing: 1px;">${mcName}</strong></div>`;
+        }
+        
+        // Se tem texto depois do nome, formata junto
+        return `<div style="margin-top: 2.5em; margin-bottom: 0.8em;"><strong style="color: #0066cc; font-size: 1.3em; font-weight: 700; letter-spacing: 0.5px;">${mcName}:</strong></div><div style="margin-bottom: 0.6em; line-height: 1.8; font-size: 1.05rem;">${restOfLine}</div>`;
+      }
+    }
+
+    return line;
+  }
+
+  // Remove linhas vazias excessivas (máximo 1 em sequência)
+  function removeExcessiveEmptyLines(lines) {
+    let cleanedLines = [];
+    let emptyCount = 0;
+
+    for (const line of lines) {
+      const isEmpty = line.trim() === "" || (typeof line === 'string' && /<div[^>]*>\s*<\/div>/.test(line));
+      
+      if (isEmpty) {
+        emptyCount++;
+        // Permite até 1 linha vazia consecutiva (para separar parágrafos)
+        if (emptyCount <= 1) {
+          cleanedLines.push(line);
+        }
+      } else {
+        emptyCount = 0;
+        cleanedLines.push(line);
+      }
+    }
+
+    // Remove linhas vazias no início
+    while (cleanedLines.length > 0 && cleanedLines[0].trim() === "") {
+      cleanedLines.shift();
+    }
+    
+    // Remove linhas vazias no fim
+    while (cleanedLines.length > 0 && cleanedLines[cleanedLines.length - 1].trim() === "") {
+      cleanedLines.pop();
+    }
+
+    return cleanedLines;
+  }
+
+  // Adiciona espaçamento entre falas diferentes
+  function addSpacingBetweenSpeeches(lines) {
+    const result = [];
+    let lastWasMCName = false;
+    let lastLineWasEmpty = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      const isEmpty = trimmed === "";
+      const isMCName = /<strong/.test(line) && (/<\/strong>/.test(line) || /border-bottom/.test(line));
+      const isSceneMarker = /<div[^>]*background-color: #f0f0f0/.test(line);
+
+      // Se esta linha é um nome de MC e a anterior também era, adiciona espaço extra
+      if (isMCName && lastWasMCName && result.length > 0 && !lastLineWasEmpty) {
+        result.push("");
+      }
+
+      // Se é marcação de cena e linha anterior não era vazia, adiciona espaço
+      if (isSceneMarker && result.length > 0 && !lastLineWasEmpty) {
+        result.push("");
+      }
+
+      result.push(line);
+      lastWasMCName = isMCName;
+      lastLineWasEmpty = isEmpty;
+    }
+
+    return result;
+  }
+
+  // Converte linhas para HTML com melhor formatação
+  function linesToHTML(lines) {
+    let html = "";
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      
+      // Linha vazia = separador de parágrafo
+      if (trimmed === "") {
+        html += '<div style="height: 1.2em;"></div>';
+        continue;
+      }
+      
+      // Se já tem tag div com strong (nome de MC formatado)
+      if (/<div/.test(line) && /<strong/.test(line)) {
+        html += line;
+        continue;
+      }
+      
+      // Se tem strong sozinho (nome de MC)
+      if (/<strong/.test(line)) {
+        html += line;
+        continue;
+      }
+      
+      // Linha de texto normal
+      // Verifica se próxima linha é vazia ou tem MC (fim de bloco)
+      const nextLine = lines[i + 1];
+      const isEndOfBlock = !nextLine || !nextLine.trim() || /<strong/.test(nextLine);
+      
+      const marginBottom = isEndOfBlock ? "1.2em" : "0.4em";
+      html += `<div style="margin-bottom: ${marginBottom}; line-height: 1.8; text-align: justify; font-size: 1.05rem;">${line}</div>`;
+    }
+    
+    return html;
+  }
+
+  // ============================================================
   // SEÇÃO 23.1: INICIALIZAÇÃO DO HOTKEY HANDLER
   // ============================================================
   // Atalhos de teclado/mouse configuráveis em Preferences → Controls
