@@ -90,7 +90,7 @@ const TabNavigationManager = {
         const parent = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
         const editor = parent && parent.closest ? parent.closest('.text-editor-area') : null;
 
-        if (editor && editor.contains(node) && range.collapsed) {
+        if (editor && editor.contains(node)) {
           this.lastCaretEditor = editor;
           this.lastCaretNode = node;
           this.lastCaretOffset = range.startOffset;
@@ -195,7 +195,12 @@ const TabNavigationManager = {
         // Se o usuário saiu da aba edit deixando o cursor em uma posição,
         // detectar isso e navegar automaticamente
         if (this.pendingWordIndex === null && this.currentTabTriggerId === 'edit-tab') {
-          this.tryUseCaretAsPendingNavigation();
+          // 1) Prioriza a seleção viva atual (inclui duplo clique em palavra)
+          this.tryUseLiveSelectionAsPendingNavigation();
+          // 2) Fallback para caret rastreado
+          if (this.pendingWordIndex === null) {
+            this.tryUseCaretAsPendingNavigation();
+          }
         }
 
         // Restaura a posição salva ao voltar — sem saltar para o caret do Edit.
@@ -358,7 +363,12 @@ const TabNavigationManager = {
           .split(/\s+/)[0] || '';
 
         this.pendingWordIndex = wordIndex;
-        this.pendingNavigationContext = { text: contextText, timestamp: Date.now() };
+        const charOffset = this.calculateCharacterOffset(this.lastCaretEditor, this.lastCaretNode, safeOffset);
+        this.pendingNavigationContext = {
+          text: contextText,
+          charOffset: charOffset,
+          timestamp: Date.now()
+        };
 
         // Consome o caret uma única vez para evitar reuso de referência stale.
         this.lastCaretTimestamp = 0;
@@ -373,6 +383,48 @@ const TabNavigationManager = {
       // Limpar dados inválidos
       this.lastCaretEditor = null;
       this.lastCaretNode = null;
+    }
+  },
+
+  // ============================================================
+  // FUNÇÃO: Usar seleção/caret ATUAL do editor como navegação
+  // ============================================================
+  /**
+   * tryUseLiveSelectionAsPendingNavigation
+   * --------------------------------------
+   * Captura a seleção viva no momento da troca de aba (inclusive seleção
+   * de palavra via duplo clique) para navegar ao ponto exato no Operator.
+   */
+  tryUseLiveSelectionAsPendingNavigation: function () {
+    if (this.pendingWordIndex !== null) return;
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+
+    try {
+      const range = selection.getRangeAt(0);
+      const node = range.startContainer;
+      const parent = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      const editor = parent && parent.closest ? parent.closest('.text-editor-area') : null;
+
+      if (!editor || !editor.contains(node)) return;
+
+      const wordIndex = this.calculateWordIndex(editor, range);
+      if (wordIndex === null || wordIndex < 0) return;
+
+      const selectedText = (selection.toString() || '').trim();
+      const charOffset = this.calculateCharacterOffset(editor, range.startContainer, range.startOffset);
+
+      this.pendingWordIndex = wordIndex;
+      this.pendingNavigationContext = {
+        text: selectedText,
+        charOffset: charOffset,
+        timestamp: Date.now()
+      };
+
+      console.log(`✅ Seleção viva capturada — palavra #${wordIndex} (charOffset: ${charOffset})`);
+    } catch (error) {
+      console.warn('⚠️ tryUseLiveSelectionAsPendingNavigation: erro ao capturar seleção', error);
     }
   },
 

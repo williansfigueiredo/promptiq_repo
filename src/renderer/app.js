@@ -2031,8 +2031,28 @@ document.addEventListener("DOMContentLoaded", () => {
       const advancedPanel = document.getElementById("advancedCleanPanel");
       const applyBtn = document.getElementById("applyCleanScript");
       const cleanPreview = document.getElementById("cleanPreview");
+      const simpleModeRadio = document.getElementById("cleanModeSimple");
+      const advancedModeRadio = document.getElementById("cleanModeAdvanced");
+      const advancedModeLabel = document.querySelector('label[for="cleanModeAdvanced"]');
+      const cleanModeDescription = document.getElementById("cleanModeDescription");
 
       if (tableCountEl) tableCountEl.textContent = currentEditorTables.length;
+
+      // Sempre reseta o estado de modo ao abrir o modal para evitar
+      // ficar "preso" no disabled de uma execução anterior.
+      if (simpleModeRadio) simpleModeRadio.checked = true;
+      if (advancedPanel) advancedPanel.classList.add("d-none");
+      if (cleanModeDescription) {
+        cleanModeDescription.textContent = "Remove automaticamente todas as marcações técnicas";
+      }
+      if (advancedModeRadio) {
+        advancedModeRadio.disabled = false;
+        advancedModeRadio.removeAttribute("title");
+      }
+      if (advancedModeLabel) {
+        advancedModeLabel.classList.remove("disabled");
+        advancedModeLabel.removeAttribute("title");
+      }
 
       // Reset do preview e botão
       if (cleanPreview) {
@@ -2061,11 +2081,13 @@ document.addEventListener("DOMContentLoaded", () => {
         updateTablePreview(0);
       } else {
         // Sem tabelas - oculta opção avançada
-        const advancedModeRadio = document.getElementById("cleanModeAdvanced");
         if (advancedModeRadio) {
           advancedModeRadio.disabled = true;
-          advancedModeRadio.parentElement.classList.add("disabled");
-          advancedModeRadio.parentElement.title = "Nenhuma tabela detectada no documento";
+          advancedModeRadio.title = "Nenhuma tabela detectada no documento";
+        }
+        if (advancedModeLabel) {
+          advancedModeLabel.classList.add("disabled");
+          advancedModeLabel.title = "Nenhuma tabela detectada no documento";
         }
       }
 
