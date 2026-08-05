@@ -3075,6 +3075,11 @@ document.addEventListener("DOMContentLoaded", () => {
       tab.addEventListener('shown.bs.tab', (e) => {
         const targetId = e.target.getAttribute('data-bs-target');
         if (targetId === '#operator-tab-pane') {
+          // Ao entrar no Operator, força flush do conteúdo pendente do Editor
+          // para evitar atraso perceptível após corrigir texto e trocar de aba.
+          if (typeof flushSyncContentToPrompter === "function") {
+            flushSyncContentToPrompter();
+          }
           if (HotkeyHandler) HotkeyHandler.enable();
         } else {
           if (HotkeyHandler) HotkeyHandler.disable();
@@ -4818,27 +4823,20 @@ document.addEventListener("DOMContentLoaded", () => {
   let _remoteTextTimer = null;
   let _lastRemoteHtml = "";
 
+  function scheduleSyncContentToPrompter() {
+    clearTimeout(_syncPrompterTimer);
+    if (ScrollEngine.isRunning) return;
+    _syncPrompterTimer = setTimeout(syncContentToPrompter, 80);
+  }
+
   function flushSyncContentToPrompter() {
     if (_syncPrompterTimer) {
       clearTimeout(_syncPrompterTimer);
       _syncPrompterTimer = null;
     }
-    syncContentToPrompter();
-  }
-
-  function scheduleSyncContentToPrompter() {
-    clearTimeout(_syncPrompterTimer);
-    if (ScrollEngine.isRunning) return;
-    _syncPrompterTimer = setTimeout(syncContentToPrompter, 25);
-  }
-
-  // Ao voltar para a aba Operator, garante que qualquer edição pendente do
-  // editor já esteja refletida imediatamente no prompter.
-  const operatorTabTrigger = document.getElementById("operator-tab");
-  if (operatorTabTrigger) {
-    operatorTabTrigger.addEventListener("show.bs.tab", () => {
-      flushSyncContentToPrompter();
-    });
+    if (typeof syncContentToPrompter === "function") {
+      syncContentToPrompter();
+    }
   }
 
   function scheduleRemoteTextBroadcast(html) {
@@ -6136,9 +6134,7 @@ document.addEventListener("DOMContentLoaded", () => {
       updateTabTitle(id, name, true);
     }
   });
-      if (typeof flushSyncContentToPrompter === "function") {
-        flushSyncContentToPrompter();
-      }
+  ipcRenderer.on("file-saved-and-closed", (e, name, path, id) => {
     removeDocumentFromDOM(id);
   });
   ipcRenderer.on("close-document-unsaved", (e, id) => {
@@ -6149,9 +6145,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const editor = document
       .getElementById(`doc-${id}`)
       ?.querySelector(".text-editor-area");
-      if (typeof flushSyncContentToPrompter === "function") {
-        flushSyncContentToPrompter();
-      }
+    if (doc && editor) {
       const content = getCleanContent(editor);
       ipcRenderer.send("save-file-dialog-and-close", content, id, doc.name);
     } else removeDocumentFromDOM(id);
