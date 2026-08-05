@@ -83,13 +83,13 @@ const TabNavigationManager = {
     const updateCaretPosition = () => {
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) return;
-      
+
       try {
         const range = sel.getRangeAt(0);
         const node = range.startContainer;
         const parent = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
         const editor = parent && parent.closest ? parent.closest('.text-editor-area') : null;
-        
+
         if (editor && editor.contains(node) && range.collapsed) {
           this.lastCaretEditor = editor;
           this.lastCaretNode = node;
@@ -100,7 +100,7 @@ const TabNavigationManager = {
         // Ignorar erros de seleção inválida
       }
     };
-    
+
     // Rastreia em múltiplos eventos para máxima cobertura
     document.addEventListener('selectionchange', updateCaretPosition);
     document.addEventListener('click', updateCaretPosition);
@@ -117,7 +117,7 @@ const TabNavigationManager = {
         // Para o scroll e salva posição ANTES de sair da aba Operator
         this.clearPendingNavigation();
         this.stopScrollIfRunning();
-        
+
         // 🆕 Captura qual palavra está visível no Operator para sincronizar com o Editor
         this.captureOperatorVisibleWord();
       });
@@ -156,7 +156,7 @@ const TabNavigationManager = {
         // Para o scroll e salva posição ANTES de sair da aba Operator
         this.clearPendingNavigation();
         this.stopScrollIfRunning();
-        
+
         // 🆕 Captura qual palavra está visível no Operator para possível sincronização futura
         this.captureOperatorVisibleWord();
       });
@@ -188,7 +188,7 @@ const TabNavigationManager = {
       tabOperatorTrigger.addEventListener('show.bs.tab', () => {
         // Limpa palavra capturada do Operator (não queremos sincronizar ao voltar)
         this.operatorVisibleWordIndex = null;
-        
+
         // ===================================================================
         // CORREÇÃO: Tentar usar caret do editor se não há navegação pendente
         // ===================================================================
@@ -197,7 +197,7 @@ const TabNavigationManager = {
         if (this.pendingWordIndex === null && this.currentTabTriggerId === 'edit-tab') {
           this.tryUseCaretAsPendingNavigation();
         }
-        
+
         // Restaura a posição salva ao voltar — sem saltar para o caret do Edit.
         // Navegação por palavra só via menu "Go to Operator" ou navigateToWordIndex().
         this.preApplyScrollPosition();
@@ -328,7 +328,7 @@ const TabNavigationManager = {
       console.log(`ℹ️ Caret ignorado por estar antigo (${caretAgeMs}ms)`);
       return;
     }
-    
+
     // Confirma que o caret ainda está num elemento existente no DOM.
     if (!document.contains(this.lastCaretEditor) || !document.contains(this.lastCaretNode)) {
       console.log('⚠️ Caret armazenado não está mais no DOM');
@@ -336,7 +336,7 @@ const TabNavigationManager = {
       this.lastCaretNode = null;
       return;
     }
-    
+
     try {
       const fakeRange = document.createRange();
       const maxOffset = this.lastCaretNode.nodeType === Node.TEXT_NODE
@@ -346,9 +346,9 @@ const TabNavigationManager = {
 
       fakeRange.setStart(this.lastCaretNode, safeOffset);
       fakeRange.collapse(true);
-      
+
       const wordIndex = this.calculateWordIndex(this.lastCaretEditor, fakeRange);
-      
+
       if (wordIndex !== null && wordIndex >= 0) {
         // Pega um texto de contexto perto do caret (até 30 chars) para
         // fallback em findWordByText caso o índice não bata.
@@ -356,13 +356,13 @@ const TabNavigationManager = {
           .substr(Math.max(0, this.lastCaretOffset - 15), 30)
           .trim()
           .split(/\s+/)[0] || '';
-        
+
         this.pendingWordIndex = wordIndex;
         this.pendingNavigationContext = { text: contextText, timestamp: Date.now() };
 
         // Consome o caret uma única vez para evitar reuso de referência stale.
         this.lastCaretTimestamp = 0;
-        
+
         console.log(`✅ Caret detectado no editor — navegando para palavra #${wordIndex} ("${contextText}")`);
         return;
       } else {
@@ -429,7 +429,7 @@ const TabNavigationManager = {
    * Retorna a quantidade de caracteres desde o início do editor
    * até a posição indicada (node+offset).
    */
-  calculateCharacterOffset: function(editor, node, offset) {
+  calculateCharacterOffset: function (editor, node, offset) {
     try {
       if (!editor || !node) return null;
 
@@ -454,7 +454,7 @@ const TabNavigationManager = {
    * Mapeia um offset de caractere absoluto para um nó/offset no
    * container do Operator.
    */
-  findWordByCharacterOffset: function(container, targetCharOffset) {
+  findWordByCharacterOffset: function (container, targetCharOffset) {
     try {
       if (!container || targetCharOffset === null || targetCharOffset === undefined) {
         return null;
@@ -731,15 +731,15 @@ const TabNavigationManager = {
   stopScrollIfRunning: function () {
     const container = document.querySelector('.prompter-in-control');
     const textControl = document.getElementById('prompterText-control');
-    
+
     // ============================================
     // DETECTA A POSIÇÃO CORRETA
     // ============================================
     // Quando scroll automático está ativo: posição está em decimalScroll (transform)
     // Quando scroll manual: posição está em container.scrollTop
-    
+
     let currentPosition = 0;
-    
+
     if (typeof ScrollEngine !== 'undefined' && ScrollEngine.isRunning) {
       // Scroll automático ativo - usa decimalScroll
       currentPosition = ScrollEngine.decimalScroll || 0;
@@ -753,13 +753,13 @@ const TabNavigationManager = {
       currentPosition = container.scrollTop;
       console.log('📍 Modo manual - posição via scrollTop:', currentPosition);
     }
-    
+
     // Sempre persiste a posição atual (inclui 0 no início do roteiro)
     this.operatorSavedScrollPosition = currentPosition;
     if (typeof ScrollEngine !== 'undefined') {
       ScrollEngine.decimalScroll = currentPosition;
     }
-    
+
     // ============================================
     // PARA O SCROLL SE ESTIVER RODANDO
     // ============================================
@@ -772,7 +772,7 @@ const TabNavigationManager = {
       // Para o scroll MAS preserva a posição
       ScrollEngine.isRunning = false;
       ScrollEngine.setSpeed(0);
-      
+
       // Restaura o scroll nativo com a posição atual
       if (container && textControl) {
         container.style.overflowY = 'auto';
@@ -780,16 +780,16 @@ const TabNavigationManager = {
         container.scrollTop = currentPosition;
         ScrollEngine.decimalScroll = currentPosition;
       }
-      
+
       // Atualiza botões
       const playBtn = document.getElementById('play-btn');
       const pauseBtn = document.getElementById('pause-btn');
       if (playBtn) playBtn.classList.remove('d-none');
       if (pauseBtn) pauseBtn.classList.add('d-none');
-      
+
       ipcRenderer.send('control-prompter', 'pause');
     }
-    
+
     console.log('⏹️ Mudou de aba: Posição salva =', this.operatorSavedScrollPosition);
   },
 
@@ -804,15 +804,15 @@ const TabNavigationManager = {
    */
   captureOperatorVisibleWord: function () {
     console.log('🎬 captureOperatorVisibleWord: INICIANDO captura...');
-    
+
     const container = document.querySelector('.prompter-in-control');
     const textControl = document.getElementById('prompterText-control');
-    
+
     if (!container) {
       console.log('❌ captureOperatorVisibleWord: container (.prompter-in-control) não encontrado');
       return;
     }
-    
+
     if (!textControl) {
       console.log('❌ captureOperatorVisibleWord: textControl (#prompterText-control) não encontrado');
       return;
@@ -825,7 +825,7 @@ const TabNavigationManager = {
 
     // Obtém a posição de scroll atual
     let currentPosition = 0;
-    
+
     if (typeof ScrollEngine !== 'undefined' && ScrollEngine.decimalScroll > 0) {
       currentPosition = ScrollEngine.decimalScroll;
       console.log(`📊 Posição via ScrollEngine.decimalScroll: ${currentPosition}px`);
@@ -853,7 +853,7 @@ const TabNavigationManager = {
 
     // Encontra qual palavra está nessa posição
     const wordIndex = this.findWordAtPosition(textControl, targetY, containerRect);
-    
+
     if (wordIndex !== null && wordIndex >= 0) {
       this.operatorVisibleWordIndex = wordIndex;
       console.log(`✅✅ CAPTURADA palavra visível no Operator: índice ${wordIndex}`);
@@ -879,7 +879,7 @@ const TabNavigationManager = {
   findWordAtPosition: function (container, targetY, containerRect) {
     try {
       console.log('🔍 findWordAtPosition: Buscando palavra...');
-      
+
       const walker = document.createTreeWalker(
         container,
         NodeFilter.SHOW_TEXT,
@@ -903,31 +903,31 @@ const TabNavigationManager = {
           const word = words[i];
           const wordStart = text.indexOf(word, offset);
           totalWordsChecked++;
-          
+
           try {
             // Cria um range para obter a posição da palavra
             const range = document.createRange();
             range.setStart(node, wordStart);
             range.setEnd(node, wordStart + word.length);
-            
+
             const rect = range.getBoundingClientRect();
-            
+
             // Verifica se a palavra está visível
             if (rect.top >= containerRect.top && rect.bottom <= containerRect.bottom) {
               visibleWordsCount++;
               const distance = Math.abs(rect.top - targetY);
-              
+
               if (distance < minDistance) {
                 minDistance = distance;
                 closestWord = wordIndex;
-                
+
                 console.log(`🎯 Nova palavra mais próxima: #${wordIndex} "${word}" (distância: ${distance.toFixed(0)}px, top: ${rect.top.toFixed(0)}px)`);
               }
             }
           } catch (e) {
             // Ignora erros de range
           }
-          
+
           offset = wordStart + word.length;
           wordIndex++;
         }
@@ -970,11 +970,11 @@ const TabNavigationManager = {
       container.style.overflowY = 'auto';
       textControl.style.transform = 'none';
       container.scrollTop = this.operatorSavedScrollPosition;
-      
+
       if (typeof ScrollEngine !== 'undefined') {
         ScrollEngine.decimalScroll = this.operatorSavedScrollPosition;
       }
-      
+
       console.log('🔄 preApplyScrollPosition:', this.operatorSavedScrollPosition);
     }
   },
@@ -1095,7 +1095,7 @@ const TabNavigationManager = {
    */
   syncOperatorPositionToEditor: function () {
     console.log('🔄 syncOperatorPositionToEditor: INICIANDO sincronização...');
-    
+
     // Se não há palavra capturada, não faz nada
     if (this.operatorVisibleWordIndex === null) {
       console.log('ℹ️ Nenhuma palavra do Operator para sincronizar com o Editor (operatorVisibleWordIndex é null)');
@@ -1124,44 +1124,44 @@ const TabNavigationManager = {
 
     // Encontra a palavra no editor
     const wordLocation = this.findWordByIndexInEditor(editor, targetIndex);
-    
+
     if (wordLocation) {
       console.log(`✅ Palavra encontrada no Editor: "${wordLocation.word}" (node: ${wordLocation.node.nodeType})`);
-      
+
       try {
         // Cria um range para obter a posição Y da palavra
         const range = document.createRange();
         range.setStart(wordLocation.node, wordLocation.startOffset);
         range.setEnd(wordLocation.node, wordLocation.endOffset);
-        
+
         // Obtém a posição da palavra no editor
         const rect = range.getBoundingClientRect();
         const editorRect = editor.getBoundingClientRect();
-        
+
         console.log('📐 Posições:', {
           wordRect: { top: rect.top, bottom: rect.bottom },
           editorRect: { top: editorRect.top, height: editor.clientHeight },
           editorScrollTop: editor.scrollTop
         });
-        
+
         // Calcula o scroll necessário para posicionar a palavra próxima ao topo (30%)
         const targetScroll = editor.scrollTop + (rect.top - editorRect.top) - (editor.clientHeight * 0.3);
         const finalScroll = Math.max(0, targetScroll);
-        
+
         console.log(`📍 Scroll calculado: atual=${editor.scrollTop}px, alvo=${finalScroll.toFixed(0)}px`);
         console.log(`🎬 Aplicando scroll para: ${finalScroll.toFixed(0)}px (palavra: "${wordLocation.word}")`);
-        
+
         // Aplica o scroll suavemente (o próprio editor é scrollável)
         editor.scrollTo({
           top: finalScroll,
           behavior: 'smooth'
         });
-        
+
         // Verifica após um momento se o scroll foi aplicado
         setTimeout(() => {
           console.log(`✅ Scroll aplicado. Posição final: ${editor.scrollTop}px`);
         }, 300);
-        
+
         console.log(`✅✅ Editor sincronizado com sucesso para palavra #${targetIndex}`);
       } catch (error) {
         console.error('❌ Erro ao sincronizar posição:', error);
@@ -1259,7 +1259,7 @@ const TabNavigationManager = {
     if (this.pendingWordIndex !== null) {
       const targetIndex = this.pendingWordIndex;
       const context = this.pendingNavigationContext;
-      
+
       // Limpa para não repetir
       this.pendingWordIndex = null;
       this.pendingNavigationContext = null;
@@ -1291,21 +1291,21 @@ const TabNavigationManager = {
         const range = document.createRange();
         range.setStart(wordLocation.node, wordLocation.startOffset);
         range.setEnd(wordLocation.node, wordLocation.endOffset);
-        
+
         const rect = range.getBoundingClientRect();
         const containerRect = container.getBoundingClientRect();
-        
+
         // Calcula scroll para centralizar a palavra na tela
         const currentScroll = typeof ScrollEngine !== 'undefined'
           ? ScrollEngine.decimalScroll
           : container.scrollTop;
-        
+
         // Alinha para a região de leitura (30% do topo), mais próxima do cue marker.
         const targetScroll = currentScroll + (rect.top - containerRect.top) - (container.clientHeight * 0.3);
         const finalScroll = Math.max(0, targetScroll);
-        
+
         console.log(`📍 Navegando para: "${wordLocation.word}" | Scroll: ${currentScroll.toFixed(0)}px → ${finalScroll.toFixed(0)}px`);
-        
+
         // Aplica o scroll
         if (typeof ScrollEngine !== 'undefined') {
           ScrollEngine.decimalScroll = finalScroll;
@@ -1344,9 +1344,9 @@ const TabNavigationManager = {
             }
           });
         });
-        
+
         console.log(`✅ Navegado com sucesso para palavra #${targetIndex}: "${wordLocation.word}"`);
-        
+
         // Salva a nova posição
         this.operatorSavedScrollPosition = finalScroll;
         return;
@@ -1360,14 +1360,14 @@ const TabNavigationManager = {
     // =========================================
     if (this.operatorSavedScrollPosition > 0) {
       console.log(`♻️ Restaurando posição salva: ${this.operatorSavedScrollPosition}px`);
-      
+
       // Garante que está em modo scroll manual (não transform)
       container.style.overflowY = 'auto';
       textControl.style.transform = 'none';
-      
+
       // Aplica a posição
       container.scrollTop = this.operatorSavedScrollPosition;
-      
+
       // Sincroniza o ScrollEngine
       if (typeof ScrollEngine !== 'undefined') {
         ScrollEngine.decimalScroll = this.operatorSavedScrollPosition;
