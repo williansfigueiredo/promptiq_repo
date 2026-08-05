@@ -1300,6 +1300,14 @@ document.addEventListener("DOMContentLoaded", () => {
   let playbackStartTime = null;
   let playbackDuration = 0;
 
+  // Controle de validade da reancoragem pós-fullscreen.
+  // Cada interação relevante invalida timers antigos para evitar saltos tardios.
+  let _fullscreenAnchorRunId = 0;
+
+  function cancelPendingFullscreenAnchorRestore() {
+    _fullscreenAnchorRunId += 1;
+  }
+
   /**
    * Motor de rolagem de alta performance
    * Usa transform CSS para scroll suave independente do navegador
@@ -1339,6 +1347,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     start: function () {
       if (this.isRunning) return;
+
+      // Se o operador retomou a rolagem, não permitir que callbacks antigos de
+      // fullscreen reposicionem o texto alguns ms depois.
+      cancelPendingFullscreenAnchorRestore();
 
       // Garante que o container existe
       const container = document.querySelector(".prompter-in-control");
@@ -1542,6 +1554,8 @@ document.addEventListener("DOMContentLoaded", () => {
     prompterContainer.addEventListener("scroll", () => {
       // Só executa se o Play estiver desligado (Scroll Manual)
       if (!ScrollEngine.isRunning) {
+        cancelPendingFullscreenAnchorRestore();
+
         const el = prompterContainer;
         const textEl = document.getElementById('prompterText-control');
 
@@ -2067,7 +2081,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const table = currentEditorTables[tableIndex];
     const rows = table.querySelectorAll("tr");
-    
+
     if (rows.length === 0) return;
 
     // Pega a primeira linha para contar colunas
@@ -2081,7 +2095,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const columnSelect = document.getElementById("columnSelect");
     if (columnSelect) {
       columnSelect.innerHTML = '<option value="">Detectar automaticamente</option>';
-      
+
       for (let i = 0; i < numColumns; i++) {
         const option = document.createElement("option");
         option.value = i;
@@ -2094,10 +2108,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const preview = document.getElementById("columnPreview");
     if (preview) {
       let previewHTML = "";
-      
+
       for (let colIdx = 0; colIdx < numColumns; colIdx++) {
         previewHTML += `<div class="mb-2"><strong class="text-primary">Col ${colIdx + 1}:</strong> `;
-        
+
         // Pega conteúdo das primeiras 2 células desta coluna
         let samples = [];
         for (let rowIdx = 0; rowIdx < Math.min(2, rows.length); rowIdx++) {
@@ -2108,16 +2122,16 @@ document.addEventListener("DOMContentLoaded", () => {
             if (text) samples.push(text + (text.length >= 40 ? "..." : ""));
           }
         }
-        
+
         if (samples.length > 0) {
           previewHTML += `<span class="text-muted">${samples.join(" • ")}</span>`;
         } else {
           previewHTML += "<em class='text-muted'>(vazia)</em>";
         }
-        
+
         previewHTML += "</div>";
       }
-      
+
       preview.innerHTML = previewHTML;
     }
   }
@@ -2126,7 +2140,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderSelectedTablesList() {
     const listContainer = document.getElementById("selectedTablesList");
     const emptyMessage = document.getElementById("emptyTablesMessage");
-    
+
     if (!listContainer) return;
 
     // Remove todos os items exceto a mensagem vazia
@@ -2146,9 +2160,9 @@ document.addEventListener("DOMContentLoaded", () => {
     selectedTables.forEach((item, index) => {
       const div = document.createElement("div");
       div.className = "d-flex justify-content-between align-items-center p-2 mb-1 bg-white border rounded";
-      
+
       const columnText = item.columnIndex !== "" ? `Col ${parseInt(item.columnIndex) + 1}` : "Auto";
-      
+
       div.innerHTML = `
         <span class="small">
           <i class="bi bi-table text-primary"></i> 
@@ -2158,14 +2172,14 @@ document.addEventListener("DOMContentLoaded", () => {
           <i class="bi bi-trash"></i>
         </button>
       `;
-      
+
       // Listener para remover
       const removeBtn = div.querySelector("button");
       removeBtn.addEventListener("click", () => {
         selectedTables.splice(index, 1);
         renderSelectedTablesList();
       });
-      
+
       listContainer.appendChild(div);
     });
   }
@@ -2200,7 +2214,7 @@ document.addEventListener("DOMContentLoaded", () => {
     radio.addEventListener("change", (e) => {
       const advancedPanel = document.getElementById("advancedCleanPanel");
       const description = document.getElementById("cleanModeDescription");
-      
+
       if (e.target.value === "advanced") {
         advancedPanel?.classList.remove("d-none");
         if (description) description.textContent = "Selecione qual coluna da tabela contém as falas do MC";
@@ -2240,7 +2254,7 @@ document.addEventListener("DOMContentLoaded", () => {
           alert("⚠️ Adicione pelo menos uma tabela antes de gerar o preview!");
           return;
         }
-        
+
         const result = cleanScriptAdvancedMultiple(
           selectedTables,
           formatMCNames,
@@ -2327,19 +2341,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = currentEditorContent;
-    
+
     // Substitui <br> por quebras de linha para preservar estrutura
     tempDiv.querySelectorAll('br').forEach(br => {
       br.replaceWith('\n');
     });
-    
+
     // Substitui </p>, </div> por quebras de linha
     tempDiv.querySelectorAll('p, div').forEach(elem => {
       if (elem.textContent.trim()) {
         elem.after('\n');
       }
     });
-    
+
     let textContent = tempDiv.textContent || tempDiv.innerText || "";
 
     // Separa o texto em linhas, preservando estrutura
@@ -2467,33 +2481,33 @@ document.addEventListener("DOMContentLoaded", () => {
     rows.forEach((row) => {
       const cells = row.querySelectorAll("td, th");
       const cell = cells[targetColumn];
-      
+
       if (cell) {
         // Clona o elemento para processar seu HTML
         const cellClone = cell.cloneNode(true);
-        
+
         // Substitui <br> por quebras de linha
         cellClone.querySelectorAll('br').forEach(br => {
           br.replaceWith('\n');
         });
-        
+
         // Substitui </p>, </div> por quebras de linha
         cellClone.querySelectorAll('p, div').forEach(elem => {
           elem.after('\n');
         });
-        
+
         // Pega o texto já com as quebras preservadas
         let text = (cellClone.textContent || "").trim();
-        
+
         if (text) {
           // Separa por quebras de linha
           const cellLines = text.split('\n');
-          
+
           // Processa cada linha
           let lastWasEmpty = false;
           cellLines.forEach(line => {
             const trimmedLine = line.trim();
-            
+
             if (trimmedLine) {
               lines.push(trimmedLine);
               lastWasEmpty = false;
@@ -2503,7 +2517,7 @@ document.addEventListener("DOMContentLoaded", () => {
               lastWasEmpty = true;
             }
           });
-          
+
           // Adiciona espaço extra entre células diferentes (separação de blocos)
           if (!lastWasEmpty) {
             lines.push("");
@@ -2516,20 +2530,20 @@ document.addEventListener("DOMContentLoaded", () => {
     lines = lines.filter((line) => {
       const trimmed = line.trim();
       if (trimmed === "") return true;
-      
+
       // Preserva marcações de cena/direção
       if (/^[\[\<\«][\[\<\«].*[\]\>\»][\]\>\»]$/i.test(trimmed) || /^\[.*\]$/i.test(trimmed)) {
         return true;
       }
-      
+
       if (removeTimestamps && /\d{1,2}[h:]\d{1,4}/i.test(trimmed) && trimmed.length < 20) {
         return false;
       }
-      
+
       if (removeTechnicalMarks && /^(LED|SOM|LUZ|ONLINE|C[ÂA]MERA|VT|V[ÍI]DEO|AO\s+VIVO|CATEGORIA)[\s:*]/i.test(trimmed)) {
         return false;
       }
-      
+
       return true;
     });
 
@@ -2605,33 +2619,33 @@ document.addEventListener("DOMContentLoaded", () => {
       rows.forEach((row) => {
         const cells = row.querySelectorAll("td, th");
         const cell = cells[targetColumn];
-        
+
         if (cell) {
           // Clona o elemento para processar seu HTML
           const cellClone = cell.cloneNode(true);
-          
+
           // Substitui <br> por quebras de linha
           cellClone.querySelectorAll('br').forEach(br => {
             br.replaceWith('\n');
           });
-          
+
           // Substitui </p>, </div> por quebras de linha
           cellClone.querySelectorAll('p, div').forEach(elem => {
             elem.after('\n');
           });
-          
+
           // Pega o texto já com as quebras preservadas
           let text = (cellClone.textContent || "").trim();
-          
+
           if (text) {
             // Separa por quebras de linha
             const cellLines = text.split('\n');
-            
+
             // Processa cada linha
             let lastWasEmpty = false;
             cellLines.forEach(line => {
               const trimmedLine = line.trim();
-              
+
               if (trimmedLine) {
                 allLines.push(trimmedLine);
                 lastWasEmpty = false;
@@ -2641,7 +2655,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 lastWasEmpty = true;
               }
             });
-            
+
             // Adiciona espaço extra entre células diferentes (separação de blocos)
             if (!lastWasEmpty) {
               allLines.push("");
@@ -2657,20 +2671,20 @@ document.addEventListener("DOMContentLoaded", () => {
     let lines = allLines.filter((line) => {
       const trimmed = line.trim();
       if (trimmed === "") return true;
-      
+
       // Preserva marcações de cena/direção
       if (/^[\[\<\«][\[\<\«].*[\]\>\»][\]\>\»]$/i.test(trimmed) || /^\[.*\]$/i.test(trimmed)) {
         return true;
       }
-      
+
       if (removeTimestamps && /\d{1,2}[h:]\d{1,4}/i.test(trimmed) && trimmed.length < 20) {
         return false;
       }
-      
+
       if (removeTechnicalMarks && /^(LED|SOM|LUZ|ONLINE|C[ÂA]MERA|VT|V[ÍI]DEO|AO\s+VIVO|CATEGORIA)[\s:*]/i.test(trimmed)) {
         return false;
       }
-      
+
       return true;
     });
 
@@ -2703,30 +2717,30 @@ document.addEventListener("DOMContentLoaded", () => {
   // Formata nomes de MCs com padrões personalizados
   function formatMCName(line, mcPatternsStr) {
     const trimmed = line.trim();
-    
+
     // Detecta marcações de cena/direção entre << >> ou [ ]
     if (/^[\[\<\«][\[\<\«].*[\]\>\»][\]\>\»]$/i.test(trimmed) || /^\[.*\]$/i.test(trimmed)) {
       return `<div style="margin-top: 1.5em; margin-bottom: 1em; padding: 0.5em; background-color: #f0f0f0; border-left: 3px solid #999; font-style: italic; color: #666; font-size: 0.95rem;">${trimmed}</div>`;
     }
-    
+
     // Pega os padrões definidos pelo usuário
     const customPatterns = mcPatternsStr.split(",").map(p => p.trim().toUpperCase()).filter(p => p);
-    
+
     // Cria regex dinâmico baseado nos padrões
     const patternsList = customPatterns.map(p => p.replace(/\s+/g, "\\s*")).join("|");
     const mcRegex = new RegExp(`^(\\*{0,2}\\s*)(${patternsList})(\\s*\\d*)(\\/?(\\s*\\d+)?)?(\\*{0,2})(\\s*[:]*)?`, "i");
-    
+
     if (mcRegex.test(trimmed)) {
       const match = trimmed.match(mcRegex);
       if (match) {
         const mcName = (match[2] + (match[3] || "") + (match[4] || "")).trim().toUpperCase();
         const restOfLine = trimmed.substring(match[0].length).trim();
-        
+
         // Se a linha tem apenas o nome do MC, retorna formatado como título de bloco
         if (!restOfLine || restOfLine === ":") {
           return `<div style="margin-top: 2.5em; margin-bottom: 0.8em; padding: 0.5em 0; padding-bottom: 0.4em; border-bottom: 3px solid #0066cc; background: linear-gradient(to right, rgba(0,102,204,0.05), transparent);"><strong style="color: #0066cc; font-size: 1.4em; font-weight: 700; letter-spacing: 1px;">${mcName}</strong></div>`;
         }
-        
+
         // Se tem texto depois do nome, formata junto
         return `<div style="margin-top: 2.5em; margin-bottom: 0.8em;"><strong style="color: #0066cc; font-size: 1.3em; font-weight: 700; letter-spacing: 0.5px;">${mcName}:</strong></div><div style="margin-bottom: 0.6em; line-height: 1.8; font-size: 1.05rem;">${restOfLine}</div>`;
       }
@@ -2742,7 +2756,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     for (const line of lines) {
       const isEmpty = line.trim() === "" || (typeof line === 'string' && /<div[^>]*>\s*<\/div>/.test(line));
-      
+
       if (isEmpty) {
         emptyCount++;
         // Permite até 1 linha vazia consecutiva (para separar parágrafos)
@@ -2759,7 +2773,7 @@ document.addEventListener("DOMContentLoaded", () => {
     while (cleanedLines.length > 0 && cleanedLines[0].trim() === "") {
       cleanedLines.shift();
     }
-    
+
     // Remove linhas vazias no fim
     while (cleanedLines.length > 0 && cleanedLines[cleanedLines.length - 1].trim() === "") {
       cleanedLines.pop();
@@ -2802,38 +2816,38 @@ document.addEventListener("DOMContentLoaded", () => {
   // Converte linhas para HTML com melhor formatação
   function linesToHTML(lines) {
     let html = "";
-    
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trim();
-      
+
       // Linha vazia = separador de parágrafo
       if (trimmed === "") {
         html += '<div style="height: 1.2em;"></div>';
         continue;
       }
-      
+
       // Se já tem tag div com strong (nome de MC formatado)
       if (/<div/.test(line) && /<strong/.test(line)) {
         html += line;
         continue;
       }
-      
+
       // Se tem strong sozinho (nome de MC)
       if (/<strong/.test(line)) {
         html += line;
         continue;
       }
-      
+
       // Linha de texto normal
       // Verifica se próxima linha é vazia ou tem MC (fim de bloco)
       const nextLine = lines[i + 1];
       const isEndOfBlock = !nextLine || !nextLine.trim() || /<strong/.test(nextLine);
-      
+
       const marginBottom = isEndOfBlock ? "1.2em" : "0.4em";
       html += `<div style="margin-bottom: ${marginBottom}; line-height: 1.8; text-align: justify; font-size: 1.05rem;">${line}</div>`;
     }
-    
+
     return html;
   }
 
@@ -4659,6 +4673,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const anchor =
       typeof captureCueAnchor === "function" ? captureCueAnchor() : null;
 
+    const runId = ++_fullscreenAnchorRunId;
+    const container = document.querySelector(".prompter-in-control");
+    const baselineScroll = ScrollEngine.isRunning
+      ? (ScrollEngine.decimalScroll || 0)
+      : (container ? Math.max(container.scrollTop || 0, ScrollEngine.decimalScroll || 0) : (ScrollEngine.decimalScroll || 0));
+
     applyChange();
 
     if (!anchor || typeof restoreCueAnchor !== "function") return;
@@ -4668,6 +4688,22 @@ document.addEventListener("DOMContentLoaded", () => {
     const checkpoints = [0, 120, 300, 550];
     checkpoints.forEach((ms) => {
       setTimeout(() => {
+        if (runId !== _fullscreenAnchorRunId) return;
+
+        const currentContainer = document.querySelector(".prompter-in-control");
+        const currentScroll = ScrollEngine.isRunning
+          ? (ScrollEngine.decimalScroll || 0)
+          : (currentContainer
+            ? Math.max(currentContainer.scrollTop || 0, ScrollEngine.decimalScroll || 0)
+            : (ScrollEngine.decimalScroll || 0));
+
+        // Se o usuário já moveu o texto significativamente após o toggle,
+        // aborta este lote de restores para não "puxar" para ponto antigo.
+        if (Math.abs(currentScroll - baselineScroll) > 24) {
+          cancelPendingFullscreenAnchorRestore();
+          return;
+        }
+
         if (typeof ScrollEngine !== "undefined") ScrollEngine.invalidateMetrics();
         restoreCueAnchor(anchor);
       }, ms);
@@ -4782,10 +4818,27 @@ document.addEventListener("DOMContentLoaded", () => {
   let _remoteTextTimer = null;
   let _lastRemoteHtml = "";
 
+  function flushSyncContentToPrompter() {
+    if (_syncPrompterTimer) {
+      clearTimeout(_syncPrompterTimer);
+      _syncPrompterTimer = null;
+    }
+    syncContentToPrompter();
+  }
+
   function scheduleSyncContentToPrompter() {
     clearTimeout(_syncPrompterTimer);
     if (ScrollEngine.isRunning) return;
-    _syncPrompterTimer = setTimeout(syncContentToPrompter, 80);
+    _syncPrompterTimer = setTimeout(syncContentToPrompter, 25);
+  }
+
+  // Ao voltar para a aba Operator, garante que qualquer edição pendente do
+  // editor já esteja refletida imediatamente no prompter.
+  const operatorTabTrigger = document.getElementById("operator-tab");
+  if (operatorTabTrigger) {
+    operatorTabTrigger.addEventListener("show.bs.tab", () => {
+      flushSyncContentToPrompter();
+    });
   }
 
   function scheduleRemoteTextBroadcast(html) {
@@ -6083,7 +6136,9 @@ document.addEventListener("DOMContentLoaded", () => {
       updateTabTitle(id, name, true);
     }
   });
-  ipcRenderer.on("file-saved-and-closed", (e, name, path, id) => {
+      if (typeof flushSyncContentToPrompter === "function") {
+        flushSyncContentToPrompter();
+      }
     removeDocumentFromDOM(id);
   });
   ipcRenderer.on("close-document-unsaved", (e, id) => {
@@ -6094,7 +6149,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const editor = document
       .getElementById(`doc-${id}`)
       ?.querySelector(".text-editor-area");
-    if (doc && editor) {
+      if (typeof flushSyncContentToPrompter === "function") {
+        flushSyncContentToPrompter();
+      }
       const content = getCleanContent(editor);
       ipcRenderer.send("save-file-dialog-and-close", content, id, doc.name);
     } else removeDocumentFromDOM(id);
