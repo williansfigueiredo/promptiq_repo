@@ -46,7 +46,7 @@ function initLicenseHandlers() {
       console.error('[License] activate handler:', e);
       return {
         ok: false,
-        error: e && e.message ? e.message : 'Erro interno ao ativar.'
+        error: e && e.message ? e.message : 'Internal error during activation.'
       };
     }
   });

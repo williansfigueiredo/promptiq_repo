@@ -165,7 +165,7 @@
   </style>
 </head>
 <body>
-  <div class="drag-strip" title="Arraste para mover a janela"></div>
+  <div class="drag-strip" title="Drag to move window"></div>
   <button class="close-btn" onclick="window.close()" title="Close">✕</button>
 
   <div class="wrap">
@@ -245,7 +245,7 @@
         }
       } catch (err) {
         const msg = (err && err.message) ? err.message : String(err);
-        showStatus('Erro ao ativar: ' + msg, 'error');
+        showStatus('Activation error: ' + msg, 'error');
         $btn.disabled = false;
         $btn.textContent = 'Activate';
         $input.focus();

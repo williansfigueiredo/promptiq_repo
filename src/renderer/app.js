@@ -492,34 +492,34 @@ document.addEventListener("DOMContentLoaded", () => {
     categories: [
       {
         id: 'pacing',
-        name: 'Ritmo / Tempo',
+        name: 'Pacing / Timing',
         icon: 'bi-speedometer2',
         items: [
-          { label: 'DEVAGAR', message: 'DEVAGAR', color: '#FFFFFF', bg: '#FFC107', icon: 'bi-cone-striped' }, // Amarelo
-          { label: 'ACELERA', message: 'ACELERA', color: '#FFFFFF', bg: '#28A745', icon: 'bi-lightning-fill' }, // Verde
-          { label: 'ESTICA', message: 'ENROLA / ESTICA', color: '#FFFFFF', bg: '#17A2B8', icon: 'bi-arrows-expand' }, // Azul
-          { label: 'CONCLUA', message: 'CONCLUA AGORA', color: '#FFFFFF', bg: '#FD7E14', icon: 'bi-hourglass-bottom' }, // Laranja
-          { label: 'PARE', message: 'PARE', color: '#FFFFFF', bg: '#DC3545', icon: 'bi-stop-circle-fill' } // Vermelho
+          { label: 'SLOW DOWN', message: 'SLOW DOWN', color: '#FFFFFF', bg: '#FFC107', icon: 'bi-cone-striped' }, // Yellow
+          { label: 'SPEED UP', message: 'SPEED UP', color: '#FFFFFF', bg: '#28A745', icon: 'bi-lightning-fill' }, // Green
+          { label: 'STRETCH', message: 'STALL / STRETCH', color: '#FFFFFF', bg: '#17A2B8', icon: 'bi-arrows-expand' }, // Blue
+          { label: 'WRAP UP', message: 'WRAP UP NOW', color: '#FFFFFF', bg: '#FD7E14', icon: 'bi-hourglass-bottom' }, // Orange
+          { label: 'STOP', message: 'STOP', color: '#FFFFFF', bg: '#DC3545', icon: 'bi-stop-circle-fill' } // Red
         ]
       },
       {
         id: 'camera',
-        name: 'Câmera / Olhar',
+        name: 'Camera / Eye Line',
         icon: 'bi-camera-video',
         items: [
           { label: 'CAM 1', message: '>>> CAM 1 <<<', color: '#000000', bg: '#FFFFFF', icon: 'bi-1-square' },
           { label: 'CAM 2', message: '>>> CAM 2 <<<', color: '#000000', bg: '#FFFFFF', icon: 'bi-2-square' },
           { label: 'CAM 3', message: '>>> CAM 3 <<<', color: '#000000', bg: '#FFFFFF', icon: 'bi-3-square' },
-          { label: 'OLHE CIMA', message: 'OLHE PARA CIMA', color: '#FFFFFF', bg: '#6C757D', icon: 'bi-arrow-up-circle' }
+          { label: 'LOOK UP', message: 'LOOK UP', color: '#FFFFFF', bg: '#6C757D', icon: 'bi-arrow-up-circle' }
         ]
       },
       {
         id: 'audio',
-        name: 'Áudio / Técnico',
+        name: 'Audio / Technical',
         icon: 'bi-mic',
         items: [
-          { label: 'FALE ALTO', message: 'FALE MAIS ALTO', color: '#FFFFFF', bg: '#6610F2', icon: 'bi-volume-up' },
-          { label: 'COMERCIAL', message: 'INTERVALO', color: '#FFFFFF', bg: '#0DCAF0', icon: 'bi-pause-circle' },
+          { label: 'SPEAK LOUD', message: 'SPEAK LOUDER', color: '#FFFFFF', bg: '#6610F2', icon: 'bi-volume-up' },
+          { label: 'BREAK', message: 'COMMERCIAL BREAK', color: '#FFFFFF', bg: '#0DCAF0', icon: 'bi-pause-circle' },
           { label: 'IMPROVISE', message: 'AD-LIB (IMPROVISE)', color: '#000000', bg: '#FFD700', icon: 'bi-mic-mute' }
         ]
       },
@@ -527,7 +527,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       {
         id: 'custom',
-        name: 'Escrever Msg',
+        name: 'Write Message',
         icon: 'bi-keyboard', // Ícone de teclado
         items: [] // Deixe vazio, vamos tratar via código
       }
@@ -782,13 +782,13 @@ document.addEventListener("DOMContentLoaded", () => {
       panel.id = 'update-progress-panel';
       panel.innerHTML = `
         <div class="upp-header">
-          <span class="upp-title"><i class="bi bi-arrow-repeat"></i> Atualização</span>
-          <button class="upp-close" title="Fechar">&times;</button>
+          <span class="upp-title"><i class="bi bi-arrow-repeat"></i> Update</span>
+          <button class="upp-close" title="Close">&times;</button>
         </div>
         <div class="upp-version"></div>
-        <div class="upp-status">Iniciando download…</div>
+        <div class="upp-status">Starting download...</div>
         <div class="upp-bar-track"><div class="upp-bar-fill"></div></div>
-        <button class="upp-restart-btn">Reiniciar e Instalar</button>
+        <button class="upp-restart-btn">Restart and Install</button>
       `;
       document.body.appendChild(panel);
 
@@ -814,8 +814,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // Disparado pelo auto-check silencioso OU pelo Check Now quando available
     ipcRenderer.on('update-available-silent', (_, info) => {
       const p = getOrCreatePanel();
-      p.querySelector('.upp-version').textContent = `Nova versão: ${info.version}`;
-      p.querySelector('.upp-status').textContent = 'Baixando atualização…';
+      p.querySelector('.upp-version').textContent = `New version: ${info.version}`;
+      p.querySelector('.upp-status').textContent = 'Downloading update...';
       p.querySelector('.upp-bar-fill').style.width = '0%';
       p.querySelector('.upp-restart-btn').style.display = 'none';
     });
@@ -827,23 +827,23 @@ document.addEventListener("DOMContentLoaded", () => {
       p.querySelector('.upp-bar-fill').style.width = `${pct}%`;
       const mb = (v) => (v / 1024 / 1024).toFixed(1);
       p.querySelector('.upp-status').textContent =
-        `Baixando… ${pct}%  (${mb(data.transferred)} / ${mb(data.total)} MB)`;
+        `Downloading... ${pct}%  (${mb(data.transferred)} / ${mb(data.total)} MB)`;
     });
 
     // Download completo — mostra botão de reiniciar
     ipcRenderer.on('update_downloaded', (_, info) => {
       const p = getOrCreatePanel();
-      p.querySelector('.upp-version').textContent = `Versão ${info.version} pronta!`;
+      p.querySelector('.upp-version').textContent = `Version ${info.version} ready!`;
       p.querySelector('.upp-bar-fill').style.width = '100%';
-      p.querySelector('.upp-status').textContent = 'Download concluído. Clique para instalar.';
+      p.querySelector('.upp-status').textContent = 'Download complete. Click to install.';
       p.querySelector('.upp-restart-btn').style.display = 'block';
     });
 
     // Expõe para o preferences-module poder acionar o painel ao clicar Check Now
     window._showUpdateAvailablePanel = (version) => {
       const p = getOrCreatePanel();
-      p.querySelector('.upp-version').textContent = `Nova versão: ${version}`;
-      p.querySelector('.upp-status').textContent = 'Baixando atualização…';
+      p.querySelector('.upp-version').textContent = `New version: ${version}`;
+      p.querySelector('.upp-status').textContent = 'Downloading update...';
       p.querySelector('.upp-bar-fill').style.width = '0%';
       p.querySelector('.upp-restart-btn').style.display = 'none';
     };
@@ -2005,7 +2005,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const editor = document.querySelector(".text-editor-area");
       if (!editor) {
-        alert("Nenhum documento aberto!");
+        alert("No document open!");
         return;
       }
 
@@ -2043,7 +2043,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (simpleModeRadio) simpleModeRadio.checked = true;
       if (advancedPanel) advancedPanel.classList.add("d-none");
       if (cleanModeDescription) {
-        cleanModeDescription.textContent = "Remove automaticamente todas as marcações técnicas";
+        cleanModeDescription.textContent = "Automatically removes all technical markers";
       }
       if (advancedModeRadio) {
         advancedModeRadio.disabled = false;
@@ -2059,7 +2059,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cleanPreview.innerHTML = `
           <div class="text-center text-muted py-5">
             <i class="bi bi-eye-slash" style="font-size: 3rem; opacity: 0.3;"></i>
-            <p class="mt-3">Clique em "Gerar Preview" para visualizar o resultado</p>
+            <p class="mt-3">Click \"Generate Preview\" to view the result</p>
           </div>
         `;
       }
@@ -2071,7 +2071,7 @@ document.addEventListener("DOMContentLoaded", () => {
         currentEditorTables.forEach((table, idx) => {
           const option = document.createElement("option");
           option.value = idx;
-          option.textContent = `Tabela ${idx + 1}`;
+          option.textContent = `Table ${idx + 1}`;
           tableSelect.appendChild(option);
         });
       }
@@ -2083,11 +2083,11 @@ document.addEventListener("DOMContentLoaded", () => {
         // Sem tabelas - oculta opção avançada
         if (advancedModeRadio) {
           advancedModeRadio.disabled = true;
-          advancedModeRadio.title = "Nenhuma tabela detectada no documento";
+          advancedModeRadio.title = "No table detected in the document";
         }
         if (advancedModeLabel) {
           advancedModeLabel.classList.add("disabled");
-          advancedModeLabel.title = "Nenhuma tabela detectada no documento";
+          advancedModeLabel.title = "No table detected in the document";
         }
       }
 
@@ -2116,12 +2116,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // Popula select de colunas
     const columnSelect = document.getElementById("columnSelect");
     if (columnSelect) {
-      columnSelect.innerHTML = '<option value="">Detectar automaticamente</option>';
+      columnSelect.innerHTML = '<option value="">Auto-detect</option>';
 
       for (let i = 0; i < numColumns; i++) {
         const option = document.createElement("option");
         option.value = i;
-        option.textContent = `Coluna ${i + 1}`;
+        option.textContent = `Column ${i + 1}`;
         columnSelect.appendChild(option);
       }
     }
@@ -2148,7 +2148,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (samples.length > 0) {
           previewHTML += `<span class="text-muted">${samples.join(" • ")}</span>`;
         } else {
-          previewHTML += "<em class='text-muted'>(vazia)</em>";
+          previewHTML += "<em class='text-muted'>(empty)</em>";
         }
 
         previewHTML += "</div>";
@@ -2188,7 +2188,7 @@ document.addEventListener("DOMContentLoaded", () => {
       div.innerHTML = `
         <span class="small">
           <i class="bi bi-table text-primary"></i> 
-          <strong>Tabela ${item.tableIndex + 1}</strong> - ${columnText}
+          <strong>Table ${item.tableIndex + 1}</strong> - ${columnText}
         </span>
         <button type="button" class="btn btn-sm btn-outline-danger btn-sm" data-index="${index}">
           <i class="bi bi-trash"></i>
@@ -2219,7 +2219,7 @@ document.addEventListener("DOMContentLoaded", () => {
       );
 
       if (alreadyAdded) {
-        alert("⚠️ Esta combinação de tabela e coluna já foi adicionada!");
+        alert("This table and column combination has already been added!");
         return;
       }
 
@@ -2239,10 +2239,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (e.target.value === "advanced") {
         advancedPanel?.classList.remove("d-none");
-        if (description) description.textContent = "Selecione qual coluna da tabela contém as falas do MC";
+        if (description) description.textContent = "Select which table column contains MC speech lines";
       } else {
         advancedPanel?.classList.add("d-none");
-        if (description) description.textContent = "Remove automaticamente todas as marcações técnicas";
+        if (description) description.textContent = "Automatically removes all technical markers";
       }
     });
   });
@@ -2273,7 +2273,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (mode === "advanced" && currentEditorTables.length > 0) {
         // Modo avançado: extrai colunas das tabelas selecionadas
         if (selectedTables.length === 0) {
-          alert("⚠️ Adicione pelo menos uma tabela antes de gerar o preview!");
+          alert("Add at least one table before generating the preview!");
           return;
         }
 
@@ -2308,11 +2308,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const applyBtn = document.getElementById("applyCleanScript");
 
       if (cleanPreview) {
-        cleanPreview.innerHTML = cleanedHTML || '<p class="text-muted">Nenhum conteúdo gerado</p>';
+        cleanPreview.innerHTML = cleanedHTML || '<p class="text-muted">No content generated</p>';
       }
 
       if (previewStats) {
-        previewStats.innerHTML = `${stats.cleaned} linhas | ${stats.removed} removidas`;
+        previewStats.innerHTML = `${stats.cleaned} lines | ${stats.removed} removed`;
         previewStats.className = "badge bg-success small";
       }
 
@@ -2332,7 +2332,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (applyCleanBtn) {
     applyCleanBtn.addEventListener("click", () => {
       if (!cleanedPreviewContent) {
-        alert("⚠️ Gere um preview primeiro!");
+        alert("Generate a preview first!");
         return;
       }
 
@@ -2353,7 +2353,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const modal = bootstrap.Modal.getInstance(document.getElementById("cleanScriptModal"));
       modal?.hide();
 
-      alert("✅ Escaleta limpa e aplicada com sucesso!");
+      alert("Script cleaned and applied successfully!");
     });
   }
 
@@ -6737,7 +6737,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (result.canceled) return;
 
         if (!result.success) {
-          alert('Erro ao importar documento: ' + (result.error || 'Erro desconhecido'));
+          alert('Error importing document: ' + (result.error || 'Unknown error'));
           return;
         }
 
@@ -6745,7 +6745,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const importedDoc = {
           id: `imported-${Date.now()}`,
           displayName: result.fileName,
-          subInfo: 'Documento Importado',
+          subInfo: 'Imported Document',
           content: result.content,
           textContent: result.textContent,
           type: 'imported',
@@ -6765,7 +6765,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       } catch (err) {
         console.error('Erro ao importar documento:', err);
-        alert('Erro ao importar documento: ' + err.message);
+        alert('Error importing document: ' + err.message);
       }
     });
   }
@@ -6980,7 +6980,7 @@ document.addEventListener("DOMContentLoaded", () => {
         diffLeftPanel.innerText = items[0].textContent || items[0].content;
         diffTitleRight.innerText = "-";
         diffRightPanel.innerHTML =
-          '<p class="text-muted text-center mt-5">Selecione mais um para comparar</p>';
+          '<p class="text-muted text-center mt-5">Select one more item to compare</p>';
       } else {
         resetDiffView();
       }
@@ -7097,7 +7097,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
           const editor = getActiveTextEditorArea();
           if (!editor) {
-            alert("Nenhum editor ativo encontrado.");
+            alert("No active editor found.");
             return;
           }
 
@@ -7120,9 +7120,9 @@ document.addEventListener("DOMContentLoaded", () => {
           } else {
             // Nenhum é current - pergunta ao usuário
             const choice = confirm(
-              `Qual documento tem a FORMATAÇÃO ([MC] amarelo, cores)?\n\n` +
-              `[OK] = ${newVer.displayName} (direita)\n` +
-              `[Cancelar] = ${oldVer.displayName} (esquerda)`
+              `Which document has the FORMATTING ([MC] yellow, colors)?\n\n` +
+              `[OK] = ${newVer.displayName} (right)\n` +
+              `[Cancel] = ${oldVer.displayName} (left)`
             );
             formattedDoc = choice ? newVer : oldVer;
             sourceDoc = choice ? oldVer : newVer;
@@ -7143,28 +7143,28 @@ document.addEventListener("DOMContentLoaded", () => {
           const removals = changes.filter(p => p.removed);
 
           if (additions.length === 0 && removals.length === 0) {
-            alert("Os textos são idênticos. Nenhuma mudança a aplicar.");
+            alert("The texts are identical. No changes to apply.");
             return;
           }
 
           // Mostra preview
-          let preview = `Aplicar mudanças de "${sourceDoc.displayName}" para "${formattedDoc.displayName}"?\n\n`;
+          let preview = `Apply changes from "${sourceDoc.displayName}" to "${formattedDoc.displayName}"?\n\n`;
 
           if (additions.length > 0) {
-            preview += `ADICIONAR (${additions.length} trechos):\n`;
+            preview += `ADD (${additions.length} segments):\n`;
             additions.slice(0, 3).forEach(p => {
               preview += `  ✅ "${p.value.substring(0, 40)}${p.value.length > 40 ? '...' : ''}"\n`;
             });
           }
 
           if (removals.length > 0) {
-            preview += `\nREMOVER (${removals.length} trechos):\n`;
+            preview += `\nREMOVE (${removals.length} segments):\n`;
             removals.slice(0, 3).forEach(p => {
               preview += `  ❌ "${p.value.substring(0, 40)}${p.value.length > 40 ? '...' : ''}"\n`;
             });
           }
 
-          preview += `\nSua formatação ([MC], cores) será PRESERVADA.`;
+          preview += `\nYour formatting ([MC], colors) will be PRESERVED.`;
 
           if (!confirm(preview)) return;
 
@@ -7295,12 +7295,12 @@ document.addEventListener("DOMContentLoaded", () => {
           editor.dispatchEvent(new Event('input', { bubbles: true }));
 
           console.log('[Timeline] Merge aplicado com sucesso');
-          alert('Mudanças aplicadas! Verifique o resultado.');
+          alert('Changes applied! Check the result.');
           timelineModal.hide();
 
         } catch (error) {
           console.error('[Timeline] Erro no Apply Changes:', error);
-          alert('Erro ao aplicar mudanças: ' + error.message);
+          alert('Error applying changes: ' + error.message);
         }
       };
     }
@@ -7315,7 +7315,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (btnLeftLabel) btnLeftLabel.innerText = `Use: ${oldLabel}`;
 
       btnRestoreLeft.onclick = () => {
-        if (confirm(`Substituir TODO o conteúdo pelo documento "${oldVer.displayName}"?\n\n⚠️ Isso substituirá completamente o texto E a formatação.`)) {
+        if (confirm(`Replace ALL content with document "${oldVer.displayName}"?\n\n⚠️ This will completely replace both text AND formatting.`)) {
           const editor = getActiveTextEditorArea();
           if (editor) {
             editor.innerHTML = oldVer.content;
@@ -7332,7 +7332,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (btnRightLabel) btnRightLabel.innerText = `Use: ${newLabel}`;
 
       btnRestoreRight.onclick = () => {
-        if (confirm(`Substituir TODO o conteúdo pelo documento "${newVer.displayName}"?\n\n⚠️ Isso substituirá completamente o texto E a formatação.`)) {
+        if (confirm(`Replace ALL content with document "${newVer.displayName}"?\n\n⚠️ This will completely replace both text AND formatting.`)) {
           const editor = getActiveTextEditorArea();
           if (editor) {
             editor.innerHTML = newVer.content;
@@ -8440,7 +8440,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnVoiceTrack) {
     btnVoiceTrack.addEventListener("click", async () => {
       if (!window.VoiceManager)
-        return alert("Erro: Voice Manager não carregou.");
+        return alert("Error: Voice Manager did not load.");
 
       voiceModeActive = !voiceModeActive;
       const sucesso = await window.VoiceManager.toggle(voiceModeActive);
@@ -9484,32 +9484,32 @@ document.addEventListener("DOMContentLoaded", () => {
 
       container.innerHTML = `
             <label style="color: #ffffff !important; font-weight: bold; display: block; margin-bottom: 10px;">
-                Digite o aviso para o apresentador:
+            Type a message for the presenter:
             </label>
             
             <div class="input-group mb-3">
                 <input type="text" id="custom-msg-input" 
                        class="form-control" 
                        style="background-color: #1e1f22; color: #fff; border: 1px solid #555;"
-                       placeholder="Ex: Ajeitar gravata..." autocomplete="off">
+                    placeholder="Ex: Adjust tie..." autocomplete="off">
                 
                 <button class="btn btn-primary" id="btn-send-custom">
                     <i class="bi bi-send-fill"></i>
                 </button>
             </div>
 
-            <label style="color: #cccccc !important; font-size: 0.8rem; margin-bottom: 5px; display:block;">Atalhos Rápidos:</label>
+            <label style="color: #cccccc !important; font-size: 0.8rem; margin-bottom: 5px; display:block;">Quick Shortcuts:</label>
             <div class="d-grid gap-2 mb-3">
                 <button id="btn-preset-louder" class="btn btn-outline-warning fw-bold">
-                    <i class="bi bi-volume-up-fill"></i> FALE MAIS ALTO
+                <i class="bi bi-volume-up-fill"></i> SPEAK LOUDER
                 </button>
                 <button id="btn-preset-smile" class="btn btn-outline-info fw-bold">
-                    <i class="bi bi-emoji-smile-fill"></i> SORRIA
+                <i class="bi bi-emoji-smile-fill"></i> SMILE
                 </button>
             </div>
 
             <p style="color: #999 !important; font-size: 0.8rem; margin-top: 5px;">
-                <i class="bi bi-info-circle"></i> Digite e pressione ENTER para enviar.
+              <i class="bi bi-info-circle"></i> Type and press ENTER to send.
             </p>
         `;
 
@@ -9549,7 +9549,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Botão FALE MAIS ALTO
       document.getElementById('btn-preset-louder').onclick = () => {
         triggerOverlayMessage({
-          message: 'FALE MAIS ALTO',
+          message: 'SPEAK LOUDER',
           bg: '#ffc107', // Amarelo
           color: '#000000', // Texto preto para contraste
           icon: 'bi-volume-up-fill'
@@ -9559,7 +9559,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Botão SORRIA
       document.getElementById('btn-preset-smile').onclick = () => {
         triggerOverlayMessage({
-          message: 'SORRIA',
+          message: 'SMILE',
           bg: '#0dcaf0', // Ciano
           color: '#000000',
           icon: 'bi-emoji-smile-fill'

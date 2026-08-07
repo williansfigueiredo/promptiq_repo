@@ -166,32 +166,32 @@ const QuickMessagesModule = (function() {
         
         container.innerHTML = `
             <label style="color: #ffffff !important; font-weight: bold; display: block; margin-bottom: 10px;">
-                Digite o aviso para o apresentador:
+                Type a message for the presenter:
             </label>
             
             <div class="input-group mb-3">
                 <input type="text" id="custom-msg-input" 
                        class="form-control" 
                        style="background-color: #1e1f22; color: #fff; border: 1px solid #555;"
-                       placeholder="Ex: Ajeitar gravata..." autocomplete="off">
+                      placeholder="Ex: Adjust tie..." autocomplete="off">
                 
                 <button class="btn btn-primary" id="btn-send-custom">
                     <i class="bi bi-send-fill"></i>
                 </button>
             </div>
 
-            <label style="color: #cccccc !important; font-size: 0.8rem; margin-bottom: 5px; display:block;">Atalhos Rápidos:</label>
+            <label style="color: #cccccc !important; font-size: 0.8rem; margin-bottom: 5px; display:block;">Quick Shortcuts:</label>
             <div class="d-grid gap-2 mb-3">
                 <button id="btn-preset-louder" class="btn btn-outline-warning fw-bold">
-                    <i class="bi bi-volume-up-fill"></i> FALE MAIS ALTO
+                    <i class="bi bi-volume-up-fill"></i> SPEAK LOUDER
                 </button>
                 <button id="btn-preset-smile" class="btn btn-outline-info fw-bold">
-                    <i class="bi bi-emoji-smile-fill"></i> SORRIA
+                    <i class="bi bi-emoji-smile-fill"></i> SMILE
                 </button>
             </div>
 
             <p style="color: #999 !important; font-size: 0.8rem; margin-top: 5px;">
-                <i class="bi bi-info-circle"></i> Digite e pressione ENTER para enviar.
+                <i class="bi bi-info-circle"></i> Type and press ENTER to send.
             </p>
         `;
         
@@ -237,7 +237,7 @@ const QuickMessagesModule = (function() {
         // Botão FALE MAIS ALTO
         document.getElementById('btn-preset-louder').onclick = () => {
             triggerOverlayMessage({
-                message: 'FALE MAIS ALTO',
+                message: 'SPEAK LOUDER',
                 bg: '#ffc107',  // Amarelo
                 color: '#000000',
                 icon: 'bi-volume-up-fill'
@@ -247,7 +247,7 @@ const QuickMessagesModule = (function() {
         // Botão SORRIA
         document.getElementById('btn-preset-smile').onclick = () => {
             triggerOverlayMessage({
-                message: 'SORRIA',
+                message: 'SMILE',
                 bg: '#0dcaf0',  // Ciano
                 color: '#000000',
                 icon: 'bi-emoji-smile-fill'

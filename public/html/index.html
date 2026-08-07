@@ -322,8 +322,8 @@
                     <div class="vr mx-1"></div>
 
                     <div class="btn-group" role="group">
-                        <button id="clean-script-btn" class="btn btn-sm btn-light border text-warning" title="Limpar Escaleta - Remove marcações técnicas (LED, SOM, LUZ, ONLINE, horários) e mantém apenas as falas do MC">
-                            <i class="bi bi-scissors"></i> Limpar Escaleta
+                        <button id="clean-script-btn" class="btn btn-sm btn-light border text-warning" title="Script Cleanup - Removes technical markers (LED, SOUND, LIGHT, ONLINE, timestamps) and keeps only MC speech lines">
+                            <i class="bi bi-scissors"></i> Script Cleanup
                         </button>
                     </div>
 
@@ -352,7 +352,7 @@
                     <div class="tool-separator"></div>
                     <button class="btn btn-tool" title="Settings" id="op-btn-settings"><i class="bi bi-sliders"></i></button>
                     <div class="ms-auto d-flex gap-1 align-items-center"></div>
-<button id="btn-voice-tracking" class="btn btn-sm btn-light border" title="Ativar Rolagem por Voz (Voice Tracking)">
+<button id="btn-voice-tracking" class="btn btn-sm btn-light border" title="Enable Voice Scrolling (Voice Tracking)">
   <i class="bi bi-mic"></i> <span id="voice-status-label" style="font-size: 0.7rem;">Loading...</span>
 </button>
 <button class="btn btn-warning btn-sm" onclick="require('electron').ipcRenderer.send('open-projection-window')">
@@ -477,30 +477,30 @@
                         </div>
                         <div class="list-group list-group-flush flex-grow-1 scroll-y-auto" id="timeline-list">
                             </div>
-                        <!-- Botão para importar documento externo -->
+                        <!-- Button to import external document -->
                         <div class="p-2 border-top bg-white">
-                            <button id="btn-import-diff-doc" class="btn btn-outline-primary btn-sm w-100" title="Importar PDF, DOC ou DOCX para comparar">
-                                <i class="bi bi-file-earmark-plus"></i> Importar Documento
+                            <button id="btn-import-diff-doc" class="btn btn-outline-primary btn-sm w-100" title="Import PDF, DOC or DOCX to compare">
+                                <i class="bi bi-file-earmark-plus"></i> Import Document
                             </button>
                         </div>
                     </div>
 
                     <div class="col-9 d-flex flex-column h-100 bg-white">
                         
-                        <!-- Legenda explicativa -->
+                        <!-- Explanatory legend -->
                         <div class="d-flex justify-content-center align-items-center py-1 px-2 bg-white border-bottom" style="font-size: 11px;">
-                            <span class="text-muted me-3"><i class="bi bi-info-circle"></i> Painel esquerdo = referência limpa | Painel direito = diferenças:</span>
-                            <span class="diff-legend-added me-3">█ Adicionado no 2º</span>
-                            <span class="diff-legend-removed">█ Removido do 1º</span>
+                            <span class="text-muted me-3"><i class="bi bi-info-circle"></i> Left panel = clean reference | Right panel = differences:</span>
+                            <span class="diff-legend-added me-3">█ Added in 2nd</span>
+                            <span class="diff-legend-removed">█ Removed from 1st</span>
                         </div>
                         
                         <div class="d-flex justify-content-between align-items-center p-2 border-bottom bg-light" style="height: 50px;">
                             <div class="w-50 text-center border-end">
-                                <span class="badge bg-secondary me-2">1º</span>
+                                <span class="badge bg-secondary me-2">1st</span>
                                 <span id="diff-title-left" class="fw-bold small text-truncate">Select...</span>
                             </div>
                             <div class="w-50 text-center">
-                                <span class="badge bg-primary me-2">2º</span>
+                                <span class="badge bg-primary me-2">2nd</span>
                                 <span id="diff-title-right" class="fw-bold small text-truncate">Select...</span>
                             </div>
                         </div>
@@ -517,12 +517,12 @@
                         <div class="p-2 border-top bg-white d-flex flex-wrap justify-content-end align-items-center gap-2">
                             <small id="diff-status-text" class="text-muted me-auto">Waiting for selection...</small>
                             
-                            <!-- Botão principal: Aplica apenas as mudanças de texto preservando formatação -->
+                            <!-- Main button: applies only text changes while preserving formatting -->
                             <button id="btn-apply-changes" class="btn btn-sm btn-success d-none" title="Transfer only text changes, keep your formatting">
                                 <i class="bi bi-patch-check"></i> <span id="btn-apply-label">Apply Changes</span>
                             </button>
                             
-                            <!-- Botões de substituição completa (mostram nome do documento) -->
+                            <!-- Full replacement buttons (show document name) -->
                             <button id="btn-restore-left" class="btn btn-sm btn-outline-secondary d-none" title="Replace with full version from left panel">
                                 <i class="bi bi-box-arrow-in-left"></i> <span id="btn-left-label">Use Left</span>
                             </button>
@@ -655,71 +655,71 @@
     </div>
 </div>
 
-<!-- Overlay de Standby Mode -->
+<!-- Standby mode overlay -->
 <div id="standby-overlay" style="display: none;">
     <div id="standby-content">
         <span id="standby-text">PLEASE STANDBY</span>
     </div>
 </div>
 
-<!-- Modal: Limpar Escaleta Avançado -->
+<!-- Modal: Advanced Script Cleanup -->
 <div class="modal fade" id="cleanScriptModal" tabindex="-1" aria-labelledby="cleanScriptModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-xl" style="max-width: 1000px;">
         <div class="modal-content">
             <div class="modal-header bg-warning bg-opacity-10">
                 <h5 class="modal-title" id="cleanScriptModalLabel">
-                    <i class="bi bi-scissors"></i> Limpar Escaleta - Assistente de Limpeza
+                    <i class="bi bi-scissors"></i> Script Cleanup - Cleanup Assistant
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <div class="row">
-                    <!-- Coluna Esquerda: Configurações -->
+                    <!-- Left Column: Settings -->
                     <div class="col-md-5">
                         <p class="text-muted small mb-3">
-                            Configure como deseja limpar e formatar o roteiro.
+                            Configure how you want to clean and format the script.
                         </p>
 
-                        <!-- Seletor de Modo -->
+                        <!-- Mode selector -->
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Modo de Limpeza:</label>
+                            <label class="form-label fw-bold">Cleanup Mode:</label>
                             <div class="btn-group w-100" role="group">
                                 <input type="radio" class="btn-check" name="cleanMode" id="cleanModeSimple" value="simple" checked>
                                 <label class="btn btn-outline-primary" for="cleanModeSimple">
-                                    <i class="bi bi-lightning"></i> Automático
+                                    <i class="bi bi-lightning"></i> Automatic
                                 </label>
 
                                 <input type="radio" class="btn-check" name="cleanMode" id="cleanModeAdvanced" value="advanced">
                                 <label class="btn btn-outline-primary" for="cleanModeAdvanced">
-                                    <i class="bi bi-table"></i> Selecionar Coluna
+                                    <i class="bi bi-table"></i> Select Column
                                 </label>
                             </div>
                             <small class="form-text text-muted d-block mt-1">
-                                <span id="cleanModeDescription">Remove automaticamente todas as marcações técnicas</span>
+                                <span id="cleanModeDescription">Automatically removes all technical markers</span>
                             </small>
                         </div>
 
-                        <!-- Painel de Modo Avançado (oculto inicialmente) -->
+                        <!-- Advanced mode panel (hidden initially) -->
                         <div id="advancedCleanPanel" class="d-none">
                             <div class="alert alert-info small mb-3">
                                 <i class="bi bi-info-circle"></i> 
-                                Documento com <strong id="tableCount">0</strong> tabela(s). 
+                                Document with <strong id="tableCount">0</strong> table(s). 
                             </div>
 
-                            <!-- Seletor para adicionar tabelas -->
+                            <!-- Selector to add tables -->
                             <div class="mb-3">
                                 <label class="form-label fw-bold">
-                                    <i class="bi bi-plus-circle"></i> Adicionar Tabela:
+                                    <i class="bi bi-plus-circle"></i> Add Table:
                                 </label>
                                 <div class="row g-2">
                                     <div class="col-5">
                                         <select id="tableSelect" class="form-select form-select-sm">
-                                            <option value="0">Tabela 1</option>
+                                            <option value="0">Table 1</option>
                                         </select>
                                     </div>
                                     <div class="col-5">
                                         <select id="columnSelect" class="form-select form-select-sm">
-                                            <option value="">Auto-detectar</option>
+                                            <option value="">Auto-detect</option>
                                         </select>
                                     </div>
                                     <div class="col-2">
@@ -730,99 +730,99 @@
                                 </div>
                             </div>
 
-                            <!-- Preview da coluna selecionada -->
+                            <!-- Preview of selected column -->
                             <div id="columnPreview" class="border rounded p-2 bg-light small mb-3" style="max-height: 100px; overflow-y: auto; font-size: 0.75rem;">
-                                <em class="text-muted">Selecione uma tabela...</em>
+                                <em class="text-muted">Select a table...</em>
                             </div>
 
-                            <!-- Lista de tabelas selecionadas -->
+                            <!-- List of selected tables -->
                             <div class="mb-3">
                                 <label class="form-label fw-bold">
-                                    <i class="bi bi-list-check"></i> Tabelas Selecionadas:
+                                    <i class="bi bi-list-check"></i> Selected Tables:
                                 </label>
                                 <div id="selectedTablesList" class="border rounded p-2 bg-white" style="min-height: 100px; max-height: 180px; overflow-y: auto;">
                                     <div class="text-muted small text-center py-3" id="emptyTablesMessage">
-                                        <i class="bi bi-inbox"></i> Nenhuma tabela selecionada
+                                        <i class="bi bi-inbox"></i> No table selected
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Padrões de MC Personalizados -->
+                        <!-- Custom MC patterns -->
                         <div class="mb-3">
                             <label class="form-label fw-bold">
-                                <i class="bi bi-person-badge"></i> Padrões de MC:
+                                <i class="bi bi-person-badge"></i> MC Patterns:
                             </label>
                             <input type="text" id="mcPatterns" class="form-control form-control-sm" 
-                                   placeholder="Ex: MC, MC1, MC2, APRESENTADOR" 
+                                   placeholder="Ex: MC, MC1, MC2, PRESENTER" 
                                    value="MC, MC1, MC2, APRESENTADOR, LOCUTOR">
                             <small class="form-text text-muted">
-                                Separe por vírgula os nomes que identificam os MCs
+                                Separate with commas the names that identify MCs
                             </small>
                         </div>
 
-                        <!-- Opções de Formatação -->
+                        <!-- Formatting options -->
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Opções de Formatação:</label>
+                            <label class="form-label fw-bold">Formatting Options:</label>
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="formatMCNames" checked>
                                 <label class="form-check-label small" for="formatMCNames">
-                                    Destacar nomes dos MCs em negrito
+                                    Highlight MC names in bold
                                 </label>
                             </div>
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="removeEmptyLines" checked>
                                 <label class="form-check-label small" for="removeEmptyLines">
-                                    Remover linhas vazias excessivas
+                                    Remove excessive empty lines
                                 </label>
                             </div>
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="addLineBreaks" checked>
                                 <label class="form-check-label small" for="addLineBreaks">
-                                    Adicionar espaçamento entre falas
+                                    Add spacing between speech lines
                                 </label>
                             </div>
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="removeTechnicalMarks" checked>
                                 <label class="form-check-label small" for="removeTechnicalMarks">
-                                    Remover marcações técnicas (LED, SOM, LUZ, etc)
+                                    Remove technical markers (LED, SOUND, LIGHT, etc)
                                 </label>
                             </div>
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="removeTimestamps" checked>
                                 <label class="form-check-label small" for="removeTimestamps">
-                                    Remover horários e timestamps
+                                    Remove time marks and timestamps
                                 </label>
                             </div>
                         </div>
 
-                        <!-- Botão de Gerar Preview -->
+                        <!-- Generate preview button -->
                         <button type="button" class="btn btn-primary btn-sm w-100" id="generatePreview">
-                            <i class="bi bi-eye"></i> Gerar Preview
+                            <i class="bi bi-eye"></i> Generate Preview
                         </button>
                     </div>
 
-                    <!-- Coluna Direita: Preview -->
+                    <!-- Right Column: Preview -->
                     <div class="col-md-7">
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <label class="form-label fw-bold mb-0">
-                                <i class="bi bi-file-text"></i> Preview do Resultado:
+                                <i class="bi bi-file-text"></i> Result Preview:
                             </label>
-                            <span id="previewStats" class="badge bg-secondary small">Aguardando preview...</span>
+                            <span id="previewStats" class="badge bg-secondary small">Waiting for preview...</span>
                         </div>
                         <div id="cleanPreview" class="border rounded p-3 bg-light" style="height: 450px; overflow-y: auto; font-size: 0.9rem; line-height: 1.6;">
                             <div class="text-center text-muted py-5">
                                 <i class="bi bi-eye-slash" style="font-size: 3rem; opacity: 0.3;"></i>
-                                <p class="mt-3">Clique em "Gerar Preview" para visualizar o resultado</p>
+                                <p class="mt-3">Click "Generate Preview" to view the result</p>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-warning" id="applyCleanScript" disabled>
-                    <i class="bi bi-check-lg"></i> Aplicar Limpeza
+                    <i class="bi bi-check-lg"></i> Apply Cleanup
                 </button>
             </div>
         </div>

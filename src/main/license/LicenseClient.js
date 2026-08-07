@@ -22,7 +22,7 @@ async function activateOnline(licenseKey, fingerprint) {
   try {
     new URL(LICENSE_API_URL);
   } catch (e) {
-    return { ok: false, error: 'Endpoint configurado é inválido.' };
+    return { ok: false, error: 'Configured endpoint is invalid.' };
   }
 
   const payload = JSON.stringify({
@@ -53,7 +53,7 @@ async function activateOnline(licenseKey, fingerprint) {
     if (!res.ok) {
       return {
         ok: false,
-        error: `Servidor retornou status ${res.status}.`
+        error: `Server returned status ${res.status}.`
       };
     }
 
@@ -61,13 +61,13 @@ async function activateOnline(licenseKey, fingerprint) {
     try {
       data = JSON.parse(body);
     } catch (e) {
-      return { ok: false, error: 'Resposta do servidor não é JSON válido.' };
+      return { ok: false, error: 'Server response is not valid JSON.' };
     }
 
     if (!data.valid) {
       return {
         ok: false,
-        error: data.message || 'Chave de licença inválida.'
+        error: data.message || 'Invalid license key.'
       };
     }
 
@@ -84,11 +84,11 @@ async function activateOnline(licenseKey, fingerprint) {
     };
   } catch (e) {
     if (e && e.name === 'AbortError') {
-      return { ok: false, error: 'Tempo esgotado ao contatar o ERP.' };
+      return { ok: false, error: 'Request timed out while contacting ERP.' };
     }
     return {
       ok: false,
-      error: `Falha de conexão com o ERP: ${e && e.message ? e.message : String(e)}`
+      error: `Connection to ERP failed: ${e && e.message ? e.message : String(e)}`
     };
   } finally {
     clearTimeout(timeoutId);

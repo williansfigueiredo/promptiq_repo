@@ -99,7 +99,7 @@ async function checkLocalLicense() {
  */
 async function activate(licenseKey) {
   if (!licenseKey || typeof licenseKey !== 'string' || licenseKey.trim().length < 8) {
-    return { ok: false, error: 'Chave inválida — muito curta.' };
+    return { ok: false, error: 'Invalid key: too short.' };
   }
 
   const trimmed = licenseKey.trim();
@@ -114,7 +114,7 @@ async function activate(licenseKey) {
     const license = {
       key: trimmed,
       fingerprint,
-      customer: 'Dev local (sem ERP)',
+      customer: 'Local dev (no ERP)',
       activatedAt: new Date().toISOString(),
       serverToken: null,
       meta: { devLocalActivation: true }

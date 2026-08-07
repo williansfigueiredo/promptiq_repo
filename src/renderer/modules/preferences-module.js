@@ -393,7 +393,7 @@ document.addEventListener('DOMContentLoaded', () => {
     customStandbyImageCheck.addEventListener('change', () => {
       if (!customStandbyImageCheck.checked) {
         if (standbyImagePathInput) standbyImagePathInput.value = '';
-        if (standbyPathDisplay) standbyPathDisplay.textContent = '(Nenhuma imagem selecionada)';
+        if (standbyPathDisplay) standbyPathDisplay.textContent = '(No image selected)';
         applyStandbyImagePreview(null);
       }
     });
@@ -610,7 +610,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (customStandbyImageCheck) customStandbyImageCheck.checked = settings.useCustomStandbyImage || false;
     if (standbyImagePathInput) standbyImagePathInput.value = path || '';
     if (standbyPathDisplay) {
-      standbyPathDisplay.textContent = path ? path : '(Nenhuma imagem selecionada)';
+      standbyPathDisplay.textContent = path ? path : '(No image selected)';
     }
     if (standbyTimeoutSelect) standbyTimeoutSelect.value = settings.standbyTimeout || 5;
     applyStandbyImagePreview(path);
@@ -623,9 +623,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Last Update Check - carrega data salva
     if (lastCheckSpan) {
       if (settings.lastUpdateCheck) {
-        lastCheckSpan.textContent = new Date(settings.lastUpdateCheck).toLocaleString('pt-BR');
+        lastCheckSpan.textContent = new Date(settings.lastUpdateCheck).toLocaleString('en-US');
       } else {
-        lastCheckSpan.textContent = 'Nunca';
+        lastCheckSpan.textContent = 'Never';
       }
     }
 
@@ -811,7 +811,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Atualiza data do último check e salva
       const now = new Date().toISOString();
-      if (lastCheckSpan) lastCheckSpan.textContent = new Date(now).toLocaleString('pt-BR');
+      if (lastCheckSpan) lastCheckSpan.textContent = new Date(now).toLocaleString('en-US');
       ipcRenderer.send('save-setting', { key: 'lastUpdateCheck', value: now });
     });
   }
@@ -906,7 +906,7 @@ document.addEventListener('DOMContentLoaded', () => {
     panel.innerHTML = `
       <div class="d-flex align-items-center mb-2">
         <i class="bi bi-arrow-down-circle me-2"></i>
-        <span id="update-progress-text">${initialMessage || `Nova versão ${version} disponível! Baixando…`}</span>
+        <span id="update-progress-text">${initialMessage || `New version ${version} available! Downloading...`}</span>
       </div>
       <div class="progress mb-2" style="height: 6px;">
         <div id="update-progress-bar"
@@ -917,7 +917,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
       <div class="text-end">
         <button id="update-restart-btn" type="button" class="btn btn-sm btn-success" disabled>
-          <i class="bi bi-arrow-clockwise me-1"></i> Reiniciar
+          <i class="bi bi-arrow-clockwise me-1"></i> Restart
         </button>
       </div>
     `;
@@ -930,7 +930,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (restartBtn) {
       restartBtn.addEventListener('click', () => {
         restartBtn.disabled = true;
-        restartBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Reiniciando…';
+        restartBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Restarting...';
         ipcRenderer.send('restart_app');
       });
     }
@@ -966,7 +966,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let panel = document.getElementById('update-result-alert');
     // Se ainda não houver painel (caso o auto-check tenha disparado antes do Check Now)
     if (!panel || !panel.querySelector('#update-progress-bar')) {
-      panel = buildUpdateAvailablePanel('', 'Baixando atualização…');
+      panel = buildUpdateAvailablePanel('', 'Downloading update...');
     }
     const bar = panel.querySelector('#update-progress-bar');
     const txt = panel.querySelector('#update-progress-text');
@@ -977,7 +977,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (txt) {
       const mb = (v) => (v / 1024 / 1024).toFixed(1);
-      txt.textContent = `Baixando atualização… ${pct}% (${mb(data.transferred)} / ${mb(data.total)} MB)`;
+      txt.textContent = `Downloading update... ${pct}% (${mb(data.transferred)} / ${mb(data.total)} MB)`;
     }
   });
 
@@ -985,7 +985,7 @@ document.addEventListener('DOMContentLoaded', () => {
   ipcRenderer.on('update_downloaded', (_, info) => {
     let panel = document.getElementById('update-result-alert');
     if (!panel || !panel.querySelector('#update-progress-bar')) {
-      panel = buildUpdateAvailablePanel(info?.version || '', 'Atualização baixada.');
+      panel = buildUpdateAvailablePanel(info?.version || '', 'Update downloaded.');
     }
     const bar = panel.querySelector('#update-progress-bar');
     const txt = panel.querySelector('#update-progress-text');
@@ -997,8 +997,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (txt) {
       txt.textContent = info?.version
-        ? `Versão ${info.version} pronta. Clique em Reiniciar para instalar.`
-        : 'Atualização pronta. Clique em Reiniciar para instalar.';
+        ? `Version ${info.version} ready. Click Restart to install.`
+        : 'Update ready. Click Restart to install.';
     }
     if (btn) btn.disabled = false;
   });
@@ -1006,7 +1006,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Detecção silenciosa (auto-check do startup) também monta o painel.
   ipcRenderer.on('update-available-silent', (_, info) => {
     if (!document.getElementById('update-result-alert')) {
-      buildUpdateAvailablePanel(info?.version || '', `Nova versão ${info?.version || ''} disponível! Baixando…`);
+      buildUpdateAvailablePanel(info?.version || '', `New version ${info?.version || ''} available! Downloading...`);
     }
   });
 

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <title>Preferences</title>
@@ -110,7 +110,7 @@
                 class="form-control form-control-color"
                 id="default-font-color"
                 value="#FFFFFF"
-                title="Cor padrão do texto"
+                title="Default text color"
               />
             </div>
           </div>
@@ -158,7 +158,7 @@
                 class="form-control form-control-color"
                 id="background-color"
                 value="#000000"
-                title="Cor de fundo do Prompter"
+                title="Prompter background color"
               />
             </div>
           </div>
@@ -175,7 +175,7 @@
                 class="form-control form-control-color me-3"
                 id="cue-color"
                 value="#00FF00"
-                title="Cor do marcador"
+                title="Marker color"
               />
               <select id="cue-type" class="form-select form-select-sm">
                 <option value="arrow">Arrow</option>
@@ -291,7 +291,7 @@
                 type="button"
                 class="btn btn-sm btn-outline-secondary"
                 id="controls-defaults-btn"
-                title="Restaurar atalhos padrão desta aba (Controls)"
+                title="Restore default shortcuts for this tab (Controls)"
               >
                 Defaults
               </button>
@@ -589,7 +589,7 @@
           <div class="mb-2 px-5 d-flex align-items-center">
             <p class="mb-0 me-3 text-muted">
               Last check:
-              <span id="last-check-span">14 de out. de 2025 09:03:20</span>
+              <span id="last-check-span">-</span>
             </p>
             <button class="btn btn-sm btn-outline-secondary" id="check-now-btn">
               Check Now
@@ -597,17 +597,17 @@
           </div>
         </div>
 
-        <!-- Aba Activate — só exibe status (ativação ocorre na janela dedicada / ERP) -->
+        <!-- Activate tab: status only (activation happens in dedicated window / ERP) -->
         <div class="tab-pane fade" id="pref-activate" role="tabpanel">
           <div class="mb-3 px-5 mt-5">
             <h5 class="text-muted mb-3">Product Activation</h5>
             <p class="text-muted small mb-4">
-              Status da licença neste computador. Para ativar ou trocar de máquina, use o fluxo de ativação do aplicativo.
+              License status on this computer. To activate or switch machines, use the app activation flow.
             </p>
             <div id="license-status-panel" class="border rounded p-4 bg-light">
               <div class="d-flex align-items-center gap-3 mb-2">
                 <span id="license-status-badge" class="badge rounded-pill bg-secondary">…</span>
-                <strong id="license-status-title" class="mb-0">Carregando…</strong>
+                <strong id="license-status-title" class="mb-0">Loading...</strong>
               </div>
               <p id="license-status-detail" class="text-muted small mb-0"></p>
             </div>
@@ -625,12 +625,12 @@
           type="button"
           id="default-values-btn"
           class="btn btn-secondary me-4"
-          title="Restaurar Style, Playback, Display e Standby (não altera Controls)"
+          title="Restore Style, Playback, Display and Standby (does not change Controls)"
         >
           Default Values
         </button>
         <div>
-          <button id="cancel-btn" class="btn btn-secondary me-4">Cancelar</button>
+          <button id="cancel-btn" class="btn btn-secondary me-4">Cancel</button>
           <button id="ok-btn" class="btn btn-primary me-4">OK</button>
         </div>
       </div>
@@ -641,11 +641,11 @@
       <div class="key-capture-box">
         <h5 class="mb-2">Press a Key</h5>
         <p class="text-muted small mb-3">
-          Pressione a tecla que deseja usar para esta ação.
+          Press the key you want to use for this action.
         </p>
         <div class="key-capture-display" id="key-capture-display">…</div>
         <p class="text-muted small mt-3 mb-0">
-          <kbd>Esc</kbd> cancela &nbsp;·&nbsp; <kbd>Delete</kbd> limpa
+          <kbd>Esc</kbd> cancels &nbsp;·&nbsp; <kbd>Delete</kbd> clears
         </p>
       </div>
     </div>
