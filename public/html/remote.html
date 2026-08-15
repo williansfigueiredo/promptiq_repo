@@ -906,6 +906,9 @@
                 restoreEditorViewState(viewState);
                 setTimeout(() => { ignoreNextInput = false; }, 100);
             }
+
+            // Notify server we applied the bootstrap state
+            try { socket.emit('bootstrap-ack'); } catch (e) { console.warn('bootstrap-ack emit failed', e); }
             
             // 2. Aplica o fontSize (respeita cadeado: se fechado, NÃO sobrescreve)
             if (state.fontSize && !window.fontSizeLocked) {

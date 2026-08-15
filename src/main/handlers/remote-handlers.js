@@ -18,6 +18,22 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 
+// Simple HTML sanitization to strip inline styles and event handlers
+function sanitizeHtmlString(html) {
+    if (!html || typeof html !== 'string') return html;
+    try {
+        // Remove script tags
+        html = html.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+        // Remove inline style attributes
+        html = html.replace(/\sstyle=("[^"]*"|'[^']*')/gi, '');
+        // Remove on* event handlers
+        html = html.replace(/\son[a-z]+=("[^"]*"|'[^']*')/gi, '');
+        return html;
+    } catch (e) {
+        return html;
+    }
+}
+
 /**
  * initRemoteHandlers
  * -------------------
@@ -129,6 +145,10 @@ function initRemoteHandlers() {
                         // Pega a janela principal para enviar logs
                         const win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed());
                         
+                        // Initialize per-socket buffer and bootstrapped flag
+                        socket._opBuffer = [];
+                        socket.bootstrapped = false;
+
                         // ----------------------------------------
                         // EVENTO: Usuário tenta entrar na sala
                         // ----------------------------------------
@@ -150,6 +170,8 @@ function initRemoteHandlers() {
                                 // Envia estado atual imediatamente (se já tiver em cache)
                                 // Isso garante que o cliente receba algo mesmo antes do renderer responder
                                 if (currentFullState.htmlContent) {
+                                    // Send initial state but mark socket as not bootstrapped yet
+                                    socket.bootstrapped = false;
                                     socket.emit('server-initial-state', currentFullState);
                                 } else {
                                     // Fallback: pede apenas o texto (compatibilidade)
@@ -172,25 +194,65 @@ function initRemoteHandlers() {
                         });
 
                         // ----------------------------------------
+                        // EVENTO: Bootstrap ACK do cliente remoto
+                        // ----------------------------------------
+                        socket.on('bootstrap-ack', () => {
+                            socket.bootstrapped = true;
+                            // Flush any buffered ops
+                            try {
+                                while (socket._opBuffer && socket._opBuffer.length > 0) {
+                                    const buffered = socket._opBuffer.shift();
+                                    // Reuse same handling as live updates
+                                    const textContent = (buffered && buffered.content) ? buffered.content : buffered;
+                                    const editorName = (buffered && buffered.name) ? buffered.name : (socket.userName || "Alguém");
+                                    // Update server cache
+                                    currentFullState.htmlContent = sanitizeHtmlString(textContent);
+                                    // Send to renderer windows
+                                    BrowserWindow.getAllWindows().forEach(w => {
+                                        if (!w.isDestroyed()) w.webContents.send('update-from-remote', currentFullState.htmlContent);
+                                    });
+                                    // Broadcast to other remotes
+                                    socket.broadcast.to(currentSessionID).emit('server-text-update', currentFullState.htmlContent);
+                                }
+                            } catch (e) {
+                                console.error('Error flushing buffer for socket:', e);
+                            }
+                        });
+
+                        // ----------------------------------------
                         // EVENTO: Texto foi alterado remotamente
                         // ----------------------------------------
                         socket.on('text-update', (data) => {
                             const textContent = (data && data.content) ? data.content : data;
                             const editorName = (data && data.name) ? data.name : (socket.userName || "Alguém");
-                            
+
+                            // If client hasn't completed bootstrap, buffer the op
+                            if (!socket.bootstrapped) {
+                                socket._opBuffer.push({ content: textContent, name: editorName, timestamp: Date.now() });
+                                // Apply a soft limit to buffer size
+                                if (socket._opBuffer.length > 1000) socket._opBuffer.shift();
+                                if (win) {
+                                    win.webContents.send('add-log', { msg: `${editorName} (buffered) está digitando...`, type: 'edit', user: editorName, source: 'Wi-Fi Local' });
+                                }
+                                return;
+                            }
+
+                            // Client is bootstrapped: sanitize incoming HTML to strip inline styles/handlers
+                            const sanitized = sanitizeHtmlString(textContent);
+
                             // Atualiza cache do HTML (Cold Start Fix)
-                            currentFullState.htmlContent = textContent;
-                            
+                            currentFullState.htmlContent = sanitized;
+
                             // Envia para todas as janelas locais
                             BrowserWindow.getAllWindows().forEach(w => {
                                 if (!w.isDestroyed()) {
-                                    w.webContents.send('update-from-remote', textContent);
+                                    w.webContents.send('update-from-remote', sanitized);
                                 }
                             });
-                            
+
                             // Retransmite para outros usuários remotos
-                            socket.broadcast.to(currentSessionID).emit('server-text-update', textContent);
-                            
+                            socket.broadcast.to(currentSessionID).emit('server-text-update', sanitized);
+
                             // Adiciona log de edição
                             if (win) {
                                 win.webContents.send('add-log', {
