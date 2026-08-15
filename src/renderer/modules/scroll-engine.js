@@ -338,13 +338,13 @@ const ScrollEngine = {
    * 
    * @param {number} duration - Duração da proteção em ms (padrão 250)
    */
-  protectScrollDuringUpdate: function(duration = 250) {
+  protectScrollDuringUpdate: function (duration = 250) {
     if (this._scrollLockTimer) clearTimeout(this._scrollLockTimer);
-    
+
     const savedPosition = this.decimalScroll;
     const textEl = this.getTextElement();
     const container = document.querySelector(".prompter-in-control");
-    
+
     // Reforçar posição a cada 16ms durante a proteção
     const protectionInterval = setInterval(() => {
       if (this.decimalScroll !== savedPosition && this.isRunning && textEl && container) {
@@ -352,7 +352,7 @@ const ScrollEngine = {
         textEl.style.transform = `translate3d(0, -${savedPosition}px, 0)`;
       }
     }, 16);
-    
+
     this._scrollLockTimer = setTimeout(() => {
       clearInterval(protectionInterval);
       this._scrollLockTimer = null;
@@ -370,7 +370,7 @@ const ScrollEngine = {
    * `decimalScroll` interno. Também garante que o estado do DOM
    * (transform / overflow) esteja coerente com o estado interno.
    */
-  syncFromDOM: function() {
+  syncFromDOM: function () {
     const container = document.querySelector('.prompter-in-control');
     const textEl = this.getTextElement();
     if (!container) return;
