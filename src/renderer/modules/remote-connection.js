@@ -292,6 +292,38 @@ const RemoteConnectionModule = (function() {
             : html;
     }
     
+    // Basic sanitization for HTML received over WebRTC datachannels.
+    // Removes <script> and <style> elements and strips event handlers and inline styles.
+    function sanitizeHtmlString(html) {
+        if (!html) return '';
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+
+            // Remove script and style elements
+            doc.querySelectorAll('script,style').forEach(el => el.remove());
+
+            // Remove attributes starting with 'on' and remove inline style attributes
+            const all = doc.querySelectorAll('*');
+            all.forEach(el => {
+                // clone attributes to avoid mutation during iteration
+                Array.from(el.attributes).forEach(attr => {
+                    const name = attr.name.toLowerCase();
+                    if (name.startsWith('on') || name === 'style') {
+                        el.removeAttribute(attr.name);
+                    }
+                    if ((name === 'href' || name === 'src') && /javascript:/i.test(attr.value || '')) {
+                        el.removeAttribute(attr.name);
+                    }
+                });
+            });
+
+            return doc.body.innerHTML || '';
+        } catch (e) {
+            return '';
+        }
+    }
+    
     async function startWebRTCConnection() {
         const hasInternet = await checkInternetConnection();
         
@@ -509,6 +541,11 @@ const RemoteConnectionModule = (function() {
         const config = { iceServers: ICE_SERVERS };
         const peer = new RTCPeerConnection(config);
         
+        // Attach bootstrap state and buffers to the peer connection object
+        peer.bootstrapped = false; // set to true after peer acknowledges bootstrap
+        peer._inboundBuffer = []; // messages received before bootstrap applied
+        peer._outboundBuffer = []; // messages to send queued until peer bootstrapped
+
         peers[targetId] = peer;
 
         // ========================================
@@ -560,13 +597,29 @@ const RemoteConnectionModule = (function() {
         // ========================================
         channel.onopen = () => {
             console.log(`Canal aberto com ${userId}`);
-            
+            // When the data channel opens, the initiator SHOULD send a full
+            // bootstrap payload (server-initial-state) and wait for the
+            // peer to reply with a bootstrap-ack before sending live ops.
+            const peer = peers[userId];
+            peer.bootstrapped = false;
+
             const editor = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
             if (editor) {
-                channel.send(JSON.stringify({ 
-                    type: 'update', 
-                    content: getStyledEditorHtml(editor)
-                }));
+                // Build a structured initial state similar to socket path
+                const payload = {
+                    type: 'server-initial-state',
+                    content: {
+                        html: getStyledEditorHtml(editor),
+                        fontSize: (editor.style && editor.style.fontSize) ? editor.style.fontSize.replace('pt','') : undefined,
+                        fontFamily: editor.style && editor.style.fontFamily,
+                        textAlign: editor.style && editor.style.textAlign,
+                        fontWeight: editor.style && editor.style.fontWeight,
+                        fontStyle: editor.style && editor.style.fontStyle,
+                        textDecoration: editor.style && editor.style.textDecoration,
+                        readProgress: null
+                    }
+                };
+                try { channel.send(JSON.stringify(payload)); } catch (e) { console.warn('send bootstrap failed', e); }
             }
             
             const savedName = peers[userId]?.userName || "Visitante (Internet)";
@@ -615,41 +668,86 @@ const RemoteConnectionModule = (function() {
         // MENSAGEM RECEBIDA: Atualiza editor
         // ========================================
         channel.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            
-            if (data.type === 'update') {
+            let data;
+            try { data = JSON.parse(event.data); } catch (e) { return; }
+
+            const peer = peers[userId];
+
+            // Buffer messages if peer is not bootstrapped yet
+            if (peer && peer.bootstrapped === false && data.type !== 'server-initial-state' && data.type !== 'bootstrap-ack') {
+                peer._inboundBuffer.push(data);
+                if (peer._inboundBuffer.length > 1000) peer._inboundBuffer.shift();
+                return;
+            }
+
+            if (data.type === 'server-initial-state') {
                 const editor = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
-                
+                if (editor) {
+                    const content = sanitizeHtmlString(data.content && data.content.html ? data.content.html : '');
+                    const viewState = saveEditorViewState();
+                    editor.innerHTML = content;
+                    indexEditorBlocks();
+                    if (data.content && data.content.fontSize && !window.fontSizeLocked) {
+                        const size = parseInt(data.content.fontSize, 10);
+                        if (!isNaN(size)) editor.style.fontSize = size + 'pt';
+                    }
+                    if (data.content && data.content.fontFamily) editor.style.fontFamily = data.content.fontFamily;
+                    if (data.content && data.content.textAlign) editor.style.textAlign = data.content.textAlign;
+                    if (data.content && data.content.fontWeight) editor.style.fontWeight = data.content.fontWeight;
+                    if (data.content && data.content.fontStyle) editor.style.fontStyle = data.content.fontStyle;
+                    if (data.content && data.content.textDecoration) editor.style.textDecoration = data.content.textDecoration;
+                    if (data.content && data.content.readProgress) applyReadProgress(data.content.readProgress);
+                    restoreEditorViewState(viewState);
+                    flashSyncIndicator();
+                    updateLastSync();
+                }
+
+                // Reply with bootstrap ack
+                try { channel.send(JSON.stringify({ type: 'bootstrap-ack' })); } catch (e) { console.warn('bootstrap-ack send failed', e); }
+                if (peer) {
+                    peer.bootstrapped = true;
+                    while (peer._outboundBuffer && peer._outboundBuffer.length) {
+                        const msg = peer._outboundBuffer.shift();
+                        try { channel.send(JSON.stringify(msg)); } catch (_) { break; }
+                    }
+                    while (peer._inboundBuffer && peer._inboundBuffer.length) {
+                        const buffered = peer._inboundBuffer.shift();
+                        if (buffered.type === 'update') {
+                            const editor = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
+                            if (editor && editor.innerHTML !== buffered.content) {
+                                editor.innerHTML = sanitizeHtmlString(buffered.content);
+                                if (syncContentToPrompter) syncContentToPrompter();
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+
+            if (data.type === 'bootstrap-ack') {
+                if (peer) {
+                    peer.bootstrapped = true;
+                    while (peer._outboundBuffer && peer._outboundBuffer.length) {
+                        const msg = peer._outboundBuffer.shift();
+                        try { channel.send(JSON.stringify(msg)); } catch (_) { break; }
+                    }
+                }
+                return;
+            }
+
+            if (data.type === 'update' || data.type === 'server-text-update') {
+                const editor = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
                 if (editor && editor.innerHTML !== data.content) {
-                    editor.innerHTML = data.content;
-                    
+                    editor.innerHTML = sanitizeHtmlString(data.content);
                     if (flashRedBorder) flashRedBorder(editor);
-                    
                     const container = document.getElementById(`doc-${activeDocumentId}`);
-                    if (container && flashRedBorder) {
-                        flashRedBorder(container);
-                    }
-
-                    if (markDocumentAsUnsaved && activeDocumentId != null) {
-                        markDocumentAsUnsaved(activeDocumentId);
-                    }
+                    if (container && flashRedBorder) flashRedBorder(container);
+                    if (markDocumentAsUnsaved && activeDocumentId != null) markDocumentAsUnsaved(activeDocumentId);
                     if (scheduleAutoSave) scheduleAutoSave();
-
                     if (syncContentToPrompter) syncContentToPrompter();
-                    
                     broadcastTextUpdate(data.content, userId);
-
                     const remoteName = peers[userId]?.userName || "Roteirista (Web)";
-
-                    if (addLogEntry) {
-                        addLogEntry({
-                            msg: `${remoteName} digitando...`,
-                            type: 'edit',
-                            source: 'Internet',
-                            user: remoteName
-                        });
-                    }
-                    
+                    if (addLogEntry) addLogEntry({ msg: `${remoteName} digitando...`, type: 'edit', source: 'Internet', user: remoteName });
                     if (flashRedBorderMultiple) flashRedBorderMultiple(editor, 2);
                 }
             }
@@ -675,11 +773,13 @@ const RemoteConnectionModule = (function() {
             Object.keys(peers).forEach(id => {
                 if (id !== ignoreId) {
                     const peer = peers[id];
+                    const msg = { type: 'update', content: content };
                     if (peer.dataChannel && peer.dataChannel.readyState === 'open') {
-                        peer.dataChannel.send(JSON.stringify({ 
-                            type: 'update', 
-                            content: content 
-                        }));
+                        if (peer.bootstrapped === true) {
+                            try { peer.dataChannel.send(JSON.stringify(msg)); } catch (e) { peer._outboundBuffer.push(msg); }
+                        } else {
+                            peer._outboundBuffer.push(msg);
+                        }
                     }
                 }
             });
