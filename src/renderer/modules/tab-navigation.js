@@ -1025,6 +1025,9 @@ const TabNavigationManager = {
 
       if (typeof ScrollEngine !== 'undefined') {
         ScrollEngine.decimalScroll = this.operatorSavedScrollPosition;
+        if (typeof ScrollEngine.syncFromDOM === 'function') {
+          ScrollEngine.syncFromDOM();
+        }
       }
 
       console.log('🔄 preApplyScrollPosition:', this.operatorSavedScrollPosition);
@@ -1377,6 +1380,9 @@ const TabNavigationManager = {
         // 4. Sincroniza scrollTop e decimalScroll
         if (typeof ScrollEngine !== 'undefined') {
           ScrollEngine.decimalScroll = container.scrollTop;
+          if (typeof ScrollEngine.syncFromDOM === 'function') {
+            ScrollEngine.syncFromDOM();
+          }
         }
 
         // Destaca temporariamente a palavra encontrada

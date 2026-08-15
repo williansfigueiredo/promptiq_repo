@@ -358,6 +358,48 @@ const ScrollEngine = {
       this._scrollLockTimer = null;
     }, duration);
   }
+
+  ,
+  // ============================================================
+  // FUNÇÃO: Sincronizar estado interno a partir do DOM
+  // ============================================================
+  /**
+   * syncFromDOM
+   * ------------
+   * Lê a posição real do container (scrollTop) e atualiza o
+   * `decimalScroll` interno. Também garante que o estado do DOM
+   * (transform / overflow) esteja coerente com o estado interno.
+   */
+  syncFromDOM: function() {
+    const container = document.querySelector('.prompter-in-control');
+    const textEl = this.getTextElement();
+    if (!container) return;
+
+    // Atualiza o estado interno com a posição real do DOM
+    try {
+      this.decimalScroll = container.scrollTop || 0;
+
+      // Se o engine não está rodando, assegura que o transform
+      // não esteja bloqueando o scroll nativo
+      if (!this.isRunning) {
+        if (textEl) textEl.style.transform = 'none';
+        container.style.overflowY = 'auto';
+      } else {
+        // Se estiver rodando, aplica transform coerente
+        if (textEl) textEl.style.transform = `translate3d(0, -${this.decimalScroll}px, 0)`;
+        container.style.overflowY = 'hidden';
+      }
+
+      // Notifica ouvintes que a posição foi sincronizada
+      try {
+        window.dispatchEvent(new CustomEvent('scrollEngine:positionSynced', { detail: { pixels: this.decimalScroll } }));
+      } catch (e) {
+        // event dispatch pode falhar em alguns ambientes; ignorar
+      }
+    } catch (e) {
+      console.warn('ScrollEngine.syncFromDOM: erro ao sincronizar do DOM', e);
+    }
+  }
 };
 
 // ============================================================
