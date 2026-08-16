@@ -45,6 +45,11 @@ const TabNavigationManager = {
   // se a entrada no Operator veio realmente da aba Edit.
   currentTabTriggerId: null,
 
+  // Limite de validade para navegação pendente. Se uma navegação ficar velha,
+  // ela deve ser descartada para não reaplicar uma referência stale depois de
+  // várias trocas de aba ou de scroll manual.
+  navigationStaleMs: 4000,
+
   // ============================================================
   // FUNÇÃO: Inicializar o módulo
   // ============================================================
@@ -735,6 +740,17 @@ const TabNavigationManager = {
     console.log('🧹 Navegação pendente limpa');
   },
 
+  hasPendingNavigation: function () {
+    if (this.pendingWordIndex === null || this.pendingNavigationContext === null) return false;
+    const age = Date.now() - (this.pendingNavigationContext.timestamp || 0);
+    if (age > this.navigationStaleMs) {
+      console.warn(`⚠️ Navegação pendente descartada por expirar (${age}ms > ${this.navigationStaleMs}ms)`);
+      this.clearPendingNavigation();
+      return false;
+    }
+    return true;
+  },
+
   // ============================================================
   // FUNÇÃO: Salvar posição do scroll do Operator
   // ============================================================
@@ -1306,6 +1322,11 @@ const TabNavigationManager = {
     if (!container || !textControl) {
       console.warn('restoreOrNavigate: container ou textControl não encontrado');
       return;
+    }
+
+    if (!this.hasPendingNavigation()) {
+      this.pendingWordIndex = null;
+      this.pendingNavigationContext = null;
     }
 
     // =========================================

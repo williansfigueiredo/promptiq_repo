@@ -4746,6 +4746,12 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Qualquer interação manual após o toggle de fullscreen deve invalidar
+  // restores antigos, para não puxar o texto de volta para um ponto stale.
+  document.addEventListener("pointerdown", () => cancelPendingFullscreenAnchorRestore(), { passive: true });
+  document.addEventListener("wheel", () => cancelPendingFullscreenAnchorRestore(), { passive: true });
+  document.addEventListener("scroll", () => cancelPendingFullscreenAnchorRestore(), { passive: true });
+
   document.addEventListener("keydown", (e) => {
     if (
       e.key === "Escape" &&
