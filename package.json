@@ -1,6 +1,6 @@
 {
   "name": "promptiq",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "Software Teleprompter PromptIQ",
   "main": "src/main/main.js",
   "scripts": {
