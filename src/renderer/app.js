@@ -3733,6 +3733,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (doc) {
       updateTitle();
       syncContentToPrompter();
+      broadcastActiveDocumentImmediately();
       getActiveTextEditorArea()?.focus();
       updateEditMenuState();
       applySpellCheckSettings();
@@ -4915,6 +4916,21 @@ document.addEventListener("DOMContentLoaded", () => {
       ipcRenderer.send("send-text-to-remote", html);
       if (typeof broadcastTextUpdate === "function") broadcastTextUpdate(html);
     }, 200);
+  }
+
+  function broadcastActiveDocumentImmediately() {
+    if (!shouldBroadcastToRemotes()) return;
+
+    const content = getRemoteSyncContent();
+    if (!content) return;
+
+    clearTimeout(_remoteTextTimer);
+    _remoteTextTimer = null;
+    _lastRemoteHtml = content;
+    ipcRenderer.send("send-text-to-remote", content);
+    if (typeof broadcastTextUpdate === "function") {
+      broadcastTextUpdate(content);
+    }
   }
 
   function applyPrompterContainerStyles(control, editor, skipFontSize = false) {
