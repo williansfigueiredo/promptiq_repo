@@ -36,6 +36,7 @@ const TabNavigationManager = {
   lastCaretNode: null,
   lastCaretOffset: 0,
   lastCaretTimestamp: 0,
+  editorReferenceArmed: false,
 
   // Sincronização Operator → Edit: índice da palavra visível no Operator
   // quando o usuário sair dessa aba, para sincronizar com o Editor
@@ -49,6 +50,24 @@ const TabNavigationManager = {
   // ela deve ser descartada para não reaplicar uma referência stale depois de
   // várias trocas de aba ou de scroll manual.
   navigationStaleMs: 4000,
+  tabTransitionId: 0,
+  tabTransitionTimers: [],
+
+  cancelPendingTabWork: function () {
+    this.tabTransitionId += 1;
+    this.tabTransitionTimers.forEach((timerId) => clearTimeout(timerId));
+    this.tabTransitionTimers = [];
+  },
+
+  scheduleTabWork: function (callback, delay) {
+    const transitionId = this.tabTransitionId;
+    const timerId = setTimeout(() => {
+      this.tabTransitionTimers = this.tabTransitionTimers.filter((id) => id !== timerId);
+      if (transitionId !== this.tabTransitionId) return;
+      callback();
+    }, delay);
+    this.tabTransitionTimers.push(timerId);
+  },
 
   // ============================================================
   // FUNÇÃO: Inicializar o módulo
@@ -85,7 +104,11 @@ const TabNavigationManager = {
     // =========================================
     // Rastreia o caret no editor de forma mais robusta
     // Ativa em múltiplos eventos para garantir captura
-    const updateCaretPosition = () => {
+    const updateCaretPosition = (event) => {
+      const isUserInteraction = ['click', 'keyup', 'mouseup'].includes(event?.type);
+      if (isUserInteraction) this.editorReferenceArmed = true;
+      if (!this.editorReferenceArmed) return;
+
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) return;
 
@@ -119,8 +142,10 @@ const TabNavigationManager = {
     // Ao sair do Operator -> Edit (salva posição e para scroll)
     if (tabEditTrigger) {
       tabEditTrigger.addEventListener('show.bs.tab', () => {
+        this.cancelPendingTabWork();
         // Para o scroll e salva posição ANTES de sair da aba Operator
         this.clearPendingNavigation();
+        this.clearEditorReference();
         this.stopScrollIfRunning();
 
         // 🆕 Captura qual palavra está visível no Operator para sincronizar com o Editor
@@ -129,6 +154,7 @@ const TabNavigationManager = {
 
       tabEditTrigger.addEventListener('shown.bs.tab', () => {
         this.currentTabTriggerId = 'edit-tab';
+        this.editorReferenceArmed = false;
 
         // Força reflow completo da aba Edit
         requestAnimationFrame(() => {
@@ -136,7 +162,7 @@ const TabNavigationManager = {
             this.forceEditTabReflow();
 
             // 🆕 Sincroniza a posição do Editor com o Operator
-            setTimeout(() => {
+            this.scheduleTabWork(() => {
               this.syncOperatorPositionToEditor();
             }, 100);
 
@@ -144,7 +170,7 @@ const TabNavigationManager = {
             window.dispatchEvent(new Event('resize'));
 
             // Foca no editor de texto
-            setTimeout(() => {
+            this.scheduleTabWork(() => {
               const activeEditor = document.querySelector('.text-editor-area');
               if (activeEditor) {
                 activeEditor.focus({ preventScroll: true });
@@ -158,8 +184,10 @@ const TabNavigationManager = {
     // Ao sair do Operator -> Home (salva posição e para scroll)
     if (tabHomeTrigger) {
       tabHomeTrigger.addEventListener('show.bs.tab', () => {
+        this.cancelPendingTabWork();
         // Para o scroll e salva posição ANTES de sair da aba Operator
         this.clearPendingNavigation();
+        this.clearEditorReference();
         this.stopScrollIfRunning();
 
         // 🆕 Captura qual palavra está visível no Operator para possível sincronização futura
@@ -191,6 +219,7 @@ const TabNavigationManager = {
     if (tabOperatorTrigger) {
       // Pré-aplica posição ANTES da aba aparecer (evita salto visual)
       tabOperatorTrigger.addEventListener('show.bs.tab', () => {
+        this.cancelPendingTabWork();
         // Limpa palavra capturada do Operator (não queremos sincronizar ao voltar)
         this.operatorVisibleWordIndex = null;
 
@@ -223,7 +252,7 @@ const TabNavigationManager = {
 
             // Se há navegação pendente, aguarda um pouco mais para o conteúdo estar pronto
             if (this.pendingWordIndex !== null) {
-              setTimeout(() => {
+              this.scheduleTabWork(() => {
                 this.restoreOrNavigate();
               }, 100);
             } else {
@@ -238,7 +267,7 @@ const TabNavigationManager = {
             }
 
             // Dispara resize adicional após tudo estar pronto
-            setTimeout(() => {
+            this.scheduleTabWork(() => {
               window.dispatchEvent(new Event('resize'));
             }, 50);
           });
@@ -326,7 +355,7 @@ const TabNavigationManager = {
       console.log('ℹ️ Navegação pendente já existe, ignorando caret');
       return;
     }
-    if (!this.lastCaretEditor || !this.lastCaretNode) {
+    if (!this.editorReferenceArmed || !this.lastCaretEditor || !this.lastCaretNode) {
       console.log('ℹ️ Nenhum caret rastreado no editor');
       return;
     }
@@ -377,6 +406,7 @@ const TabNavigationManager = {
 
         // Consome o caret uma única vez para evitar reuso de referência stale.
         this.lastCaretTimestamp = 0;
+        this.editorReferenceArmed = false;
 
         console.log(`✅ Caret detectado no editor — navegando para palavra #${wordIndex} ("${contextText}")`);
         return;
@@ -401,7 +431,7 @@ const TabNavigationManager = {
    * de palavra via duplo clique) para navegar ao ponto exato no Operator.
    */
   tryUseLiveSelectionAsPendingNavigation: function () {
-    if (this.pendingWordIndex !== null) return;
+    if (this.pendingWordIndex !== null || !this.editorReferenceArmed) return;
 
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return;
@@ -740,6 +770,19 @@ const TabNavigationManager = {
     console.log('🧹 Navegação pendente limpa');
   },
 
+  clearEditorReference: function () {
+    this.lastCaretEditor = null;
+    this.lastCaretNode = null;
+    this.lastCaretOffset = 0;
+    this.lastCaretTimestamp = 0;
+    this.editorReferenceArmed = false;
+
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      selection.removeAllRanges();
+    }
+  },
+
   hasPendingNavigation: function () {
     if (this.pendingWordIndex === null || this.pendingNavigationContext === null) return false;
     const age = Date.now() - (this.pendingNavigationContext.timestamp || 0);
@@ -765,7 +808,9 @@ const TabNavigationManager = {
     if (!container) return;
 
     // Prioriza a posição do ScrollEngine (mais precisa)
-    if (typeof ScrollEngine !== 'undefined' && ScrollEngine.decimalScroll !== undefined) {
+    if (typeof ScrollEngine !== 'undefined' && !ScrollEngine.isRunning && container) {
+      this.operatorSavedScrollPosition = container.scrollTop || 0;
+    } else if (typeof ScrollEngine !== 'undefined' && ScrollEngine.decimalScroll !== undefined) {
       this.operatorSavedScrollPosition = ScrollEngine.decimalScroll;
     } else {
       this.operatorSavedScrollPosition = container.scrollTop;
@@ -812,10 +857,6 @@ const TabNavigationManager = {
       // Scroll automático ativo - usa decimalScroll
       currentPosition = ScrollEngine.decimalScroll || 0;
       console.log('📍 Modo automático - posição via decimalScroll:', currentPosition);
-    } else if (typeof ScrollEngine !== 'undefined' && ScrollEngine.decimalScroll > 0) {
-      // Scroll foi pausado mas tem posição salva - usa decimalScroll
-      currentPosition = ScrollEngine.decimalScroll;
-      console.log('📍 Scroll pausado - posição via decimalScroll:', currentPosition);
     } else if (container) {
       // Scroll manual - usa scrollTop
       currentPosition = container.scrollTop;
@@ -856,6 +897,10 @@ const TabNavigationManager = {
       if (pauseBtn) pauseBtn.classList.add('d-none');
 
       ipcRenderer.send('control-prompter', 'pause');
+    }
+
+    if (typeof cancelPendingFullscreenAnchorRestore === 'function') {
+      cancelPendingFullscreenAnchorRestore();
     }
 
     console.log('⏹️ Mudou de aba: Posição salva =', this.operatorSavedScrollPosition);
@@ -1034,19 +1079,19 @@ const TabNavigationManager = {
     if (this.pendingWordIndex !== null) return;
 
     // Aplica a posição salva usando scroll nativo (não transform)
-    if (this.operatorSavedScrollPosition > 0) {
+    {
       container.style.overflowY = 'auto';
       textControl.style.transform = 'none';
-      container.scrollTop = this.operatorSavedScrollPosition;
+      container.scrollTop = Math.max(0, this.operatorSavedScrollPosition || 0);
 
       if (typeof ScrollEngine !== 'undefined') {
-        ScrollEngine.decimalScroll = this.operatorSavedScrollPosition;
+        ScrollEngine.decimalScroll = container.scrollTop;
         if (typeof ScrollEngine.syncFromDOM === 'function') {
           ScrollEngine.syncFromDOM();
         }
       }
 
-      console.log('🔄 preApplyScrollPosition:', this.operatorSavedScrollPosition);
+      console.log('🔄 preApplyScrollPosition:', container.scrollTop);
     }
   },
 
@@ -1339,6 +1384,7 @@ const TabNavigationManager = {
       // Limpa para não repetir
       this.pendingWordIndex = null;
       this.pendingNavigationContext = null;
+      this.clearEditorReference();
 
       console.log(`🎯 Tentando navegar para palavra #${targetIndex}...`);
 
@@ -1437,7 +1483,7 @@ const TabNavigationManager = {
     // =========================================
     // RESTAURAÇÃO DE POSIÇÃO SALVA
     // =========================================
-    if (this.operatorSavedScrollPosition > 0) {
+    if (this.operatorSavedScrollPosition >= 0) {
       console.log(`♻️ Restaurando posição salva: ${this.operatorSavedScrollPosition}px`);
 
       // Garante que está em modo scroll manual (não transform)
@@ -1445,11 +1491,11 @@ const TabNavigationManager = {
       textControl.style.transform = 'none';
 
       // Aplica a posição
-      container.scrollTop = this.operatorSavedScrollPosition;
+      container.scrollTop = Math.max(0, this.operatorSavedScrollPosition || 0);
 
       // Sincroniza o ScrollEngine
       if (typeof ScrollEngine !== 'undefined') {
-        ScrollEngine.decimalScroll = this.operatorSavedScrollPosition;
+        ScrollEngine.decimalScroll = container.scrollTop;
         ScrollEngine.isRunning = false;
       }
 

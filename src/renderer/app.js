@@ -1399,8 +1399,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
     pause: function () {
+      cancelPendingFullscreenAnchorRestore();
       this.isRunning = false;
       if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
 
       const textEl = this.getTextElement();
       const container = document.querySelector(".prompter-in-control");
@@ -1445,7 +1447,8 @@ document.addEventListener("DOMContentLoaded", () => {
     },
 
     setSpeed: function (val) {
-      let newSpeed = parseInt(val);
+      let newSpeed = Number.parseInt(val, 10);
+      if (!Number.isFinite(newSpeed)) newSpeed = 0;
       if (newSpeed < -100) newSpeed = -100;
       if (newSpeed > 100) newSpeed = 100;
       this.speed = newSpeed;
@@ -3005,7 +3008,11 @@ document.addEventListener("DOMContentLoaded", () => {
           if (!container || !textEl) return;
 
           const lineHeight = parseInt(getComputedStyle(textEl).lineHeight) || 30;
-          const maxScroll = Math.max(0, textEl.offsetHeight - container.clientHeight);
+          cancelPendingFullscreenAnchorRestore();
+          const maxScroll = Math.max(
+            0,
+            textEl.offsetHeight - container.clientHeight + container.clientHeight / 2
+          );
           if (ScrollEngine.isRunning) {
             ScrollEngine.decimalScroll = Math.min(maxScroll, ScrollEngine.decimalScroll + lineHeight);
             textEl.style.transform = `translate3d(0, -${ScrollEngine.decimalScroll}px, 0)`;
@@ -4737,7 +4744,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const container = document.querySelector(".prompter-in-control");
     const baselineScroll = ScrollEngine.isRunning
       ? (ScrollEngine.decimalScroll || 0)
-      : (container ? Math.max(container.scrollTop || 0, ScrollEngine.decimalScroll || 0) : (ScrollEngine.decimalScroll || 0));
+      : (container ? (container.scrollTop || 0) : 0);
 
     applyChange();
 
@@ -4753,9 +4760,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const currentContainer = document.querySelector(".prompter-in-control");
         const currentScroll = ScrollEngine.isRunning
           ? (ScrollEngine.decimalScroll || 0)
-          : (currentContainer
-            ? Math.max(currentContainer.scrollTop || 0, ScrollEngine.decimalScroll || 0)
-            : (ScrollEngine.decimalScroll || 0));
+          : (currentContainer ? (currentContainer.scrollTop || 0) : 0);
 
         // Se o usuário já moveu o texto significativamente após o toggle,
         // aborta este lote de restores para não "puxar" para ponto antigo.
@@ -5371,7 +5376,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const running = ScrollEngine.isRunning;
     const curScroll = running
       ? ScrollEngine.decimalScroll || 0
-      : container.scrollTop || ScrollEngine.decimalScroll || 0;
+      : container.scrollTop || 0;
 
     const containerHeight = container.clientHeight || 0;
     const contentHeight = control.offsetHeight || control.scrollHeight || 0;
