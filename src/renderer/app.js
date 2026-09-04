@@ -440,6 +440,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Flag para saber se o Find está ativo (mesmo minimizado)
   let findIsActive = false;
+  let allowEditorFocusAfterOutsideClick = false;
 
   const findReplaceBootstrapModal = findReplaceModal
     ? new bootstrap.Modal(findReplaceModal, { backdrop: false, keyboard: true })
@@ -3122,7 +3123,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Só trata Escape para fullscreen (resto é pelo HotkeyHandler)
+    // Trata Escape para sair do fullscreen e voltar para a aba Edit
     if (e.key === "Escape") {
       if (document.body.classList.contains("operator-fullscreen-mode")) {
         const run = (typeof runFullscreenChangePreservingAnchor === "function")
@@ -3132,6 +3133,9 @@ document.addEventListener("DOMContentLoaded", () => {
           document.body.classList.remove("operator-fullscreen-mode");
           ipcRenderer.send("control-window", "fullscreen");
         });
+      } else {
+        e.preventDefault();
+        document.getElementById("edit-tab")?.click();
       }
     }
   });
@@ -4002,6 +4006,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (span === activeSpan) nodeToRestore = textNode;
       }
     });
+    editor.normalize();
     searchState.matches = [];
     searchState.currentMatchIndex = -1;
     if (nodeToRestore) {
@@ -4065,6 +4070,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function highlightMatches(term) {
     clearSearchHighlights();
+    term = typeof term === "string" ? term.trim() : "";
     if (!term) {
       if (modalFindCountSpan) modalFindCountSpan.textContent = "0 de 0";
       return;
@@ -4076,12 +4082,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const caseSensitive = findCaseSensitive?.checked || false;
     const wholeWord = findWholeWord?.checked || false;
 
-    const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const escapedTerm = term
+      .split(/\s+/)
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("\\s+");
 
     // Monta regex baseado nas opções
     let regexPattern;
     if (wholeWord) {
-      regexPattern = `(?<!\\p{L})${escapedTerm}(?!\\p{L})`;
+      regexPattern = `(?<![\\p{L}0-9_])${escapedTerm}(?![\\p{L}0-9_])`;
     } else {
       regexPattern = escapedTerm;
     }
@@ -4133,6 +4142,17 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function navigateToMatch(direction) {
+    const editor = getActiveTextEditorArea();
+    const hasCurrentMatches =
+      searchState.matches.length > 0 &&
+      searchState.matches.every((match) => editor && editor.contains(match));
+
+    if (!hasCurrentMatches) {
+      searchState.matches = [];
+      searchState.currentMatchIndex = -1;
+      if (modalFindInput?.value) highlightMatches(modalFindInput.value);
+    }
+
     if (searchState.matches.length === 0) return;
 
     if (
@@ -4554,9 +4574,22 @@ document.addEventListener("DOMContentLoaded", () => {
     // Verifica se o clique foi fora do conteúdo do modal
     const modalContent = findReplaceModal.querySelector(".modal-content");
     if (modalContent && !modalContent.contains(e.target)) {
+      allowEditorFocusAfterOutsideClick = true;
       // Clicou fora do modal - minimiza
       minimizeFindModal();
+      setTimeout(() => {
+        allowEditorFocusAfterOutsideClick = false;
+      }, 0);
     }
+  });
+
+  document.addEventListener("focusin", (e) => {
+    if (!findReplaceModal.classList.contains("show")) return;
+    if (findReplaceModal.contains(e.target)) return;
+    if (allowEditorFocusAfterOutsideClick) return;
+
+    e.stopPropagation();
+    modalFindInput?.focus();
   });
 
   // Override do evento hidden.bs.modal para não limpar highlights quando minimiza
