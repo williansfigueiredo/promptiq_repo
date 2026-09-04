@@ -75,6 +75,14 @@ const RemoteConnectionModule = (function () {
   let markDocumentAsUnsaved = null;
   let scheduleAutoSave = null;
 
+  function replaceEditorHtmlPreservingFontSize(editor, html) {
+    if (!editor) return;
+
+    const localFontSize = editor.style.fontSize || window.getComputedStyle(editor).fontSize;
+    editor.innerHTML = html || '';
+    if (localFontSize) editor.style.fontSize = localFontSize;
+  }
+
   // ============================================================
   // INICIALIZAÇÃO DO MÓDULO
   // ============================================================
@@ -685,12 +693,8 @@ const RemoteConnectionModule = (function () {
         if (editor) {
           const content = sanitizeHtmlString(data.content && data.content.html ? data.content.html : '');
           const viewState = saveEditorViewState();
-          editor.innerHTML = content;
+          replaceEditorHtmlPreservingFontSize(editor, content);
           indexEditorBlocks();
-          if (data.content && data.content.fontSize && !window.fontSizeLocked) {
-            const size = parseInt(data.content.fontSize, 10);
-            if (!isNaN(size)) editor.style.fontSize = size + 'pt';
-          }
           if (data.content && data.content.fontFamily) editor.style.fontFamily = data.content.fontFamily;
           if (data.content && data.content.textAlign) editor.style.textAlign = data.content.textAlign;
           if (data.content && data.content.fontWeight) editor.style.fontWeight = data.content.fontWeight;
@@ -715,7 +719,7 @@ const RemoteConnectionModule = (function () {
             if (buffered.type === 'update') {
               const editor = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
               if (editor && editor.innerHTML !== buffered.content) {
-                editor.innerHTML = sanitizeHtmlString(buffered.content);
+                replaceEditorHtmlPreservingFontSize(editor, sanitizeHtmlString(buffered.content));
                 if (syncContentToPrompter) syncContentToPrompter();
               }
             }
@@ -738,7 +742,7 @@ const RemoteConnectionModule = (function () {
       if (data.type === 'update' || data.type === 'server-text-update') {
         const editor = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
         if (editor && editor.innerHTML !== data.content) {
-          editor.innerHTML = sanitizeHtmlString(data.content);
+          replaceEditorHtmlPreservingFontSize(editor, sanitizeHtmlString(data.content));
           if (flashRedBorder) flashRedBorder(editor);
           const container = document.getElementById(`doc-${activeDocumentId}`);
           if (container && flashRedBorder) flashRedBorder(container);
@@ -925,7 +929,7 @@ const RemoteConnectionModule = (function () {
       const editor = getActiveTextEditorArea ? getActiveTextEditorArea() : null;
 
       if (editor && editor.innerText !== newText) {
-        editor.innerHTML = newText;
+        replaceEditorHtmlPreservingFontSize(editor, newText);
 
         if (flashRedBorder) flashRedBorder(editor);
 
