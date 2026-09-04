@@ -167,15 +167,14 @@ function initRemoteHandlers() {
                   win.webContents.send('request-full-state-for-remote');
                 }
 
-                // Envia estado atual imediatamente (se já tiver em cache)
-                // Isso garante que o cliente receba algo mesmo antes do renderer responder
-                if (currentFullState.htmlContent) {
-                  // Send initial state but mark socket as not bootstrapped yet
+                // O cache pode pertencer à aba anterior. Aguarda o renderer
+                // responder com o documento atualmente ativo para evitar
+                // iniciar o roteirista sempre no primeiro texto.
+                if (!win && currentFullState.htmlContent) {
                   socket.bootstrapped = false;
                   socket.emit('server-initial-state', currentFullState);
-                } else {
-                  // Fallback: pede apenas o texto (compatibilidade)
-                  if (win) win.webContents.send('request-text-for-remote');
+                } else if (!win) {
+                  socket.emit('server-initial-state', currentFullState);
                 }
 
                 // Adiciona log de entrada
