@@ -3915,25 +3915,12 @@ document.addEventListener("DOMContentLoaded", () => {
     prompterText.style.display = "block";
     prompterText.style.maxWidth = "100%";
 
-    if (normalized === "center") {
-      prompterContainer.style.alignItems = "center";
-      prompterText.style.margin = "0 auto";
-      prompterText.style.width = "fit-content";
-    } else if (normalized === "right") {
-      prompterContainer.style.alignItems = "flex-end";
-      prompterText.style.margin = "0 0 0 auto";
-      prompterText.style.width = "97%";
-    } else {
-      prompterContainer.style.alignItems = "flex-start";
-      prompterText.style.margin = "0";
-      prompterText.style.width = "97%";
-    }
+    // O alinhamento pertence a cada bloco do roteiro. Mantém o contêiner
+    // neutro para que um parágrafo não mova visualmente os demais.
+    prompterContainer.style.alignItems = "flex-start";
+    prompterText.style.margin = "0";
+    prompterText.style.width = "97%";
 
-    prompterText
-      .querySelectorAll("p, div, h1, h2, h3, h4, h5, h6")
-      .forEach((block) => {
-        block.style.textAlign = normalized;
-      });
   }
 
   function applyTextAlignment(command) {
@@ -3943,13 +3930,7 @@ document.addEventListener("DOMContentLoaded", () => {
     restoreSelection();
     editor.focus();
 
-    const align = commandToTextAlign(command);
     document.execCommand(command, false, null);
-
-    editor.style.textAlign = align;
-    editor.querySelectorAll("p, div, h1, h2, h3, h4, h5, h6").forEach((block) => {
-      block.style.textAlign = align;
-    });
 
     markDocumentAsUnsaved(activeDocumentId);
     syncContentToPrompter();
