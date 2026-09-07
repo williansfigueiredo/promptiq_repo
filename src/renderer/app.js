@@ -59,6 +59,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let voiceModeActive = false;
 
   let currentFontSizePT = 12;
+  let currentPrompterFontScale = 100;
   let currentLineSpacing = 0;
   // Fonte escolhida na sessão pelo operador. Preserva a fonte mesmo quando outras
   // preferências (ex.: Line Spacing) são salvas e reaplicadas. "" = usa o padrão.
@@ -128,6 +129,34 @@ document.addEventListener("DOMContentLoaded", () => {
       size = (typeof globalPrefs !== "undefined" && globalPrefs?.defaultFontSize) || 24;
     }
     return size;
+  }
+
+  function getPrompterFontScale() {
+    return currentPrompterFontScale > 0 ? currentPrompterFontScale : 100;
+  }
+
+  function getScaledPrompterFontSize(sizeInPt) {
+    const baseSize = Number.parseFloat(sizeInPt);
+    if (!Number.isFinite(baseSize) || baseSize <= 0) return 0;
+    return Math.round(baseSize * getPrompterFontScale()) / 100;
+  }
+
+  function applyPrompterFontScale(control, baseSize) {
+    if (!control) return;
+
+    const scaledSize = getScaledPrompterFontSize(baseSize);
+    if (scaledSize > 0) control.style.fontSize = `${scaledSize}pt`;
+
+    control.querySelectorAll('[style*="font-size"]').forEach((element) => {
+      let elementBaseSize = Number.parseFloat(element.dataset.promptiqBaseFontSize);
+      if (!Number.isFinite(elementBaseSize)) {
+        elementBaseSize = Number.parseFloat(element.style.fontSize);
+        if (!Number.isFinite(elementBaseSize)) return;
+        element.dataset.promptiqBaseFontSize = String(elementBaseSize);
+      }
+
+      element.style.fontSize = `${getScaledPrompterFontSize(elementBaseSize)}pt`;
+    });
   }
 
   function getStableOperatorFontSizePt() {
@@ -279,7 +308,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Passa true para preserveFontSize para não sobrescrever com font do operador
       // ===================================================================
       editor.style.fontSize = preservedFontSize;
-      if (prompterEl) prompterEl.style.fontSize = preservedFontSize;
+      if (prompterEl) applyPrompterFontScale(prompterEl, preservedPt);
       applyOperatorEditorTypography(editor, true);
       endBulkEdit(() => {
         if (typeof syncContentToPrompter === "function") {
@@ -558,6 +587,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const prevLineSpacing = globalPrefs ? globalPrefs.lineSpacing : null;
 
     globalPrefs = settings;
+
+    const savedPrompterScale = Number.parseInt(settings.prompterFontScale, 10);
+    currentPrompterFontScale = savedPrompterScale === 30
+      ? 100
+      : (Number.isFinite(savedPrompterScale) && savedPrompterScale > 0
+        ? savedPrompterScale
+        : 100);
 
     // Preserva a fonte ativa da sessão: se o usuário escolheu uma fonte na toolbar
     // e o salvamento de preferências (ex.: Line Spacing) não alterou a fonte,
@@ -1022,10 +1058,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // ✅ USA A MEMÓRIA GLOBAL (currentFontSizePT)
       if (typeof currentFontSizePT !== 'undefined' && currentFontSizePT > 0) {
-        prompterText.style.fontSize = `${currentFontSizePT}pt`;
+        applyPrompterFontScale(prompterText, currentFontSizePT);
       } else if (prefs.defaultFontSize) {
         // Fallback: usa as preferências se existirem
-        prompterText.style.fontSize = `${prefs.defaultFontSize}pt`;
+        applyPrompterFontScale(prompterText, prefs.defaultFontSize);
       }
 
       prompterContainer.style.display = 'block';
@@ -4998,6 +5034,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (content === _lastPrompterHtml) {
       const isRemoteEdit = options.preserveScrollDuringRemoteEdit === true;
       applyPrompterContainerStyles(control, editor, isRemoteEdit);
+      applyPrompterFontScale(control, currentFontSizePT || globalPrefs?.defaultFontSize);
       return;
     }
 
@@ -5005,6 +5042,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (finalContent === _lastPrompterHtml) {
       const isRemoteEdit = options.preserveScrollDuringRemoteEdit === true;
       applyPrompterContainerStyles(control, editor, isRemoteEdit);
+      applyPrompterFontScale(control, currentFontSizePT || globalPrefs?.defaultFontSize);
       return;
     }
 
@@ -5061,6 +5099,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // ===================================================================
       const isRemoteEdit = options.preserveScrollDuringRemoteEdit === true;
       applyPrompterContainerStyles(control, editor, isRemoteEdit);
+      applyPrompterFontScale(control, currentFontSizePT || globalPrefs?.defaultFontSize);
 
       ensureParaIndexing();
       ScrollEngine.invalidateMetrics();
@@ -8938,7 +8977,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Isso resolve o problema da fonte não crescer o suficiente lá
     const prompterText = document.getElementById('prompterText-control');
     if (prompterText) {
-      prompterText.style.fontSize = sizeInPt + "pt";
+      applyPrompterFontScale(prompterText, sizeInPt);
       // Respeita o espaçamento de linha escolhido (Preferences), em vez de forçar 1.2
       prompterText.style.lineHeight =
         currentLineSpacing || (globalPrefs && globalPrefs.lineSpacing) || 1.4;
@@ -8960,7 +8999,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const prompterText = document.getElementById('prompterText-control');
     if (prompterText) {
-      prompterText.style.fontSize = `${sizeInPt}pt`;
+      applyPrompterFontScale(prompterText, sizeInPt);
     }
 
     // Sincroniza com janela de projeção externa
@@ -9195,13 +9234,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (prompterText) {
       // APLICAÇÃO DIRETA E FORÇADA
-      prompterText.style.fontSize = `${sizeInPt}pt`;
+      applyPrompterFontScale(prompterText, sizeInPt);
       // Respeita o espaçamento de linha escolhido (Preferences), em vez de forçar 1.4
       prompterText.style.lineHeight =
         currentLineSpacing || (globalPrefs && globalPrefs.lineSpacing) || 1.4;
     }
 
-    console.log(`✅ Font Size Operator atualizado para: ${sizeInPt}pt`);
+    console.log(`✅ Font Size Operator atualizado com escala (base Edit: ${sizeInPt}pt)`);
   }
 
 

@@ -432,7 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ...(defaultFontAttributesGroup && { defaultFontAttributes: collectedAttributes }),
         ...(defaultFontColorInput && { defaultFontColor: defaultFontColorInput.value }),
         ...(prompterFontScaleInput && {
-          prompterFontScale: parseInt(prompterFontScaleInput.value, 10) || 30,
+          prompterFontScale: parseInt(prompterFontScaleInput.value, 10) || 100,
         }),
         ...(prompterMarginInput && {
           prompterMargin: parseInt(prompterMarginInput.value, 10) || 40,
@@ -516,8 +516,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (defaultFontSizeInput) defaultFontSizeInput.value = settings.defaultFontSize || 12;
     if (defaultFontColorInput) defaultFontColorInput.value = settings.defaultFontColor || '#FFFFFF';
     if (prompterFontScaleInput) {
-      prompterFontScaleInput.value = settings.prompterFontScale || 30;
-      if (prompterScaleValueSpan) prompterScaleValueSpan.textContent = `${prompterFontScaleInput.value}%`;
+      const savedScale = settings.prompterFontScale === 30 ? 100 : (settings.prompterFontScale || 100);
+      const hasSavedOption = Array.from(prompterFontScaleInput.options)
+        .some(option => Number(option.value) === Number(savedScale));
+      if (!hasSavedOption) {
+        const savedOption = document.createElement('option');
+        savedOption.value = savedScale;
+        savedOption.textContent = `${savedScale}%`;
+        prompterFontScaleInput.appendChild(savedOption);
+      }
+      prompterFontScaleInput.value = savedScale;
+      if (prompterScaleValueSpan) prompterScaleValueSpan.textContent = `${savedScale}%`;
     }
     if (prompterMarginInput) prompterMarginInput.value = settings.prompterMargin || 40;
     if (lineSpacingInput) lineSpacingInput.value = settings.lineSpacing || 1.5;
