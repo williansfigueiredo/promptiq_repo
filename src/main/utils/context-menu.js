@@ -29,12 +29,19 @@ function attachContextMenu(win) {
         const menuTemplate = [];
         
         // ========================================
-        // SEÇÃO 0: IR PARA OPERATOR (quando há seleção)
+        // SEÇÃO 0: IR PARA OPERATOR (seleção ou clique em área editável)
         // ========================================
-        if (params.selectionText && params.selectionText.trim().length > 0) {
+        const canGoToOperator =
+            (params.selectionText && params.selectionText.trim().length > 0) ||
+            params.isEditable;
+
+        if (canGoToOperator) {
             menuTemplate.push({
                 label: 'Go to Operator',
-                click: () => win.webContents.send('go-to-operator-at-selection')
+                click: () => win.webContents.send('go-to-operator-at-selection', {
+                    x: params.x,
+                    y: params.y
+                })
             });
             menuTemplate.push({ type: 'separator' });
         }

@@ -1580,6 +1580,10 @@ document.addEventListener("DOMContentLoaded", () => {
     },
   };
 
+  // Disponibiliza a mesma instância para módulos legados carregados via script tag
+  // (ex.: tab-navigation.js, voice-module.js), evitando estados de scroll paralelos.
+  window.ScrollEngine = ScrollEngine;
+
 
   // ============================================================
   // SEÇÃO 17: SINCRONIZAÇÃO DE SCROLL MANUAL
@@ -3540,6 +3544,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const newTab = document.createElement("div");
     newTab.classList.add("document-tab", "d-inline-flex");
     newTab.dataset.target = newId;
+    newTab.setAttribute("draggable", "true");
     newTab.innerHTML = `<span>${finalName}</span> <i class="bi bi-x-lg close-tab" data-id="${newId}"></i>`;
     documentTabsBar.appendChild(newTab);
 
@@ -3812,6 +3817,30 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function reorderDocumentsToMatchTabOrder() {
+    if (!documentTabsBar) return;
+
+    const orderedIds = Array.from(
+      documentTabsBar.querySelectorAll(".document-tab")
+    )
+      .map((tab) => parseInt(tab.dataset.target, 10))
+      .filter((id) => Number.isFinite(id));
+
+    if (orderedIds.length === 0 || orderedIds.length !== documents.length) return;
+
+    const docsById = new Map(documents.map((doc) => [doc.id, doc]));
+    const reordered = [];
+
+    orderedIds.forEach((id) => {
+      const doc = docsById.get(id);
+      if (doc) reordered.push(doc);
+    });
+
+    if (reordered.length === documents.length) {
+      documents = reordered;
+    }
+  }
+
   if (homeTabBtn) homeTabBtn.addEventListener("click", () => showHomeDefault());
 
   documentTabsBar?.addEventListener("click", (e) => {
@@ -3821,6 +3850,88 @@ document.addEventListener("DOMContentLoaded", () => {
       e.stopPropagation();
       closeDocument(parseInt(closeBtn.dataset.id));
     } else if (tab) activateDocument(parseInt(tab.dataset.target));
+  });
+
+  let draggingTabId = null;
+  let tabOrderChangedByDrag = false;
+
+  documentTabsBar?.querySelectorAll(".document-tab").forEach((tab) => {
+    tab.setAttribute("draggable", "true");
+  });
+
+  documentTabsBar?.addEventListener("dragstart", (e) => {
+    const tab = e.target.closest(".document-tab");
+    if (!tab || e.target.closest(".close-tab")) {
+      e.preventDefault();
+      return;
+    }
+
+    draggingTabId = parseInt(tab.dataset.target, 10);
+    if (!Number.isFinite(draggingTabId)) {
+      draggingTabId = null;
+      e.preventDefault();
+      return;
+    }
+
+    tabOrderChangedByDrag = false;
+    tab.classList.add("dragging-tab");
+
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(draggingTabId));
+    }
+  });
+
+  documentTabsBar?.addEventListener("dragover", (e) => {
+    if (draggingTabId === null) return;
+
+    const targetTab = e.target.closest(".document-tab");
+    const draggedTab = documentTabsBar.querySelector(
+      `.document-tab[data-target="${draggingTabId}"]`
+    );
+
+    if (!targetTab || !draggedTab || targetTab === draggedTab) return;
+
+    e.preventDefault();
+    const targetRect = targetTab.getBoundingClientRect();
+    const shouldInsertBefore =
+      (e.clientX - targetRect.left) < (targetRect.width / 2);
+
+    if (shouldInsertBefore) {
+      if (draggedTab !== targetTab.previousSibling) {
+        documentTabsBar.insertBefore(draggedTab, targetTab);
+        tabOrderChangedByDrag = true;
+      }
+    } else {
+      if (draggedTab !== targetTab.nextSibling) {
+        documentTabsBar.insertBefore(draggedTab, targetTab.nextSibling);
+        tabOrderChangedByDrag = true;
+      }
+    }
+  });
+
+  documentTabsBar?.addEventListener("drop", (e) => {
+    if (draggingTabId === null) return;
+    e.preventDefault();
+
+    if (tabOrderChangedByDrag) {
+      reorderDocumentsToMatchTabOrder();
+    }
+  });
+
+  documentTabsBar?.addEventListener("dragend", () => {
+    if (documentTabsBar) {
+      documentTabsBar
+        .querySelectorAll(".document-tab.dragging-tab")
+        .forEach((tab) => tab.classList.remove("dragging-tab"));
+    }
+
+    if (tabOrderChangedByDrag) {
+      reorderDocumentsToMatchTabOrder();
+    }
+
+    draggingTabId = null;
+    tabOrderChangedByDrag = false;
   });
 
   function scheduleAutoSave() {
@@ -8333,7 +8444,9 @@ document.addEventListener("DOMContentLoaded", () => {
     channel.onopen = () => {
       console.log(`Canal aberto com ${userId}`);
 
-      const editor = document.querySelector('.text-editor-area');
+      const editor =
+        getActiveTextEditorArea() ||
+        document.querySelector('.editor-container.active .text-editor-area');
       if (editor) {
         channel.send(JSON.stringify({ type: 'update', content: editor.innerHTML }));
       }

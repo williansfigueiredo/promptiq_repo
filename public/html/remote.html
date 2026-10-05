@@ -770,6 +770,7 @@
         const lastSyncEl = document.getElementById('last-sync');
         
         let userName = "";
+        let lastJoinedSession = null;
         let isTyping = false;
         let typeTimeout;
         let paintingMode = "foreground";
@@ -833,11 +834,21 @@
             }
             
             userName = name;
+            lastJoinedSession = { name, pin };
             localStorage.setItem('prompt_user', name);
             localStorage.setItem('prompt_pin', pin);
             
             if (!isAuto) showLoadingScreen("Entering the room...");
             socket.emit('join-session', { name: name, pin: pin });
+        }
+
+        function rejoinSessionIfNeeded() {
+            const savedName = localStorage.getItem('prompt_user');
+            const savedPin = localStorage.getItem('prompt_pin');
+            if (!savedName || !savedPin) return;
+            userName = savedName;
+            lastJoinedSession = { name: savedName, pin: savedPin };
+            socket.emit('join-session', { name: savedName, pin: savedPin });
         }
         
         function doLogout() {
@@ -856,11 +867,28 @@
             const savedPin = localStorage.getItem('prompt_pin');
             if (savedName && savedPin) {
                 userName = savedName;
+                lastJoinedSession = { name: savedName, pin: savedPin };
                 socket.emit('join-session', { name: savedName, pin: savedPin });
             }
         });
         
-        socket.on('disconnect', () => updateConnectionStatus(false));
+        socket.on('disconnect', () => {
+            updateConnectionStatus(false);
+            if (lastJoinedSession) {
+                setTimeout(() => {
+                    if (socket.connected) {
+                        socket.emit('join-session', lastJoinedSession);
+                    } else {
+                        socket.connect();
+                        setTimeout(() => {
+                            if (lastJoinedSession) {
+                                socket.emit('join-session', lastJoinedSession);
+                            }
+                        }, 800);
+                    }
+                }, 1200);
+            }
+        });
         
         socket.on('login-success', () => {
             document.getElementById('u-name').innerText = userName;

@@ -37,6 +37,7 @@ const TabNavigationManager = {
   lastCaretOffset: 0,
   lastCaretTimestamp: 0,
   editorReferenceArmed: false,
+  lastEditorPointerPoint: null,
 
   // Sincronização Operator → Edit: índice da palavra visível no Operator
   // quando o usuário sair dessa aba, para sincronizar com o Editor
@@ -110,8 +111,8 @@ const TabNavigationManager = {
     // =========================================
     // Quando o IPC receber o comando, executa a navegação
     const { ipcRenderer } = require('electron');
-    ipcRenderer.on('go-to-operator-at-selection', () => {
-      this.goToOperatorAtCurrentSelection();
+    ipcRenderer.on('go-to-operator-at-selection', (_event, payload) => {
+      this.goToOperatorAtCurrentSelection(payload);
     });
 
     // =========================================
@@ -119,9 +120,31 @@ const TabNavigationManager = {
     // =========================================
     // Rastreia o caret no editor de forma mais robusta
     // Ativa em múltiplos eventos para garantir captura
+    const updatePointerPoint = (event) => {
+      if (!event || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
+      const target = event.target;
+      const targetEditor = target && target.closest ? target.closest('.text-editor-area') : null;
+      if (!targetEditor) return;
+
+      this.lastEditorPointerPoint = {
+        x: event.clientX,
+        y: event.clientY,
+        timestamp: Date.now()
+      };
+    };
+
     const updateCaretPosition = (event) => {
       const isUserInteraction = ['click', 'keyup', 'mouseup'].includes(event?.type);
-      if (isUserInteraction) this.editorReferenceArmed = true;
+      updatePointerPoint(event);
+      if (isUserInteraction) {
+        const target = event?.target;
+        const targetEditor = target && target.closest ? target.closest('.text-editor-area') : null;
+
+        // Evita "renovar" seleção/caret antigos quando o clique foi fora do editor
+        if ((event?.type === 'click' || event?.type === 'mouseup') && !targetEditor) return;
+        this.editorReferenceArmed = true;
+      }
+
       if (!this.editorReferenceArmed) return;
 
       const sel = window.getSelection();
@@ -149,6 +172,8 @@ const TabNavigationManager = {
     document.addEventListener('click', updateCaretPosition);
     document.addEventListener('keyup', updateCaretPosition);
     document.addEventListener('mouseup', updateCaretPosition);
+    document.addEventListener('mousemove', updatePointerPoint);
+    document.addEventListener('wheel', updatePointerPoint, { passive: true });
 
     // =========================================
     // EVENTOS DE TROCA DE ABA
@@ -244,9 +269,15 @@ const TabNavigationManager = {
         // Se o usuário saiu da aba edit deixando o cursor em uma posição,
         // detectar isso e navegar automaticamente
         if (this.pendingWordIndex === null && this.currentTabTriggerId === 'edit-tab') {
-          // 1) Prioriza a seleção viva atual (inclui duplo clique em palavra)
-          this.tryUseLiveSelectionAsPendingNavigation();
-          // 2) Fallback para caret rastreado
+          // 0) Prioriza seleção/caret vivos e recentes (clique simples/duplo clique)
+          if (this.pendingWordIndex === null) {
+            this.tryUseLiveSelectionAsPendingNavigation(true);
+          }
+          // 1) Se não houver seleção/caret recente, usa ponto real do mouse no editor
+          if (this.pendingWordIndex === null) {
+            this.tryUsePointerPointAsPendingNavigation();
+          }
+          // 2) Fallback final para caret rastreado
           if (this.pendingWordIndex === null) {
             this.tryUseCaretAsPendingNavigation();
           }
@@ -316,41 +347,111 @@ const TabNavigationManager = {
    * Pega a seleção atual do editor e navega para o Operator
    * no ponto correspondente.
    */
-  goToOperatorAtCurrentSelection: function () {
-    const selection = window.getSelection();
-    if (!selection || selection.toString().trim().length === 0) {
-      console.log('🚨 Nenhuma palavra selecionada');
-      return;
+  goToOperatorAtCurrentSelection: function (contextPoint) {
+    let range = null;
+    let editor = null;
+    let selectedText = '';
+
+    const pointRangeData = this.resolveEditorRangeFromPoint(contextPoint);
+    if (pointRangeData) {
+      range = pointRangeData.range;
+      editor = pointRangeData.editor;
+
+      const liveSelection = window.getSelection();
+      if (liveSelection && liveSelection.rangeCount > 0 && !liveSelection.getRangeAt(0).collapsed) {
+        const liveRange = liveSelection.getRangeAt(0);
+        if (editor.contains(liveRange.commonAncestorContainer)) {
+          selectedText = (liveSelection.toString() || '').trim();
+        }
+      }
+    } else {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        console.log('🚨 Nenhuma seleção/cursor ativo no editor');
+        return;
+      }
+
+      range = selection.getRangeAt(0);
+      selectedText = (selection.toString() || '').trim();
+
+      const node = range.startContainer;
+      const parent = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      editor = parent?.closest?.('.text-editor-area');
+      if (!editor) {
+        console.log('🚨 Seleção não está em um editor');
+        return;
+      }
     }
 
-    const selectedText = selection.toString().trim();
-    const range = selection.getRangeAt(0);
-
-    // Encontra o editor mais próximo
-    const editor = range.startContainer.parentElement?.closest('.text-editor-area');
-    if (!editor) {
-      console.log('🚨 Seleção não está em um editor');
-      return;
-    }
+    const node = range.startContainer;
 
     // Calcula o índice da palavra
     const wordIndex = this.calculateWordIndex(editor, range);
 
     if (wordIndex !== null) {
       const charOffset = this.calculateCharacterOffset(editor, range.startContainer, range.startOffset);
+      let contextText = selectedText;
+
+      if (!contextText && node && node.nodeType === Node.TEXT_NODE) {
+        const raw = node.textContent || '';
+        const safeOffset = Math.max(0, Math.min(range.startOffset || 0, raw.length));
+        const left = raw.slice(0, safeOffset).match(/\S+$/)?.[0] || '';
+        const right = raw.slice(safeOffset).match(/^\S+/)?.[0] || '';
+        contextText = (left + right).trim();
+      }
 
       this.pendingWordIndex = wordIndex;
       this.pendingNavigationContext = {
-        text: selectedText,
+        text: contextText,
         charOffset: charOffset,
         timestamp: Date.now()
       };
 
-      console.log(`📍 Palavra capturada: "${selectedText}" (índice: ${wordIndex}, charOffset: ${charOffset})`);
+      console.log(`📍 Palavra/cursor capturado: "${contextText || '[cursor]'}" (índice: ${wordIndex}, charOffset: ${charOffset})`);
 
       // Muda para a aba Operator
       this.switchToOperatorTab();
     }
+  },
+
+  resolveEditorRangeFromPoint: function (contextPoint) {
+    if (!contextPoint || !Number.isFinite(contextPoint.x) || !Number.isFinite(contextPoint.y)) {
+      return null;
+    }
+
+    const dpr = window.devicePixelRatio || 1;
+    const attempts = [
+      [contextPoint.x, contextPoint.y],
+      [contextPoint.x * dpr, contextPoint.y * dpr],
+      [contextPoint.x / dpr, contextPoint.y / dpr]
+    ];
+
+    for (const [x, y] of attempts) {
+      let range = null;
+
+      if (typeof document.caretRangeFromPoint === 'function') {
+        range = document.caretRangeFromPoint(x, y);
+      } else if (typeof document.caretPositionFromPoint === 'function') {
+        const caretPos = document.caretPositionFromPoint(x, y);
+        if (caretPos && caretPos.offsetNode) {
+          range = document.createRange();
+          range.setStart(caretPos.offsetNode, caretPos.offset || 0);
+          range.collapse(true);
+        }
+      }
+
+      if (!range || !range.startContainer) continue;
+
+      const node = range.startContainer;
+      const parent = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      const editor = parent?.closest?.('.text-editor-area');
+
+      if (editor && editor.contains(node)) {
+        return { range, editor };
+      }
+    }
+
+    return null;
   },
 
   // ============================================================
@@ -446,7 +547,15 @@ const TabNavigationManager = {
    * de palavra via duplo clique) para navegar ao ponto exato no Operator.
    */
   tryUseLiveSelectionAsPendingNavigation: function () {
-    if (this.pendingWordIndex !== null || !this.editorReferenceArmed) return;
+    const force = arguments[0] === true;
+    if (this.pendingWordIndex !== null || (!force && !this.editorReferenceArmed)) return;
+
+    // Quando forçado (troca de aba), ignora seleção muito antiga para não
+    // reaplicar um ponto stale como destino de navegação.
+    if (force) {
+      const selectionAgeMs = Date.now() - (this.lastCaretTimestamp || 0);
+      if (selectionAgeMs > 2500) return;
+    }
 
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return;
@@ -478,6 +587,42 @@ const TabNavigationManager = {
     }
   },
 
+  tryUsePointerPointAsPendingNavigation: function () {
+    if (this.pendingWordIndex !== null || !this.lastEditorPointerPoint) return;
+
+    const pointAgeMs = Date.now() - (this.lastEditorPointerPoint.timestamp || 0);
+    if (pointAgeMs > 5000) return;
+
+    const pointRangeData = this.resolveEditorRangeFromPoint(this.lastEditorPointerPoint);
+    if (!pointRangeData) return;
+
+    const range = pointRangeData.range;
+    const editor = pointRangeData.editor;
+    const node = range.startContainer;
+    const wordIndex = this.calculateWordIndex(editor, range);
+    if (wordIndex === null || wordIndex < 0) return;
+
+    const charOffset = this.calculateCharacterOffset(editor, range.startContainer, range.startOffset);
+    let contextText = '';
+
+    if (node && node.nodeType === Node.TEXT_NODE) {
+      const raw = node.textContent || '';
+      const safeOffset = Math.max(0, Math.min(range.startOffset || 0, raw.length));
+      const left = raw.slice(0, safeOffset).match(/\S+$/)?.[0] || '';
+      const right = raw.slice(safeOffset).match(/^\S+/)?.[0] || '';
+      contextText = (left + right).trim();
+    }
+
+    this.pendingWordIndex = wordIndex;
+    this.pendingNavigationContext = {
+      text: contextText,
+      charOffset: charOffset,
+      timestamp: Date.now()
+    };
+
+    console.log(`✅ Ponto do clique no editor capturado — palavra #${wordIndex} (charOffset: ${charOffset})`);
+  },
+
   // ============================================================
   // FUNÇÃO: Calcular índice da palavra no texto
   // ============================================================
@@ -499,22 +644,61 @@ const TabNavigationManager = {
         return null;
       }
 
-      // Estratégia robusta: usa Range do início do editor até o caret.
-      // Isso evita erros com nós de formatação e não conta palavra parcial.
-      const beforeRange = document.createRange();
-      beforeRange.selectNodeContents(editor);
-      beforeRange.setEnd(range.startContainer, range.startOffset);
+      const targetNode = range.startContainer;
+      const targetOffset = range.startOffset;
 
-      const textBeforeCursor = beforeRange.toString() || '';
-      let wordsCount = textBeforeCursor.split(/\s+/).filter(w => w.length > 0).length;
+      // Caminho principal: usa a mesma estratégia de tokenização por nós de texto
+      // empregada em findWordByIndex, garantindo paridade Editor ↔ Operator.
+      if (targetNode.nodeType === Node.TEXT_NODE) {
+        const walker = document.createTreeWalker(
+          editor,
+          NodeFilter.SHOW_TEXT,
+          null,
+          false
+        );
 
-      // Se o caret está no meio/fim de uma palavra (sem whitespace no final),
-      // desconta 1 para apontar para a palavra atual e não para a próxima.
-      if (range.collapsed && textBeforeCursor.length > 0 && !/\s$/.test(textBeforeCursor)) {
-        wordsCount = Math.max(0, wordsCount - 1);
+        let wordIndex = 0;
+        let node;
+        while ((node = walker.nextNode())) {
+          const text = node.textContent || '';
+          const words = text.match(/\S+/g) || [];
+
+          if (node !== targetNode) {
+            wordIndex += words.length;
+            continue;
+          }
+
+          const safeOffset = Math.max(0, Math.min(targetOffset, text.length));
+          let searchOffset = 0;
+
+          for (let i = 0; i < words.length; i++) {
+            const word = words[i];
+            const wordStart = text.indexOf(word, searchOffset);
+            const wordEnd = wordStart + word.length;
+
+            // Cursor antes ou dentro da palavra atual -> esse é o índice alvo
+            if (safeOffset <= wordStart || (safeOffset > wordStart && safeOffset <= wordEnd)) {
+              console.log(`📊 calculateWordIndex: índice calculado via tokenização = ${wordIndex}`);
+              return wordIndex;
+            }
+
+            searchOffset = wordEnd;
+            wordIndex++;
+          }
+
+          // Cursor após a última palavra do nó atual
+          console.log(`📊 calculateWordIndex: índice calculado no fim do nó = ${wordIndex}`);
+          return wordIndex;
+        }
       }
 
-      console.log(`📊 calculateWordIndex: palavras completas antes do caret = ${wordsCount}`);
+      // Fallback para startContainer que não é nó de texto
+      const beforeRange = document.createRange();
+      beforeRange.selectNodeContents(editor);
+      beforeRange.setEnd(targetNode, targetOffset);
+      const textBeforeCursor = beforeRange.toString() || '';
+      const wordsCount = textBeforeCursor.split(/\s+/).filter((w) => w.length > 0).length;
+      console.log(`📊 calculateWordIndex: índice calculado via fallback = ${wordsCount}`);
       return wordsCount;
     } catch (error) {
       console.error('Erro ao calcular índice da palavra:', error);
@@ -535,10 +719,32 @@ const TabNavigationManager = {
     try {
       if (!editor || !node) return null;
 
+      // Caminho principal: conta caracteres reais por nós de texto,
+      // sem normalização de whitespace do Range.toString().
+      if (node.nodeType === Node.TEXT_NODE) {
+        const walker = document.createTreeWalker(
+          editor,
+          NodeFilter.SHOW_TEXT,
+          null,
+          false
+        );
+
+        let totalChars = 0;
+        let currentNode;
+        while ((currentNode = walker.nextNode())) {
+          const text = currentNode.textContent || '';
+          if (currentNode === node) {
+            const safeOffset = Math.max(0, Math.min(offset, text.length));
+            return totalChars + safeOffset;
+          }
+          totalChars += text.length;
+        }
+      }
+
+      // Fallback para nós não-texto
       const beforeRange = document.createRange();
       beforeRange.selectNodeContents(editor);
       beforeRange.setEnd(node, offset);
-
       const textBefore = beforeRange.toString() || '';
       return textBefore.length;
     } catch (error) {
@@ -791,6 +997,7 @@ const TabNavigationManager = {
     this.lastCaretOffset = 0;
     this.lastCaretTimestamp = 0;
     this.editorReferenceArmed = false;
+    this.lastEditorPointerPoint = null;
 
     const selection = window.getSelection();
     if (selection && selection.rangeCount > 0) {
@@ -1397,24 +1604,24 @@ const TabNavigationManager = {
 
       console.log(`🎯 Tentando navegar para palavra #${targetIndex}...`);
 
-      // Tenta primeiro por offset absoluto de caractere (mais preciso)
+      // Tenta primeiro por índice da palavra.
+      // O índice é mais estável entre Edit/Operator quando há diferenças de
+      // renderização de HTML (quebras de linha, spans, estilos).
       let wordLocation = null;
-      if (context && context.charOffset !== null && context.charOffset !== undefined) {
-        wordLocation = this.findWordByCharacterOffset(textControl, context.charOffset);
-        if (wordLocation && wordLocation.word) {
-          console.log(`✅ Encontrada por charOffset: "${wordLocation.word}" (offset ${context.charOffset})`);
-        }
-      }
-
-      // Tenta encontrar a palavra no Operator pelo índice
-      if (!wordLocation) {
-        wordLocation = this.findWordByIndex(textControl, targetIndex);
-      }
+      wordLocation = this.findWordByIndex(textControl, targetIndex);
 
       // Se não encontrou pelo índice, tenta buscar pelo texto
       if (!wordLocation && context && context.text) {
         console.log(`⚠️ Palavra #${targetIndex} não encontrada por índice, tentando por texto ("${context.text}")...`);
         wordLocation = this.findWordByText(textControl, context.text, targetIndex);
+      }
+
+      // Último fallback: offset de caractere absoluto
+      if (!wordLocation && context && context.charOffset !== null && context.charOffset !== undefined) {
+        wordLocation = this.findWordByCharacterOffset(textControl, context.charOffset);
+        if (wordLocation && wordLocation.word) {
+          console.log(`✅ Encontrada por charOffset (fallback): "${wordLocation.word}" (offset ${context.charOffset})`);
+        }
       }
 
       if (wordLocation) {
@@ -1481,8 +1688,8 @@ const TabNavigationManager = {
 
         console.log(`✅ Navegado com sucesso para palavra #${targetIndex}: "${wordLocation.word}"`);
 
-        // Salva a nova posição
-        this.operatorSavedScrollPosition = finalScroll;
+        // Salva a nova posição na fonte única de verdade
+        this.applySingleSourceScrollPosition(finalScroll);
         return;
       } else {
         console.warn(`❌ Palavra #${targetIndex} não encontrada no Operator - usando posição salva`);
@@ -1602,7 +1809,7 @@ const TabNavigationManager = {
    */
   navigateToPosition: function (scrollPosition) {
     this.pendingWordIndex = null;
-    this.operatorSavedScrollPosition = scrollPosition;
+    this.applySingleSourceScrollPosition(scrollPosition);
     this.switchToOperatorTab();
   },
 
