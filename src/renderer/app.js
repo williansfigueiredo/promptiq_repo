@@ -5470,9 +5470,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     return {
       idx: chosen,
+      totalBlocks: blocks.length,
       fraction,
       text: normalizeAnchorText(blocks[chosen].textContent),
       prevText: chosen > 0 ? normalizeAnchorText(blocks[chosen - 1].textContent) : "",
+      nextText: chosen < blocks.length - 1 ? normalizeAnchorText(blocks[chosen + 1].textContent) : "",
     };
   }
 
@@ -5508,8 +5510,32 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       if (best >= 0) return Math.min(best + 1, blocks.length - 1);
     }
-    // 3) Fallback: mesmo índice
-    return Math.min(anchor.idx, blocks.length - 1);
+    // 3) Se o bloco anterior também sumiu, tenta pelo bloco seguinte - 1
+    if (anchor.nextText) {
+      let best = -1;
+      let bestDist = Infinity;
+      blocks.forEach((b, i) => {
+        if (normalizeAnchorText(b.textContent) === anchor.nextText) {
+          const d = Math.abs(i - (anchor.idx + 1));
+          if (d < bestDist) {
+            bestDist = d;
+            best = i;
+          }
+        }
+      });
+      if (best >= 0) return Math.max(0, best - 1);
+    }
+
+    // 4) Fallback robusto: mantém a mesma PROPORÇÃO na linha do tempo.
+    const oldTotal = Number.isFinite(anchor.totalBlocks) ? anchor.totalBlocks : 0;
+    if (oldTotal > 1) {
+      const ratio = Math.max(0, Math.min(1, anchor.idx / (oldTotal - 1)));
+      const proportionalIdx = Math.round(ratio * (blocks.length - 1));
+      return Math.max(0, Math.min(proportionalIdx, blocks.length - 1));
+    }
+
+    // 5) Último fallback: mesmo índice
+    return Math.max(0, Math.min(anchor.idx, blocks.length - 1));
   }
 
   /**
