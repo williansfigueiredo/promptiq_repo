@@ -2972,10 +2972,19 @@ document.addEventListener("DOMContentLoaded", () => {
   //   2) Texto parado, rolado por scroll nativo → usa container.scrollTop
   //   3) Texto parado mas com transform residual → usa decimalScroll
   function readCurrentScrollY(container, textEl) {
-    if (ScrollEngine.isRunning) return ScrollEngine.decimalScroll || 0;
-    const scrollTop = container.scrollTop || 0;
-    const decimal = ScrollEngine.decimalScroll || 0;
-    return Math.max(scrollTop, decimal);
+    if (!container) return 0;
+    if (ScrollEngine.isRunning) return Number.isFinite(ScrollEngine.decimalScroll) ? ScrollEngine.decimalScroll : 0;
+
+    const scrollTop = Number.isFinite(container.scrollTop) ? container.scrollTop : 0;
+    const decimal = Number.isFinite(ScrollEngine.decimalScroll) ? ScrollEngine.decimalScroll : 0;
+
+    // A posição atual não deve funcionar como "mínimo" para a navegação manual.
+    // Evita forçar a leitura a nunca retroceder.
+    if (Math.abs(decimal - scrollTop) > 2) {
+      return scrollTop || decimal;
+    }
+
+    return scrollTop || decimal;
   }
 
   // Inicializa com as ações do prompter (se módulo carregou)
@@ -5216,22 +5225,30 @@ document.addEventListener("DOMContentLoaded", () => {
   function computeReadLinePx(textEl) {
     if (!textEl) return 0;
     const container = document.querySelector(".prompter-in-control");
-    let scrollPos = ScrollEngine.decimalScroll || 0;
-    if (container) {
-      scrollPos = Math.max(scrollPos, container.scrollTop || 0);
+    let scrollPos = Number.isFinite(ScrollEngine.decimalScroll) ? ScrollEngine.decimalScroll : 0;
 
-      // Fallback visual: quando o texto está se movendo por transform/GPU,
-      // a posição real pode estar no getBoundingClientRect mesmo se o estado
-      // interno ainda estiver 0. Isso evita enviar progresso zerado ao roteirista.
+    if (container) {
+      const scrollTop = Number.isFinite(container.scrollTop) ? container.scrollTop : 0;
       const containerRect = container.getBoundingClientRect();
       const textRect = textEl.getBoundingClientRect();
+
+      // Usa a posição real visível do container e só recorre ao decimal quando o
+      // estado do DOM ficou desatualizado. Não impõe um piso mínimo; qualquer
+      // posição válida pode ser menor que a atual.
+      if (Math.abs(scrollPos - scrollTop) > 2) {
+        scrollPos = scrollTop || scrollPos;
+      } else {
+        scrollPos = scrollTop;
+      }
+
       if (containerRect.height > 0 && textRect.height > 0) {
         const visualScroll = Math.max(0, containerRect.top - textRect.top);
-        scrollPos = Math.max(scrollPos, visualScroll);
+        if (Math.abs(visualScroll - scrollPos) > 2) {
+          scrollPos = visualScroll;
+        }
       }
     }
-    // Usa apenas scrollPos — o texto "lido" é somente o que MOVEU
-    // para cima da seta por causa do scroll, não o que já estava acima dela.
+
     return Math.max(0, scrollPos);
   }
 

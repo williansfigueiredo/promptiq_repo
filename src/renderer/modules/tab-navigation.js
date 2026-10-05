@@ -52,11 +52,16 @@ const TabNavigationManager = {
   navigationStaleMs: 4000,
   tabTransitionId: 0,
   tabTransitionTimers: [],
+  tabTransitionRafs: [],
+  lastAppliedScrollTransitionId: null,
 
   cancelPendingTabWork: function () {
     this.tabTransitionId += 1;
     this.tabTransitionTimers.forEach((timerId) => clearTimeout(timerId));
     this.tabTransitionTimers = [];
+    this.tabTransitionRafs.forEach((rafId) => cancelAnimationFrame(rafId));
+    this.tabTransitionRafs = [];
+    this.lastAppliedScrollTransitionId = null;
   },
 
   scheduleTabWork: function (callback, delay) {
@@ -67,6 +72,16 @@ const TabNavigationManager = {
       callback();
     }, delay);
     this.tabTransitionTimers.push(timerId);
+  },
+
+  scheduleTransitionFrame: function (callback) {
+    const transitionId = this.tabTransitionId;
+    const rafId = requestAnimationFrame(() => {
+      this.tabTransitionRafs = this.tabTransitionRafs.filter((id) => id !== rafId);
+      if (transitionId !== this.tabTransitionId) return;
+      callback();
+    });
+    this.tabTransitionRafs.push(rafId);
   },
 
   // ============================================================
@@ -245,8 +260,8 @@ const TabNavigationManager = {
       tabOperatorTrigger.addEventListener('shown.bs.tab', () => {
         this.currentTabTriggerId = 'operator-tab';
         // Usa requestAnimationFrame duplo para garantir renderização completa
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
+        this.scheduleTransitionFrame(() => {
+          this.scheduleTransitionFrame(() => {
             // Força reflow para evitar texto cortado
             this.forceReflow();
 
@@ -783,6 +798,27 @@ const TabNavigationManager = {
     }
   },
 
+  applySingleSourceScrollPosition: function (position) {
+    const normalizedPosition = Number.isFinite(position) ? Math.max(0, Number(position)) : 0;
+
+    this.operatorSavedScrollPosition = normalizedPosition;
+    if (typeof ScrollEngine !== 'undefined') {
+      ScrollEngine.decimalScroll = normalizedPosition;
+    }
+
+    const container = document.querySelector('.prompter-in-control');
+    if (container) {
+      container.scrollTop = normalizedPosition;
+    }
+
+    const textControl = document.getElementById('prompterText-control');
+    if (textControl) {
+      textControl.style.transform = 'none';
+    }
+
+    return normalizedPosition;
+  },
+
   hasPendingNavigation: function () {
     if (this.pendingWordIndex === null || this.pendingNavigationContext === null) return false;
     const age = Date.now() - (this.pendingNavigationContext.timestamp || 0);
@@ -805,17 +841,14 @@ const TabNavigationManager = {
    */
   saveOperatorScrollPosition: function () {
     const container = document.querySelector('.prompter-in-control');
-    if (!container) return;
+    const textControl = document.getElementById('prompterText-control');
+    const livePosition = (typeof ScrollEngine !== 'undefined' && Number.isFinite(ScrollEngine.decimalScroll))
+      ? ScrollEngine.decimalScroll
+      : (container ? container.scrollTop : 0);
 
-    // Prioriza a posição do ScrollEngine (mais precisa)
-    if (typeof ScrollEngine !== 'undefined' && !ScrollEngine.isRunning && container) {
-      this.operatorSavedScrollPosition = container.scrollTop || 0;
-    } else if (typeof ScrollEngine !== 'undefined' && ScrollEngine.decimalScroll !== undefined) {
-      this.operatorSavedScrollPosition = ScrollEngine.decimalScroll;
-    } else {
-      this.operatorSavedScrollPosition = container.scrollTop;
-    }
+    if (!container && !textControl) return;
 
+    this.applySingleSourceScrollPosition(livePosition);
     console.log('💾 Posição do Operator salva:', this.operatorSavedScrollPosition);
   },
 
@@ -845,44 +878,26 @@ const TabNavigationManager = {
     const container = document.querySelector('.prompter-in-control');
     const textControl = document.getElementById('prompterText-control');
 
-    // ============================================
-    // DETECTA A POSIÇÃO CORRETA
-    // ============================================
-    // Quando scroll automático está ativo: posição está em decimalScroll (transform)
-    // Quando scroll manual: posição está em container.scrollTop
-
     let currentPosition = 0;
 
-    if (typeof ScrollEngine !== 'undefined' && ScrollEngine.isRunning) {
-      // Scroll automático ativo - usa decimalScroll
-      currentPosition = ScrollEngine.decimalScroll || 0;
-      console.log('📍 Modo automático - posição via decimalScroll:', currentPosition);
+    if (typeof ScrollEngine !== 'undefined' && Number.isFinite(ScrollEngine.decimalScroll)) {
+      currentPosition = ScrollEngine.decimalScroll;
+      console.log('📍 Posição preservada via ScrollEngine.decimalScroll:', currentPosition);
     } else if (container) {
-      // Scroll manual - usa scrollTop
       currentPosition = container.scrollTop;
-      console.log('📍 Modo manual - posição via scrollTop:', currentPosition);
+      console.log('📍 Posição preservada via container.scrollTop:', currentPosition);
     }
 
-    // Sempre persiste a posição atual (inclui 0 no início do roteiro)
-    this.operatorSavedScrollPosition = currentPosition;
-    if (typeof ScrollEngine !== 'undefined') {
-      ScrollEngine.decimalScroll = currentPosition;
-    }
+    this.applySingleSourceScrollPosition(currentPosition);
 
-    // ============================================
-    // PARA O SCROLL SE ESTIVER RODANDO
-    // ============================================
     if (typeof ScrollEngine !== 'undefined' && ScrollEngine.isRunning) {
-      // Para o heartbeat de leitura (evita cálculo com aba oculta)
       if (typeof ScrollEngine.stopReadProgressHeartbeat === 'function') {
         ScrollEngine.stopReadProgressHeartbeat();
       }
 
-      // Para o scroll MAS preserva a posição
       ScrollEngine.isRunning = false;
       ScrollEngine.setSpeed(0);
 
-      // Restaura o scroll nativo com a posição atual
       if (container && textControl) {
         container.style.overflowY = 'auto';
         textControl.style.transform = 'none';
@@ -890,7 +905,6 @@ const TabNavigationManager = {
         ScrollEngine.decimalScroll = currentPosition;
       }
 
-      // Atualiza botões
       const playBtn = document.getElementById('play-btn');
       const pauseBtn = document.getElementById('pause-btn');
       if (playBtn) playBtn.classList.remove('d-none');
@@ -1075,24 +1089,14 @@ const TabNavigationManager = {
 
     if (!container || !textControl) return;
 
-    // Se há navegação pendente, não pré-aplica (será calculado depois)
     if (this.pendingWordIndex !== null) return;
 
-    // Aplica a posição salva usando scroll nativo (não transform)
-    {
-      container.style.overflowY = 'auto';
-      textControl.style.transform = 'none';
-      container.scrollTop = Math.max(0, this.operatorSavedScrollPosition || 0);
+    this.lastAppliedScrollTransitionId = this.tabTransitionId;
+    this.applySingleSourceScrollPosition(this.operatorSavedScrollPosition);
+    container.style.overflowY = 'auto';
+    textControl.style.transform = 'none';
 
-      if (typeof ScrollEngine !== 'undefined') {
-        ScrollEngine.decimalScroll = container.scrollTop;
-        if (typeof ScrollEngine.syncFromDOM === 'function') {
-          ScrollEngine.syncFromDOM();
-        }
-      }
-
-      console.log('🔄 preApplyScrollPosition:', container.scrollTop);
-    }
+    console.log('🔄 preApplyScrollPosition:', this.operatorSavedScrollPosition);
   },
 
   // ============================================================
@@ -1374,6 +1378,11 @@ const TabNavigationManager = {
       this.pendingNavigationContext = null;
     }
 
+    if (this.pendingWordIndex === null && this.lastAppliedScrollTransitionId === this.tabTransitionId) {
+      console.log('ℹ️ Restauro da posição já aplicado neste ciclo de transição; ignorando duplicata.');
+      return;
+    }
+
     // =========================================
     // NAVEGAÇÃO PARA PALAVRA ESPECÍFICA
     // =========================================
@@ -1486,16 +1495,12 @@ const TabNavigationManager = {
     if (this.operatorSavedScrollPosition >= 0) {
       console.log(`♻️ Restaurando posição salva: ${this.operatorSavedScrollPosition}px`);
 
-      // Garante que está em modo scroll manual (não transform)
+      this.lastAppliedScrollTransitionId = this.tabTransitionId;
+      this.applySingleSourceScrollPosition(this.operatorSavedScrollPosition);
       container.style.overflowY = 'auto';
       textControl.style.transform = 'none';
 
-      // Aplica a posição
-      container.scrollTop = Math.max(0, this.operatorSavedScrollPosition || 0);
-
-      // Sincroniza o ScrollEngine
       if (typeof ScrollEngine !== 'undefined') {
-        ScrollEngine.decimalScroll = container.scrollTop;
         ScrollEngine.isRunning = false;
       }
 
