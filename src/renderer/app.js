@@ -256,53 +256,59 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       };
 
-      // 1) Blocos com o mesmo texto (o mais próximo da posição original).
-      const oldBySig = new Map();
-      oldBlocks.forEach((b, j) => {
-        const s = sig(b);
-        if (!oldBySig.has(s)) oldBySig.set(s, []);
-        oldBySig.get(s).push(j);
-      });
       const used = new Set();
       const pair = new Array(newBlocks.length).fill(-1);
-      newBlocks.forEach((nb, i) => {
-        const candidates = oldBySig.get(sig(nb));
-        if (!candidates) return;
-        let best = -1;
-        let bestDist = Infinity;
-        candidates.forEach((j) => {
-          const d = Math.abs(j - i);
-          if (!used.has(j) && d < bestDist) {
-            bestDist = d;
-            best = j;
+
+      if (oldBlocks.length === newBlocks.length) {
+        // Caso comum (digitação): mesma quantidade de blocos = mesma posição, sem casar texto.
+        for (let i = 0; i < pair.length; i++) pair[i] = i;
+      } else {
+        // 1) Blocos com o mesmo texto (o mais próximo da posição original).
+        const oldBySig = new Map();
+        oldBlocks.forEach((b, j) => {
+          const s = sig(b);
+          if (!oldBySig.has(s)) oldBySig.set(s, []);
+          oldBySig.get(s).push(j);
+        });
+        newBlocks.forEach((nb, i) => {
+          const candidates = oldBySig.get(sig(nb));
+          if (!candidates) return;
+          let best = -1;
+          let bestDist = Infinity;
+          candidates.forEach((j) => {
+            const d = Math.abs(j - i);
+            if (!used.has(j) && d < bestDist) {
+              bestDist = d;
+              best = j;
+            }
+          });
+          if (best >= 0) {
+            used.add(best);
+            pair[i] = best;
           }
         });
-        if (best >= 0) {
-          used.add(best);
-          pair[i] = best;
-        }
-      });
 
-      // 2) Blocos editados: mesma posição relativa entre dois blocos já casados.
-      let prevNew = -1;
-      let prevOld = -1;
-      for (let i = 0; i < newBlocks.length; i++) {
-        if (pair[i] >= 0) {
-          prevNew = i;
-          prevOld = pair[i];
-          continue;
-        }
-        let nextOld = oldBlocks.length;
-        for (let k = i + 1; k < newBlocks.length; k++) {
-          if (pair[k] >= 0) {
-            nextOld = pair[k];
-            break;
+        // 2) Blocos editados: mesma posição relativa entre dois blocos já casados.
+        let prevNew = -1;
+        let prevOld = -1;
+        for (let i = 0; i < newBlocks.length; i++) {
+          if (pair[i] >= 0) {
+            prevNew = i;
+            prevOld = pair[i];
+            continue;
           }
-        }
-        const candidate = prevOld + 1 + (i - prevNew - 1);
-        if (candidate < nextOld && !used.has(candidate)) {
-          used.add(candidate);
-          pair[i] = candidate;
+          let nextOld = oldBlocks.length;
+          for (let k = i + 1; k < newBlocks.length; k++) {
+            if (pair[k] >= 0) {
+              nextOld = pair[k];
+              break;
+            }
+          }
+          const candidate = prevOld + 1 + (i - prevNew - 1);
+          if (candidate < nextOld && !used.has(candidate)) {
+            used.add(candidate);
+            pair[i] = candidate;
+          }
         }
       }
 
@@ -311,6 +317,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (pair[i] < 0) return;
         const ob = oldBlocks[pair[i]];
         if (hasSizing(ob)) copySizing(ob, nb);
+
+        // Sem elementos internos com tamanho próprio não há mais nada a restaurar.
+        if (!ob.querySelector(SIZING_SELECTOR)) return;
 
         const oldEls = Array.from(ob.querySelectorAll("*"));
         const newEls = Array.from(nb.querySelectorAll("*"));
@@ -497,15 +506,76 @@ document.addEventListener("DOMContentLoaded", () => {
     return fontName;
   }
 
+  // Estado do último conteúdo remoto aplicado ao editor: permite trocar só os blocos que mudaram.
+  const _editorPatchState = new WeakMap();
+  let _lastRemoteNormalized = "";
+
+  /**
+   * Aplica o HTML remoto ao editor trocando apenas o trecho que mudou (prefixo/sufixo iguais
+   * são mantidos). Só vale se o editor não foi alterado localmente desde a última aplicação;
+   * caso contrário (ou na 1ª vez) troca tudo, como antes.
+   */
+  function applyHtmlToEditorPatched(editor, html) {
+    const tpl = document.createElement("template");
+    tpl.innerHTML = html;
+    const incoming = Array.from(tpl.content.childNodes);
+    const sigs = incoming.map(promptNodeSig);
+
+    const state = _editorPatchState.get(editor);
+    const oldLen = editor.childNodes.length;
+    let prefix = 0;
+    let suffix = 0;
+    const valid =
+      state &&
+      !state.dirty &&
+      state.sigs.length === oldLen &&
+      state.textLen === (editor.textContent || "").length &&
+      oldLen > 0;
+
+    if (valid) {
+      const old = state.sigs;
+      const max = Math.min(oldLen, sigs.length);
+      while (prefix < max && old[prefix] === sigs[prefix]) prefix++;
+      while (suffix < max - prefix && old[oldLen - 1 - suffix] === sigs[sigs.length - 1 - suffix]) suffix++;
+    }
+
+    if (prefix + suffix === 0) {
+      editor.replaceChildren(...incoming);
+    } else {
+      const oldNodes = Array.from(editor.childNodes);
+      const reference = oldLen - suffix < oldLen ? oldNodes[oldLen - suffix] : null;
+      for (let i = prefix; i < oldLen - suffix; i++) editor.removeChild(oldNodes[i]);
+      incoming.slice(prefix, sigs.length - suffix).forEach((node) => editor.insertBefore(node, reference));
+    }
+
+    _editorPatchState.set(editor, { sigs, dirty: false, textLen: (editor.textContent || "").length });
+  }
+
+  function markEditorPatchDirty() {
+    const editor = getActiveTextEditorArea();
+    const state = editor && _editorPatchState.get(editor);
+    if (state) state.dirty = true;
+  }
+
   function applyRemoteEditorUpdate(newHtml) {
     const editor = getActiveTextEditorArea();
     if (!editor || typeof newHtml !== "string") return false;
 
     // Referência da estrutura do operador (já "curada") para devolver tamanhos/fontes próprios.
-    const hostRef = editor.cloneNode(true);
-    healBlockWrappers(hostRef);
-    const normalized = restoreHostSizing(hostRef, normalizeRemoteEditorHtml(newHtml));
+    // Só clona o editor quando há o que curar (span/b/i... envolvendo blocos).
+    let hostRef = editor;
+    if (editor.querySelector(HEAL_QUICK_SELECTOR)) {
+      hostRef = editor.cloneNode(true);
+      healBlockWrappers(hostRef);
+    }
+    const incomingNormalized = normalizeRemoteEditorHtml(newHtml);
+    const normalized = restoreHostSizing(hostRef, incomingNormalized);
+    const patchState = _editorPatchState.get(editor);
+    const untouchedSinceRemote =
+      !!patchState && !patchState.dirty && patchState.textLen === (editor.textContent || "").length;
+    if (normalized === _lastRemoteNormalized && untouchedSinceRemote) return false;
     if (editor.innerHTML === normalized || getCleanContent(editor) === normalized) return false;
+    _lastRemoteNormalized = normalized;
 
     // ===================================================================
     // Capturar posição de scroll ANTES de qualquer mudança
@@ -535,7 +605,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     runWithoutRemoteBroadcast(() => {
       beginBulkEdit();
-      editor.innerHTML = normalized;
+      applyHtmlToEditorPatched(editor, normalized);
       // ===================================================================
       // CORREÇÃO: RESTAURAR o tamanho de fonte do editor após substituir o HTML
       // Passa true para preserveFontSize para não sobrescrever com font do operador
@@ -572,7 +642,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return true;
   }
 
-  function afterRemoteEditorApplied(editor) {
+  function afterRemoteEditorApplied(editor, options = {}) {
     if (!editor) return;
     flashRedBorder(editor);
     const container = document.getElementById("document-content-container");
@@ -586,9 +656,42 @@ document.addEventListener("DOMContentLoaded", () => {
       markDocumentAsUnsaved(activeDocumentId);
     }
     if (typeof scheduleAutoSave === "function") scheduleAutoSave();
-    if (isInternetServerActive && typeof broadcastTextUpdate === "function") {
+    if (!options.skipInternetBroadcast && isInternetServerActive && typeof broadcastTextUpdate === "function") {
       broadcastTextUpdate(getRemoteSyncContent());
     }
+  }
+
+  /**
+   * Fila das edições do roteirista: cada mensagem traz o texto INTEIRO, então basta aplicar a
+   * mais recente. Aplica no máximo uma por intervalo (proporcional ao custo da última), em vez
+   * de uma por tecla — evita fila de segundos e o app "pesado" quando o roteirista digita rápido.
+   */
+  const _remoteQueue = { html: null, after: null, timer: 0, lastEnd: 0, avgMs: 60 };
+  function queueRemoteEditorUpdate(html, after) {
+    _remoteQueue.html = html;
+    _remoteQueue.after = after;
+    if (_remoteQueue.timer) return;
+
+    const gap = Math.max(100, Math.min(700, _remoteQueue.avgMs * 2.5));
+    const wait = Math.max(0, gap - (Date.now() - _remoteQueue.lastEnd));
+    _remoteQueue.timer = setTimeout(() => {
+      _remoteQueue.timer = 0;
+      const nextHtml = _remoteQueue.html;
+      const nextAfter = _remoteQueue.after;
+      _remoteQueue.html = null;
+      _remoteQueue.after = null;
+
+      const started = performance.now();
+      const editor = getActiveTextEditorArea();
+      if (editor && typeof nextHtml === "string" && applyRemoteEditorUpdate(nextHtml)) {
+        if (typeof nextAfter === "function") nextAfter(editor);
+      }
+      _remoteQueue.avgMs = _remoteQueue.avgMs * 0.7 + (performance.now() - started) * 0.3;
+      _remoteQueue.lastEnd = Date.now();
+
+      // Chegou algo enquanto aplicávamos: segue a fila.
+      if (_remoteQueue.html !== null) queueRemoteEditorUpdate(_remoteQueue.html, _remoteQueue.after);
+    }, wait);
   }
 
   // ============================================================
@@ -8801,9 +8904,7 @@ document.addEventListener("DOMContentLoaded", () => {
   ipcRenderer.on("update-text-from-remote", (event, newText) => {
     const editor = getActiveTextEditorArea();
     if (!editor || typeof newText !== "string") return;
-    if (applyRemoteEditorUpdate(newText)) {
-      afterRemoteEditorApplied(editor);
-    }
+    queueRemoteEditorUpdate(newText, (ed) => afterRemoteEditorApplied(ed));
   });
 
   // ============================================================
@@ -8887,6 +8988,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (_bulkEditDepth > 0) return;
     const editor = getActiveTextEditorArea();
     if (!editor || !editor.contains(e.target)) return;
+    markEditorPatchDirty();
     if (e.target.getAttribute("contenteditable") !== "true") return;
 
     scheduleRemoteTextBroadcast(editor.innerHTML);
@@ -8948,16 +9050,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ✅ SOLUÇÃO 1: Quando recebe atualização do roteirista (Local Wi-Fi)
   ipcRenderer.on("update-from-remote", (event, newText) => {
-    const editor = getActiveTextEditorArea();
-    if (!editor) return;
-
-    clearTimeout(_remoteUpdateTimer);
-    // Aumentado de 80ms para 120ms para sincronização melhor do scroll
-    // Especialmente importante durante playback ativo
-    _remoteUpdateTimer = setTimeout(() => {
-      if (!applyRemoteEditorUpdate(newText)) return;
-      afterRemoteEditorApplied(editor);
-    }, 120);
+    if (!getActiveTextEditorArea()) return;
+    // Fila com "só a mais recente vale": cada mensagem traz o texto inteiro.
+    queueRemoteEditorUpdate(newText, (ed) => afterRemoteEditorApplied(ed));
   });
 
   // ✅ SOLUÇÃO 2: Quando recebe atualização de ESTILO do roteirista (fonte, tamanho)
@@ -9465,25 +9560,28 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = JSON.parse(event.data);
 
       if (data.type === 'update') {
-        const editor = getActiveTextEditorArea();
+        if (!getActiveTextEditorArea()) return;
 
-        if (!editor || !applyRemoteEditorUpdate(data.content)) return;
+        // Fila "só a mais recente vale": o roteirista manda o texto inteiro a cada tecla.
+        queueRemoteEditorUpdate(data.content, (editor) => {
+          // Quem digitou não recebe o próprio texto de volta (o broadcast abaixo o exclui).
+          afterRemoteEditorApplied(editor, { skipInternetBroadcast: true });
 
-        afterRemoteEditorApplied(editor);
+          const synced = getRemoteSyncContent();
+          broadcastTextUpdate(synced, userId);
 
-        broadcastTextUpdate(getRemoteSyncContent(), userId);
+          if (isLocalServerActive && shouldBroadcastToRemotes()) {
+            ipcRenderer.send('send-text-to-remote', synced);
+          }
 
-        if (isLocalServerActive && shouldBroadcastToRemotes()) {
-          ipcRenderer.send('send-text-to-remote', getRemoteSyncContent());
-        }
+          const remoteName = (peers[userId] && peers[userId].userName) ? peers[userId].userName : "Roteirista (Web)";
 
-        const remoteName = (peers[userId] && peers[userId].userName) ? peers[userId].userName : "Roteirista (Web)";
-
-        addLogEntry({
-          msg: `${remoteName} is typing...`,
-          type: 'edit',
-          source: 'Internet',
-          user: remoteName
+          addLogEntry({
+            msg: `${remoteName} is typing...`,
+            type: 'edit',
+            source: 'Internet',
+            user: remoteName
+          });
         });
       } else if (data.type === 'read-progress') {
         // Progresso enviado pelo host ao roteirista web — não aplicar no editor local
