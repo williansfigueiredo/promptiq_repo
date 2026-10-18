@@ -120,9 +120,219 @@ document.addEventListener("DOMContentLoaded", () => {
       temp.querySelectorAll("font[size]").forEach((el) => el.removeAttribute("size"));
       temp.querySelectorAll("font[face]").forEach((el) => el.removeAttribute("face"));
       temp.querySelectorAll("[data-para-idx]").forEach((el) => el.removeAttribute("data-para-idx"));
+      // Wrapper de estilo global que o próprio app envia ao roteirista (getRemoteSyncContent):
+      // já vale no container do editor, não pode virar conteúdo.
+      temp.querySelectorAll("[data-host-style]").forEach((el) => el.replaceWith(...Array.from(el.childNodes)));
       temp.querySelectorAll(".script-read").forEach((el) => el.classList.remove("script-read"));
       temp.querySelectorAll("[data-read]").forEach((el) => el.removeAttribute("data-read"));
       return temp.innerHTML;
+    } catch (_) {
+      return html;
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Estrutura válida: inline (span/b/i/u/font...) contendo BLOCOS (p/div...)
+  // ------------------------------------------------------------------
+  // Aplicar tamanho/negrito numa seleção com vários parágrafos gera
+  // <span style="font-size:30pt;font-weight:bold"><div>…</div><p>…</p></span>.
+  // O roteirista (remote.html) "conserta" esse documento de 1 bloco só quebrando em <br>,
+  // o que destruía o span (negrito/tamanho) e as margens do operador na 1ª edição remota.
+  // Aqui o span vira estilo em cada bloco, mantendo exatamente a mesma aparência.
+  const HEAL_BLOCK_TAGS = new Set(["P", "DIV", "H1", "H2", "H3", "H4", "H5", "H6", "UL", "OL", "LI", "BLOCKQUOTE", "PRE", "TABLE"]);
+  const HEAL_INLINE_SELECTOR = "span, b, strong, i, em, u, s, strike, font, a, mark";
+  const HEAL_QUICK_SELECTOR =
+    ":is(span,b,strong,i,em,u,s,strike,font,a,mark) > :is(p,div,h1,h2,h3,h4,h5,h6,ul,ol,li,blockquote,pre,table)";
+
+  function inlineHasBlockChild(el) {
+    for (let c = el.firstChild; c; c = c.nextSibling) {
+      if (c.nodeType === 1 && HEAL_BLOCK_TAGS.has(c.tagName)) return true;
+    }
+    return false;
+  }
+
+  function inlineStyleProps(el) {
+    const props = {};
+    for (let i = 0; i < el.style.length; i++) {
+      const name = el.style[i];
+      props[name] = el.style.getPropertyValue(name);
+    }
+    switch (el.tagName) {
+      case "B":
+      case "STRONG":
+        if (!props["font-weight"]) props["font-weight"] = "bold";
+        break;
+      case "I":
+      case "EM":
+        if (!props["font-style"]) props["font-style"] = "italic";
+        break;
+      case "U":
+        if (!props["text-decoration-line"]) props["text-decoration-line"] = "underline";
+        break;
+      case "S":
+      case "STRIKE":
+        if (!props["text-decoration-line"]) props["text-decoration-line"] = "line-through";
+        break;
+      case "FONT":
+        if (el.getAttribute("color") && !props["color"]) props["color"] = el.getAttribute("color");
+        if (el.getAttribute("face") && !props["font-family"]) props["font-family"] = el.getAttribute("face");
+        break;
+      default:
+    }
+    return props;
+  }
+
+  /** Troca `el` (inline com blocos dentro) pelos seus filhos, passando o estilo para cada bloco. */
+  function unwrapInlineWithBlocks(el) {
+    const props = inlineStyleProps(el);
+    const frag = document.createDocumentFragment();
+    let run = null;
+
+    Array.from(el.childNodes).forEach((child) => {
+      if (child.nodeType === 1 && HEAL_BLOCK_TAGS.has(child.tagName)) {
+        Object.keys(props).forEach((name) => {
+          if (!child.style.getPropertyValue(name)) child.style.setProperty(name, props[name]);
+        });
+        frag.appendChild(child);
+        run = null;
+      } else if (child.nodeType === 3 && !child.data.trim() && !run) {
+        frag.appendChild(child);
+      } else {
+        if (!run) {
+          run = el.cloneNode(false);
+          frag.appendChild(run);
+        }
+        run.appendChild(child);
+      }
+    });
+
+    const nodes = Array.from(frag.childNodes);
+    el.replaceWith(frag);
+    return nodes;
+  }
+
+  function healBlockWrappers(root) {
+    if (!root || !root.querySelector || !root.querySelector(HEAL_QUICK_SELECTOR)) return false;
+
+    let healed = false;
+    for (let pass = 0; pass < 6; pass++) {
+      const targets = Array.from(root.querySelectorAll(HEAL_INLINE_SELECTOR)).filter(inlineHasBlockChild);
+      if (!targets.length) break;
+      targets.forEach((el) => {
+        if (root.contains(el)) {
+          unwrapInlineWithBlocks(el);
+          healed = true;
+        }
+      });
+    }
+    return healed;
+  }
+
+  /**
+   * O HTML vindo do roteirista tem font-size/font-family/line-height removidos (o operador
+   * decide os tamanhos). Isso apagava também a formatação do próprio operador (trechos em
+   * 48pt, fonte própria...). Aqui devolvemos ao novo HTML os tamanhos/fontes que o texto
+   * do operador já tinha, bloco a bloco (mesmo texto = mesmo bloco; bloco editado = bloco
+   * na mesma posição entre dois blocos iguais).
+   */
+  function restoreHostSizing(oldEditor, html) {
+    const SIZING = ["font-size", "font-family", "line-height"];
+    const SIZING_SELECTOR = '[style*="font-size"], [style*="font-family"], [style*="line-height"]';
+    try {
+      if (!oldEditor || !html || !oldEditor.querySelector(SIZING_SELECTOR)) return html;
+
+      const tmp = document.createElement("div");
+      tmp.innerHTML = html;
+      const oldBlocks = Array.from(oldEditor.children);
+      const newBlocks = Array.from(tmp.children);
+      if (!oldBlocks.length || !newBlocks.length) return html;
+
+      const sig = (el) => (el.textContent || "").replace(/\s+/g, " ").trim();
+      const hasSizing = (el) => !!el.style && SIZING.some((p) => el.style.getPropertyValue(p));
+      const copySizing = (from, to) => {
+        SIZING.forEach((p) => {
+          const v = from.style.getPropertyValue(p);
+          if (v) to.style.setProperty(p, v);
+        });
+      };
+
+      // 1) Blocos com o mesmo texto (o mais próximo da posição original).
+      const oldBySig = new Map();
+      oldBlocks.forEach((b, j) => {
+        const s = sig(b);
+        if (!oldBySig.has(s)) oldBySig.set(s, []);
+        oldBySig.get(s).push(j);
+      });
+      const used = new Set();
+      const pair = new Array(newBlocks.length).fill(-1);
+      newBlocks.forEach((nb, i) => {
+        const candidates = oldBySig.get(sig(nb));
+        if (!candidates) return;
+        let best = -1;
+        let bestDist = Infinity;
+        candidates.forEach((j) => {
+          const d = Math.abs(j - i);
+          if (!used.has(j) && d < bestDist) {
+            bestDist = d;
+            best = j;
+          }
+        });
+        if (best >= 0) {
+          used.add(best);
+          pair[i] = best;
+        }
+      });
+
+      // 2) Blocos editados: mesma posição relativa entre dois blocos já casados.
+      let prevNew = -1;
+      let prevOld = -1;
+      for (let i = 0; i < newBlocks.length; i++) {
+        if (pair[i] >= 0) {
+          prevNew = i;
+          prevOld = pair[i];
+          continue;
+        }
+        let nextOld = oldBlocks.length;
+        for (let k = i + 1; k < newBlocks.length; k++) {
+          if (pair[k] >= 0) {
+            nextOld = pair[k];
+            break;
+          }
+        }
+        const candidate = prevOld + 1 + (i - prevNew - 1);
+        if (candidate < nextOld && !used.has(candidate)) {
+          used.add(candidate);
+          pair[i] = candidate;
+        }
+      }
+
+      // 3) Copia os estilos de tamanho/fonte de cada bloco antigo para o novo.
+      newBlocks.forEach((nb, i) => {
+        if (pair[i] < 0) return;
+        const ob = oldBlocks[pair[i]];
+        if (hasSizing(ob)) copySizing(ob, nb);
+
+        const oldEls = Array.from(ob.querySelectorAll("*"));
+        const newEls = Array.from(nb.querySelectorAll("*"));
+        const sameShape =
+          oldEls.length === newEls.length && oldEls.every((el, k) => el.tagName === newEls[k].tagName);
+
+        if (sameShape) {
+          oldEls.forEach((el, k) => {
+            if (hasSizing(el)) copySizing(el, newEls[k]);
+          });
+        } else {
+          // Estrutura mudou (trecho editado): casa pelos elementos com o mesmo texto.
+          const free = oldEls.filter(hasSizing);
+          newEls.forEach((el) => {
+            if (hasSizing(el)) return;
+            const idx = free.findIndex((o) => o.tagName === el.tagName && sig(o) === sig(el));
+            if (idx >= 0) copySizing(free.splice(idx, 1)[0], el);
+          });
+        }
+      });
+
+      return tmp.innerHTML;
     } catch (_) {
       return html;
     }
@@ -291,8 +501,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const editor = getActiveTextEditorArea();
     if (!editor || typeof newHtml !== "string") return false;
 
-    const normalized = normalizeRemoteEditorHtml(newHtml);
-    if (editor.innerHTML === normalized) return false;
+    // Referência da estrutura do operador (já "curada") para devolver tamanhos/fontes próprios.
+    const hostRef = editor.cloneNode(true);
+    healBlockWrappers(hostRef);
+    const normalized = restoreHostSizing(hostRef, normalizeRemoteEditorHtml(newHtml));
+    if (editor.innerHTML === normalized || getCleanContent(editor) === normalized) return false;
 
     // ===================================================================
     // Capturar posição de scroll ANTES de qualquer mudança
@@ -307,9 +520,16 @@ document.addEventListener("DOMContentLoaded", () => {
     // ===================================================================
     // CORREÇÃO: Preservar o fontSize do container ANTES de substituir o HTML
     // ===================================================================
+    // O tamanho GLOBAL do roteiro é o do container do editor (o que o operador escolheu).
+    // Não derivar de um trecho com tamanho próprio (ex.: o 1º span em 48pt), senão o
+    // roteiro inteiro e o prompter passam a usar esse tamanho.
     const prompterEl = document.getElementById("prompterText-control");
-    const visibleEditorPt = getVisibleEditorFontSizePt(editor);
-    const preservedPt = visibleEditorPt || getStableOperatorFontSizePt() || 30;
+    const containerPt = parseFloat(editor.style.fontSize) || 0;
+    const preservedPt =
+      containerPt ||
+      (typeof currentFontSizePT === "number" && currentFontSizePT > 0 ? currentFontSizePT : 0) ||
+      getStableOperatorFontSizePt() ||
+      30;
     const preservedFontSize = `${preservedPt}pt`;
     currentFontSizePT = preservedPt;
 
@@ -3980,6 +4200,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Se houver conteúdo, limpa as tags antigas antes de colocar
     if (content) {
       editor.innerHTML = cleanOldFormatting(content);
+      healBlockWrappers(editor);
     } else {
       editor.innerHTML = "";
     }
@@ -5676,13 +5897,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function scheduleRemoteTextBroadcast(html) {
     if (!html || !shouldBroadcastToRemotes()) return;
-    if (html === _lastRemoteHtml) return;
     clearTimeout(_remoteTextTimer);
     _remoteTextTimer = setTimeout(() => {
-      if (!html || html === _lastRemoteHtml || !shouldBroadcastToRemotes()) return;
-      _lastRemoteHtml = html;
-      ipcRenderer.send("send-text-to-remote", html);
-      if (typeof broadcastTextUpdate === "function") broadcastTextUpdate(html);
+      if (!shouldBroadcastToRemotes()) return;
+      // Sempre o HTML "curado" (igual ao do prompter), nunca o innerHTML cru do editor.
+      const content = getRemoteSyncContent();
+      if (!content || content === _lastRemoteHtml) return;
+      _lastRemoteHtml = content;
+      ipcRenderer.send("send-text-to-remote", content);
+      if (typeof broadcastTextUpdate === "function") broadcastTextUpdate(content);
     }, 200);
   }
 
@@ -5734,6 +5957,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function processPrompterHtml(content) {
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = content;
+    healBlockWrappers(tempDiv);
 
     tempDiv.querySelectorAll("*").forEach((el) => {
       if (el.style.color) {
@@ -8851,8 +9075,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const editor = getActiveTextEditorArea();
     if (!editor) return;
 
-    // Coleta HTML com estilos inline preservados
-    const htmlContent = getCleanContent(editor);
+    // Coleta HTML com estilos inline preservados (estrutura "curada" para o roteirista)
+    const healedTmp = document.createElement("div");
+    healedTmp.innerHTML = getCleanContent(editor);
+    healBlockWrappers(healedTmp);
+    const htmlContent = healedTmp.innerHTML;
     const plainText = editor.innerText || editor.textContent || '';
 
     // Coleta estilos computados do editor
@@ -9163,7 +9390,10 @@ document.addEventListener("DOMContentLoaded", () => {
         getActiveTextEditorArea() ||
         document.querySelector('.editor-container.active .text-editor-area');
       if (editor) {
-        channel.send(JSON.stringify({ type: 'update', content: editor.innerHTML }));
+        // Mesmo HTML "curado" do prompter: o site do roteirista reescreve documentos de
+        // 1 bloco só (span envolvendo parágrafos) e destruiria a formatação do operador.
+        const initialHtml = getRemoteSyncContent() || editor.innerHTML;
+        channel.send(JSON.stringify({ type: 'update', content: initialHtml }));
       }
 
       // Envia a fonte/estilo atual para o roteirista que acabou de conectar,
@@ -10044,9 +10274,18 @@ document.addEventListener("DOMContentLoaded", () => {
         // 4. Insere o wrapper de volta no documento
         workingRange.insertNode(wrapper);
 
+        // Seleção com vários parágrafos: o span não pode conter blocos (o roteirista
+        // quebrava esse documento). O estilo passa para cada bloco.
+        const wrapped = inlineHasBlockChild(wrapper) ? unwrapInlineWithBlocks(wrapper) : null;
+
         // 5. Re-seleciona o conteúdo do wrapper (preserva seleção visual)
         const newRange = document.createRange();
-        newRange.selectNodeContents(wrapper);
+        if (wrapped && wrapped.length) {
+          newRange.setStartBefore(wrapped[0]);
+          newRange.setEndAfter(wrapped[wrapped.length - 1]);
+        } else {
+          newRange.selectNodeContents(wrapper);
+        }
         liveSel.removeAllRanges();
         liveSel.addRange(newRange);
 
