@@ -130,7 +130,7 @@ function initRemoteHandlers() {
         try {
           remoteApp = express();
           remoteServer = http.createServer(remoteApp);
-          remoteIo = socketIo(remoteServer);
+          remoteIo = socketIo(remoteServer, { perMessageDeflate: { threshold: 1024 } });
 
           // Gera PIN de 6 dígitos aleatório
           currentSessionID = Math.floor(100000 + Math.random() * 900000).toString();

@@ -1574,7 +1574,9 @@ ipcMain.handle('toggle-server', async (event, mode) => {
       try {
         remoteApp = express();
         remoteServer = http.createServer(remoteApp);
-        remoteIo = socketIo(remoteServer);
+        // Compressão do WebSocket: o texto vai inteiro a cada tecla (HTML muito repetitivo,
+        // ~59 KB → ~9 KB). Só comprime mensagens grandes para não gastar CPU à toa.
+        remoteIo = socketIo(remoteServer, { perMessageDeflate: { threshold: 1024 } });
 
         currentSessionID = Math.floor(100000 + Math.random() * 900000).toString();
         remoteApp.get('/', (req, res) => {
