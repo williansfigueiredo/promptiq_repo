@@ -983,6 +983,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     document.body.classList.toggle("operator-edit-mode", !collapsed);
+    window.dispatchEvent(new CustomEvent("operator-edit-mode-changed"));
 
     if (opBtnToggleEditPanel) {
       opBtnToggleEditPanel.classList.toggle("active", !collapsed);
@@ -9883,18 +9884,22 @@ document.addEventListener("DOMContentLoaded", () => {
     addLogEntry(data);
   });
 
-  // 4. Esconde o log enquanto a aba Operator está ativa
+  // 4. O log fica visível na Home e no modo EDIÇÃO (onde o roteirista remoto edita o texto);
+  //    só some enquanto o prompter está sendo operado (Operator sem edição / tela cheia).
   const syncLogVisibilityByTab = () => {
     const operatorPane = document.getElementById('operator-tab-pane');
     if (!operatorPane || !logContainer) return;
     const isOperatorActive =
       operatorPane.classList.contains('active') || operatorPane.classList.contains('show');
-    logContainer.classList.toggle('log-hidden', isOperatorActive);
+    const isEditing = document.body.classList.contains('operator-edit-mode');
+    const isFullscreen = document.body.classList.contains('operator-fullscreen-mode');
+    logContainer.classList.toggle('log-hidden', isOperatorActive && (!isEditing || isFullscreen));
   };
 
   document.querySelectorAll('[data-bs-toggle="tab"]').forEach((tabButton) => {
     tabButton.addEventListener('shown.bs.tab', syncLogVisibilityByTab);
   });
+  window.addEventListener('operator-edit-mode-changed', syncLogVisibilityByTab);
   syncLogVisibilityByTab();
 
 

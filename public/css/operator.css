@@ -330,6 +330,181 @@ body.operator-edit-mode #operator-toolbar .tool-separator {
   color: #ff6b6b;
 }
 
+/* ------------------------------------------------------------------
+   TEMA ESCURO: as mesmas barras acompanham o tema do app (claro/escuro).
+   ------------------------------------------------------------------ */
+[data-theme="dark"] body.operator-edit-mode #operator-toolbar,
+body.dark-mode.operator-edit-mode #operator-toolbar {
+  background-color: #14171d !important;
+  border-bottom: 1px solid #262b36 !important;
+}
+
+[data-theme="dark"] body.operator-edit-mode #operator-toolbar .btn-tool,
+body.dark-mode.operator-edit-mode #operator-toolbar .btn-tool {
+  color: #c9ced8 !important;
+}
+
+[data-theme="dark"] body.operator-edit-mode #operator-toolbar .btn-tool:hover,
+[data-theme="dark"] body.operator-edit-mode #operator-toolbar .btn-tool.active,
+body.dark-mode.operator-edit-mode #operator-toolbar .btn-tool:hover,
+body.dark-mode.operator-edit-mode #operator-toolbar .btn-tool.active {
+  background-color: rgba(0, 178, 255, 0.16) !important;
+  color: #00b2ff !important;
+}
+
+[data-theme="dark"] body.operator-edit-mode #operator-toolbar .tool-separator,
+body.dark-mode.operator-edit-mode #operator-toolbar .tool-separator {
+  background-color: #323847;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content,
+body.dark-mode #operator-edit-panel #toolbar-content {
+  background-color: #1a1e26 !important;
+  border-bottom: 1px solid #262b36 !important;
+  color: #e6e9ef;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content .vr,
+body.dark-mode #operator-edit-panel #toolbar-content .vr {
+  background-color: #323847;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content .btn,
+[data-theme="dark"] #operator-edit-panel #toolbar-content .btn-light,
+[data-theme="dark"] #operator-edit-panel #toolbar-content .btn-group .btn,
+body.dark-mode #operator-edit-panel #toolbar-content .btn,
+body.dark-mode #operator-edit-panel #toolbar-content .btn-light,
+body.dark-mode #operator-edit-panel #toolbar-content .btn-group .btn {
+  background-color: #242934 !important;
+  color: #dfe3ea !important;
+  border: 1px solid #323847 !important;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content .btn:hover,
+[data-theme="dark"] #operator-edit-panel #toolbar-content .btn-light:hover,
+[data-theme="dark"] #operator-edit-panel #toolbar-content .btn-group .btn:hover,
+body.dark-mode #operator-edit-panel #toolbar-content .btn:hover,
+body.dark-mode #operator-edit-panel #toolbar-content .btn-light:hover,
+body.dark-mode #operator-edit-panel #toolbar-content .btn-group .btn:hover {
+  background-color: rgba(0, 178, 255, 0.16) !important;
+  color: #00b2ff !important;
+  border-color: #00b2ff !important;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content .btn.active,
+[data-theme="dark"] #operator-edit-panel #toolbar-content .btn.tool-active,
+[data-theme="dark"] #operator-edit-panel #toolbar-content .btn-mode.active,
+[data-theme="dark"] #operator-edit-panel #toolbar-content .btn-group .btn.show,
+body.dark-mode #operator-edit-panel #toolbar-content .btn.active,
+body.dark-mode #operator-edit-panel #toolbar-content .btn.tool-active,
+body.dark-mode #operator-edit-panel #toolbar-content .btn-mode.active,
+body.dark-mode #operator-edit-panel #toolbar-content .btn-group .btn.show {
+  background-color: rgba(0, 178, 255, 0.24) !important;
+  color: #00b2ff !important;
+  border-color: #00b2ff !important;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content .text-warning,
+body.dark-mode #operator-edit-panel #toolbar-content .text-warning { color: #ffc107 !important; }
+[data-theme="dark"] #operator-edit-panel #toolbar-content .text-danger,
+body.dark-mode #operator-edit-panel #toolbar-content .text-danger { color: #ff6b6b !important; }
+[data-theme="dark"] #operator-edit-panel #toolbar-content .text-primary,
+body.dark-mode #operator-edit-panel #toolbar-content .text-primary { color: #4db8ff !important; }
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content select,
+[data-theme="dark"] #operator-edit-panel #toolbar-content input[type="number"],
+body.dark-mode #operator-edit-panel #toolbar-content select,
+body.dark-mode #operator-edit-panel #toolbar-content input[type="number"] {
+  background-color: #242934 !important;
+  color: #e6e9ef !important;
+  border: 1px solid #323847 !important;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content select,
+body.dark-mode #operator-edit-panel #toolbar-content select {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23c9ced8' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e") !important;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content select option,
+body.dark-mode #operator-edit-panel #toolbar-content select option {
+  background-color: #1a1e26;
+  color: #e6e9ef;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content select:hover,
+[data-theme="dark"] #operator-edit-panel #toolbar-content input[type="number"]:hover,
+[data-theme="dark"] #operator-edit-panel #toolbar-content select:focus,
+[data-theme="dark"] #operator-edit-panel #toolbar-content input[type="number"]:focus,
+body.dark-mode #operator-edit-panel #toolbar-content select:hover,
+body.dark-mode #operator-edit-panel #toolbar-content input[type="number"]:hover,
+body.dark-mode #operator-edit-panel #toolbar-content select:focus,
+body.dark-mode #operator-edit-panel #toolbar-content input[type="number"]:focus {
+  border-color: #00b2ff !important;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content input::placeholder,
+body.dark-mode #operator-edit-panel #toolbar-content input::placeholder {
+  color: #7b8394;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content .color-btn,
+body.dark-mode #operator-edit-panel #toolbar-content .color-btn {
+  border: 2px solid #3a4152 !important;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content .color-btn:hover,
+body.dark-mode #operator-edit-panel #toolbar-content .color-btn:hover {
+  border-color: #00b2ff !important;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content .dropdown-menu,
+body.dark-mode #operator-edit-panel #toolbar-content .dropdown-menu {
+  background-color: #1a1e26;
+  border: 1px solid #323847;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content .dropdown-item,
+body.dark-mode #operator-edit-panel #toolbar-content .dropdown-item {
+  color: #dfe3ea;
+}
+
+[data-theme="dark"] #operator-edit-panel #toolbar-content .dropdown-item:hover,
+body.dark-mode #operator-edit-panel #toolbar-content .dropdown-item:hover {
+  background-color: rgba(0, 178, 255, 0.16);
+  color: #00b2ff;
+}
+
+[data-theme="dark"] #operator-edit-panel #document-tabs-bar,
+body.dark-mode #operator-edit-panel #document-tabs-bar {
+  background-color: #14171d !important;
+  border-bottom: 1px solid #262b36 !important;
+}
+
+[data-theme="dark"] #operator-edit-panel .document-tab,
+body.dark-mode #operator-edit-panel .document-tab {
+  background-color: #1f232d;
+  color: #9aa3b5;
+}
+
+[data-theme="dark"] #operator-edit-panel .document-tab:hover,
+body.dark-mode #operator-edit-panel .document-tab:hover {
+  background-color: #2a2f3b;
+  color: #e6e9ef;
+}
+
+[data-theme="dark"] #operator-edit-panel .document-tab.active,
+body.dark-mode #operator-edit-panel .document-tab.active {
+  background-color: var(--op-edit-bg, #000);
+  color: #ffffff;
+  border-color: #323847;
+  border-top: 2px solid #00b2ff;
+}
+
+/* Log de atividades (Remote Activity) não aparece em tela cheia */
+body.operator-fullscreen-mode .log-container {
+  display: none !important;
+}
+
 
 /* --------------------------------------------------------------------------
    1.2 BOTÕES DE FERRAMENTA (.btn-tool)
