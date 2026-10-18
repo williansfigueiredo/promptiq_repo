@@ -25,6 +25,7 @@ const TabNavigationManager = {
   // ESTADO INTERNO
   // ============================================================
   operatorSavedScrollPosition: 0,    // Posição salva do scroll do Operator
+  operatorLeaveAnchor: null,         // Parágrafo sob a seta ao sair do Operator
   pendingWordIndex: null,             // Índice da palavra para navegar (duplo clique)
   pendingNavigationContext: null,     // Contexto adicional da navegação
   isInitialized: false,               // Flag de inicialização
@@ -138,6 +139,10 @@ const TabNavigationManager = {
     if (tabHomeTrigger) {
       tabHomeTrigger.addEventListener('show.bs.tab', () => {
         this.cancelPendingTabWork();
+        // Guarda o parágrafo sob a seta ANTES de o Operator ficar oculto
+        this.operatorLeaveAnchor = (typeof window.PromptiqReadAnchor !== 'undefined')
+          ? window.PromptiqReadAnchor.capture()
+          : null;
         // Para o scroll e salva posição ANTES de sair da aba Operator
         this.clearPendingNavigation();
         this.clearEditorReference();
@@ -146,6 +151,12 @@ const TabNavigationManager = {
 
       tabHomeTrigger.addEventListener('shown.bs.tab', () => {
         this.currentTabTriggerId = 'home-tab';
+
+        // O Operator oculto perde o scrollTop do container; mantém a posição de leitura
+        // no motor para sync de conteúdo/edição remota e para a volta ao Operator.
+        if (typeof ScrollEngine !== 'undefined' && this.operatorSavedScrollPosition > 0) {
+          ScrollEngine.decimalScroll = this.operatorSavedScrollPosition;
+        }
 
         // Força reflow da aba Home
         requestAnimationFrame(() => {
@@ -192,6 +203,14 @@ const TabNavigationManager = {
               }, 100);
             } else {
               this.restoreOrNavigate();
+
+              // Reancora no parágrafo em que o operador estava (cobre mudanças de
+              // fonte/escala/texto feitas enquanto estava na Home).
+              const leaveAnchor = this.operatorLeaveAnchor;
+              this.operatorLeaveAnchor = null;
+              if (leaveAnchor && window.PromptiqReadAnchor) {
+                window.PromptiqReadAnchor.restore(leaveAnchor);
+              }
             }
 
             // Devolve foco para o teclado funcionar

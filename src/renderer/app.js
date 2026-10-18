@@ -1905,6 +1905,19 @@ document.addEventListener("DOMContentLoaded", () => {
   // Disponibiliza a mesma instância para módulos legados carregados via script tag
   // (ex.: tab-navigation.js, voice-module.js), evitando estados de scroll paralelos.
   window.ScrollEngine = ScrollEngine;
+  // Âncora de leitura (parágrafo sob a seta) para tab-navigation.js reposicionar o
+  // texto ao voltar ao Operator, mesmo que o layout tenha mudado enquanto estava oculto.
+  window.PromptiqReadAnchor = {
+    capture: () => captureCueAnchor(),
+    restore: (anchor) => {
+      // Só reancora se o mesmo parágrafo ainda existe (evita puxar um documento novo).
+      const control = document.getElementById("prompterText-control");
+      const exists = !!anchor && !!anchor.text && getBlockElements(control).some(
+        (b) => normalizeAnchorText(b.textContent) === anchor.text
+      );
+      return exists ? restoreCueAnchor(anchor) : false;
+    },
+  };
 
 
   // ============================================================
@@ -1920,6 +1933,10 @@ document.addEventListener("DOMContentLoaded", () => {
     prompterContainer.addEventListener("scroll", () => {
       // Só executa se o Play estiver desligado (Scroll Manual)
       if (!ScrollEngine.isRunning) {
+        // Aba Operator oculta (ex.: usuário foi para Home): o navegador zera o scrollTop
+        // do container e dispara "scroll". Isso NÃO é rolagem do usuário e não pode
+        // sobrescrever a posição de leitura nem mandar a TV para o início.
+        if (prompterContainer.clientHeight === 0) return;
         cancelPendingFullscreenAnchorRestore();
 
         const el = prompterContainer;
@@ -4438,6 +4455,13 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    // Aba Operator oculta: sem layout (alturas 0) qualquer "correção" zeraria a posição.
+    // Só aplica a mudança; a posição salva é restaurada ao voltar ao Operator.
+    if (container.clientHeight === 0) {
+      applyChange();
+      return;
+    }
+
     const wasRunning = typeof ScrollEngine !== "undefined" && ScrollEngine.isRunning;
     const fallbackScroll =
       typeof ScrollEngine !== "undefined" && Number.isFinite(ScrollEngine.decimalScroll)
@@ -5957,6 +5981,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const control = document.getElementById("prompterText-control");
     const container = document.querySelector(".prompter-in-control");
     if (!control || !container) return null;
+    // Operator oculto (outra aba): sem layout não há âncora confiável.
+    if (container.clientHeight === 0) return null;
 
     const blocks = getBlockElements(control);
     if (!blocks.length) return null;
@@ -6058,6 +6084,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const control = document.getElementById("prompterText-control");
     const container = document.querySelector(".prompter-in-control");
     if (!control || !container) return false;
+    // Sem layout (aba oculta) o cálculo daria delta 0 e zeraria a posição.
+    if (container.clientHeight === 0) return false;
 
     const blocks = getBlockElements(control);
     if (!blocks.length) return false;
