@@ -522,16 +522,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const EDITOR_REF_FRAC = 0.3;
 
-  // Trecho que o usuário está vendo no EDITOR (linha a 30% do topo da área visível).
-  function captureEditorAnchorInfo() {
+  // Trecho que o usuário está vendo no EDITOR (linha à fração `frac` do topo da área visível).
+  function captureEditorAnchorInfo(frac = EDITOR_REF_FRAC) {
     const editor = getActiveTextEditorArea();
     if (!editor || editor.clientHeight <= 0) return null;
 
     const anchor = captureAnchorFromBlocks(
       getBlockElements(editor),
-      editor.getBoundingClientRect().top + editor.clientHeight * EDITOR_REF_FRAC
+      editor.getBoundingClientRect().top + editor.clientHeight * frac
     );
-    return anchor ? { anchor, cueFrac: EDITOR_REF_FRAC } : null;
+    return anchor ? { anchor, cueFrac: frac } : null;
   }
 
   // Trecho sob a seta do prompter, no formato aceito por syncEditorScrollToPrompterAnchor.
@@ -569,12 +569,16 @@ document.addEventListener("DOMContentLoaded", () => {
   // Qualquer interação manual cancela re-ancoragens pendentes (edição e mudanças de estilo).
   let _positionHoldRunId = 0;
   let _activeHold = null;
+  // O operador moveu/editou o texto no editor nesta sessão de edição (rolou, clicou, digitou)?
+  let _editUserMoved = false;
+  let _editViewFrac = EDITOR_REF_FRAC;
   function invalidatePositionHolds() {
     _positionHoldRunId += 1;
     _activeHold = null;
   }
   const cancelPositionHolds = (e) => {
     if (e && e.target && e.target.closest && e.target.closest("#toolbar-content, #operator-toolbar")) return;
+    if (e && e.target && e.target.closest && e.target.closest("#operator-edit-panel")) _editUserMoved = true;
     invalidatePositionHolds();
   };
   document.addEventListener("wheel", cancelPositionHolds, { capture: true, passive: true });
@@ -677,6 +681,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (typeof TabNavigationManager !== "undefined") {
           TabNavigationManager.lastCaretEditor = null;
           TabNavigationManager.lastCaretNode = null;
+          TabNavigationManager.caretIntent = false;
         }
 
         // Ao abrir a edição, pausa a rolagem para o texto não fugir enquanto digita.
@@ -693,6 +698,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (_lastEditClose && Math.abs(_lastEditClose.promptScroll - promptScroll) < 1 && _lastEditClose.editorInfo) {
           anchorInfo = _lastEditClose.editorInfo;
         }
+        _editUserMoved = false;
+        _editViewFrac = anchorInfo ? anchorInfo.cueFrac : EDITOR_REF_FRAC;
       } else {
         _lastEditClose = {
           editorInfo: captureEditorAnchorInfo(),
@@ -700,11 +707,19 @@ document.addEventListener("DOMContentLoaded", () => {
         };
       }
 
-      // Saindo da edição: o prompter deve abrir exatamente no ponto onde o cursor estava.
+      // Saindo da edição: o prompter abre no ponto que o operador escolheu (cursor
+      // posicionado de propósito e visível) ou, se ele só rolou o editor, no trecho que
+      // está vendo. Sem interação alguma, a posição do prompter não muda.
       let navigateToCaret = false;
+      let viewedInfo = null;
       if (collapsed && wantCaretNav && typeof TabNavigationManager !== "undefined") {
         navigateToCaret = TabNavigationManager.captureEditorCaretAsPendingNavigation();
-        if (navigateToCaret) flushSyncContentToPrompter();
+        if (navigateToCaret) {
+          flushSyncContentToPrompter();
+        } else if (_editUserMoved) {
+          viewedInfo = captureEditorAnchorInfo(_editViewFrac);
+          if (viewedInfo) flushSyncContentToPrompter();
+        }
       }
 
       // O painel é uma camada sobre o prompter (não altera o tamanho dele), então
@@ -712,6 +727,14 @@ document.addEventListener("DOMContentLoaded", () => {
       operatorEditPanel.classList.toggle("collapsed", collapsed);
 
       if (navigateToCaret) TabNavigationManager.applyPendingNavigationNow();
+
+      if (viewedInfo && restoreCueAnchor(viewedInfo.anchor)) {
+        const control = document.getElementById("prompterText-control");
+        const contentH = (control && (control.offsetHeight || control.scrollHeight)) || 1;
+        ipcRenderer.send("sync-scroll-position", {
+          textPercent: Math.min(1, Math.max(0, (ScrollEngine.decimalScroll || 0) / contentH)),
+        });
+      }
 
       if (!collapsed) {
         applyPrompterLookToEditPanel();

@@ -40,6 +40,11 @@ const TabNavigationManager = {
   editorReferenceArmed: false,
   lastEditorPointerPoint: null,
 
+  // Só vale como "ponto da edição" um cursor posicionado de propósito (clique/teclado)
+  // na sessão de edição atual. O foco programático (voltar de outra janela, barra de
+  // formatação) coloca o cursor no início do texto e não pode virar destino.
+  caretIntent: false,
+
   // Sincronização Operator → Edit: índice da palavra visível no Operator
   // quando o usuário sair dessa aba, para sincronizar com o Editor
   operatorVisibleWordIndex: null,
@@ -117,6 +122,15 @@ const TabNavigationManager = {
 
     // Rastreia o último caret dentro do editor: ao sair do modo edição a seleção
     // pode já ter sido perdida (painel oculto / foco no botão).
+    const markCaretIntent = (e) => {
+      const t = e.target;
+      if (!t || !t.closest || !t.closest('.text-editor-area')) return;
+      if (e.type === 'keydown' && ['Escape', 'Tab', 'Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+      this.caretIntent = true;
+    };
+    document.addEventListener('pointerdown', markCaretIntent, true);
+    document.addEventListener('keydown', markCaretIntent, true);
+
     document.addEventListener('selectionchange', () => {
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) return;
@@ -459,6 +473,7 @@ const TabNavigationManager = {
 
     const editor = this.lastCaretEditor;
     const node = this.lastCaretNode;
+    if (!this.caretIntent) return false;
     if (!editor || !node || !document.contains(editor) || !document.contains(node)) return false;
 
     try {
@@ -469,6 +484,13 @@ const TabNavigationManager = {
       const range = document.createRange();
       range.setStart(node, safeOffset);
       range.collapse(true);
+
+      // O cursor precisa estar na área visível do editor; se o operador rolou para
+      // outro trecho depois de clicar, vale o trecho que ele está vendo.
+      const caretEl = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      const caretRect = (range.getClientRects()[0]) || (caretEl && caretEl.getBoundingClientRect());
+      const editorRect = editor.getBoundingClientRect();
+      if (!caretRect || caretRect.bottom < editorRect.top || caretRect.top > editorRect.bottom) return false;
 
       const wordIndex = this.calculateWordIndex(editor, range);
       if (wordIndex === null || wordIndex < 0) return false;
