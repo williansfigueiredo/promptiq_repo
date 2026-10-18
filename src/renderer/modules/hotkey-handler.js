@@ -228,6 +228,9 @@ const HotkeyHandler = (function() {
      * Verifica se o foco está em um campo de input
      */
     function isInputFocused() {
+        // No modo edição o prompter está coberto: nenhum atalho dele deve agir.
+        if (document.body.classList.contains('operator-edit-mode')) return true;
+
         const active = document.activeElement;
         if (!active) return false;
         

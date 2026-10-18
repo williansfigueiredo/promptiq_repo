@@ -1,6 +1,6 @@
 // js/keyboard-handler.js (CÓDIGO COMPLETO E CORRIGIDO PARA FOCO LOCAL)
 
-const { ipcRenderer } = require('electron');
+const keyboardIpc = require('electron').ipcRenderer;
 
 let lastCtrlPress = 0;
 const doubleClickThreshold = 220; 
@@ -26,7 +26,7 @@ document.addEventListener('keyup', (e) => {
                 if (ctrlTimeout) clearTimeout(ctrlTimeout);
                 
                 // Envia o comando de alternar (toggle)
-                ipcRenderer.send('toggle-overlay');
+                keyboardIpc.send('toggle-overlay');
                 
                 lastCtrlPress = 0; 
                 

@@ -332,7 +332,7 @@ function attachContextMenu(win) {
 
     if (canGoToOperator) {
       menuTemplate.push({
-        label: 'Go to Operator',
+        label: 'Go to Prompter',
         icon: null,
         click: () => win.webContents.send('go-to-operator-at-selection', {
           x: params.x,

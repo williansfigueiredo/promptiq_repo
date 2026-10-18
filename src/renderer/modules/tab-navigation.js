@@ -97,7 +97,6 @@ const TabNavigationManager = {
   init: function () {
     if (this.isInitialized) return;
 
-    const tabEditTrigger = document.getElementById('edit-tab');
     const tabOperatorTrigger = document.getElementById('operator-tab');
     const tabHomeTrigger = document.getElementById('home-tab');
 
@@ -115,111 +114,25 @@ const TabNavigationManager = {
       this.goToOperatorAtCurrentSelection(payload);
     });
 
-    // =========================================
-    // RASTREIO DO CARET (CURSOR PISCANDO) NO EDITOR
-    // =========================================
-    // Rastreia o caret no editor de forma mais robusta
-    // Ativa em múltiplos eventos para garantir captura
-    const updatePointerPoint = (event) => {
-      if (!event || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
-      const target = event.target;
-      const targetEditor = target && target.closest ? target.closest('.text-editor-area') : null;
-      if (!targetEditor) return;
-
-      this.lastEditorPointerPoint = {
-        x: event.clientX,
-        y: event.clientY,
-        timestamp: Date.now()
-      };
-    };
-
-    const updateCaretPosition = (event) => {
-      const isUserInteraction = ['click', 'keyup', 'mouseup'].includes(event?.type);
-      updatePointerPoint(event);
-      if (isUserInteraction) {
-        const target = event?.target;
-        const targetEditor = target && target.closest ? target.closest('.text-editor-area') : null;
-
-        // Evita "renovar" seleção/caret antigos quando o clique foi fora do editor
-        if ((event?.type === 'click' || event?.type === 'mouseup') && !targetEditor) return;
-        this.editorReferenceArmed = true;
-      }
-
-      if (!this.editorReferenceArmed) return;
-
+    // Rastreia o último caret dentro do editor: ao sair do modo edição a seleção
+    // pode já ter sido perdida (painel oculto / foco no botão).
+    document.addEventListener('selectionchange', () => {
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) return;
-
-      try {
-        const range = sel.getRangeAt(0);
-        const node = range.startContainer;
-        const parent = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-        const editor = parent && parent.closest ? parent.closest('.text-editor-area') : null;
-
-        if (editor && editor.contains(node)) {
-          this.lastCaretEditor = editor;
-          this.lastCaretNode = node;
-          this.lastCaretOffset = range.startOffset;
-          this.lastCaretTimestamp = Date.now();
-        }
-      } catch (err) {
-        // Ignorar erros de seleção inválida
-      }
-    };
-
-    // Rastreia em múltiplos eventos para máxima cobertura
-    document.addEventListener('selectionchange', updateCaretPosition);
-    document.addEventListener('click', updateCaretPosition);
-    document.addEventListener('keyup', updateCaretPosition);
-    document.addEventListener('mouseup', updateCaretPosition);
-    document.addEventListener('mousemove', updatePointerPoint);
-    document.addEventListener('wheel', updatePointerPoint, { passive: true });
+      const range = sel.getRangeAt(0);
+      const node = range.startContainer;
+      const parent = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      const editor = parent && parent.closest ? parent.closest('.text-editor-area') : null;
+      if (!editor || !editor.contains(node)) return;
+      this.lastCaretEditor = editor;
+      this.lastCaretNode = node;
+      this.lastCaretOffset = range.startOffset;
+      this.lastCaretTimestamp = Date.now();
+    });
 
     // =========================================
     // EVENTOS DE TROCA DE ABA
     // =========================================
-
-    // Ao sair do Operator -> Edit (salva posição e para scroll)
-    if (tabEditTrigger) {
-      tabEditTrigger.addEventListener('show.bs.tab', () => {
-        this.cancelPendingTabWork();
-        // Para o scroll e salva posição ANTES de sair da aba Operator
-        this.clearPendingNavigation();
-        this.clearEditorReference();
-        this.stopScrollIfRunning();
-
-        // 🆕 Captura qual palavra está visível no Operator para sincronizar com o Editor
-        this.captureOperatorVisibleWord();
-      });
-
-      tabEditTrigger.addEventListener('shown.bs.tab', () => {
-        this.currentTabTriggerId = 'edit-tab';
-        this.editorReferenceArmed = false;
-
-        // Força reflow completo da aba Edit
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            this.forceEditTabReflow();
-
-            // 🆕 Sincroniza a posição do Editor com o Operator
-            this.scheduleTabWork(() => {
-              this.syncOperatorPositionToEditor();
-            }, 100);
-
-            // Dispara resize para recalcular layouts
-            window.dispatchEvent(new Event('resize'));
-
-            // Foca no editor de texto
-            this.scheduleTabWork(() => {
-              const activeEditor = document.querySelector('.text-editor-area');
-              if (activeEditor) {
-                activeEditor.focus({ preventScroll: true });
-              }
-            }, 50);
-          });
-        });
-      });
-    }
 
     // Ao sair do Operator -> Home (salva posição e para scroll)
     if (tabHomeTrigger) {
@@ -229,9 +142,6 @@ const TabNavigationManager = {
         this.clearPendingNavigation();
         this.clearEditorReference();
         this.stopScrollIfRunning();
-
-        // 🆕 Captura qual palavra está visível no Operator para possível sincronização futura
-        this.captureOperatorVisibleWord();
       });
 
       tabHomeTrigger.addEventListener('shown.bs.tab', () => {
@@ -260,31 +170,10 @@ const TabNavigationManager = {
       // Pré-aplica posição ANTES da aba aparecer (evita salto visual)
       tabOperatorTrigger.addEventListener('show.bs.tab', () => {
         this.cancelPendingTabWork();
-        // Limpa palavra capturada do Operator (não queremos sincronizar ao voltar)
         this.operatorVisibleWordIndex = null;
 
-        // ===================================================================
-        // CORREÇÃO: Tentar usar caret do editor se não há navegação pendente
-        // ===================================================================
-        // Se o usuário saiu da aba edit deixando o cursor em uma posição,
-        // detectar isso e navegar automaticamente
-        if (this.pendingWordIndex === null && this.currentTabTriggerId === 'edit-tab') {
-          // 0) Prioriza seleção/caret vivos e recentes (clique simples/duplo clique)
-          if (this.pendingWordIndex === null) {
-            this.tryUseLiveSelectionAsPendingNavigation(true);
-          }
-          // 1) Se não houver seleção/caret recente, usa ponto real do mouse no editor
-          if (this.pendingWordIndex === null) {
-            this.tryUsePointerPointAsPendingNavigation();
-          }
-          // 2) Fallback final para caret rastreado
-          if (this.pendingWordIndex === null) {
-            this.tryUseCaretAsPendingNavigation();
-          }
-        }
-
-        // Restaura a posição salva ao voltar — sem saltar para o caret do Edit.
-        // Navegação por palavra só via menu "Go to Operator" ou navigateToWordIndex().
+        // Restaura a posição salva ao voltar. Navegação por palavra só via menu
+        // "Go to Prompter" (contexto do editor) ou navigateToWordIndex().
         this.preApplyScrollPosition();
       });
 
@@ -409,7 +298,9 @@ const TabNavigationManager = {
 
       console.log(`📍 Palavra/cursor capturado: "${contextText || '[cursor]'}" (índice: ${wordIndex}, charOffset: ${charOffset})`);
 
-      // Muda para a aba Operator
+      // O modo edição cobre o prompter: fecha-o para revelar o trecho de destino.
+      window.dispatchEvent(new CustomEvent('operator-edit-panel:close'));
+
       this.switchToOperatorTab();
     }
   },
@@ -535,6 +426,56 @@ const TabNavigationManager = {
       this.lastCaretEditor = null;
       this.lastCaretNode = null;
     }
+  },
+
+  /**
+   * captureEditorCaretAsPendingNavigation
+   * -------------------------------------
+   * Ao sair do modo edição: transforma o último caret do editor em navegação
+   * pendente (índice de palavra + offset) para o prompter abrir nesse ponto.
+   * Chamar ANTES de ocultar o painel. Retorna true se capturou.
+   */
+  captureEditorCaretAsPendingNavigation: function () {
+    if (this.hasPendingNavigation()) return true;
+
+    const editor = this.lastCaretEditor;
+    const node = this.lastCaretNode;
+    if (!editor || !node || !document.contains(editor) || !document.contains(node)) return false;
+
+    try {
+      const maxOffset = node.nodeType === Node.TEXT_NODE
+        ? (node.textContent || '').length
+        : node.childNodes.length;
+      const safeOffset = Math.max(0, Math.min(this.lastCaretOffset || 0, maxOffset));
+      const range = document.createRange();
+      range.setStart(node, safeOffset);
+      range.collapse(true);
+
+      const wordIndex = this.calculateWordIndex(editor, range);
+      if (wordIndex === null || wordIndex < 0) return false;
+
+      const raw = node.nodeType === Node.TEXT_NODE ? (node.textContent || '') : '';
+      const left = raw.slice(0, safeOffset).match(/\S+$/)?.[0] || '';
+      const right = raw.slice(safeOffset).match(/^\S+/)?.[0] || '';
+
+      this.pendingWordIndex = wordIndex;
+      this.pendingNavigationContext = {
+        text: (left + right).trim(),
+        charOffset: this.calculateCharacterOffset(editor, node, safeOffset),
+        timestamp: Date.now()
+      };
+      return true;
+    } catch (err) {
+      console.warn('⚠️ captureEditorCaretAsPendingNavigation falhou', err);
+      return false;
+    }
+  },
+
+  /** Aplica a navegação pendente (após o HTML do prompter estar sincronizado). */
+  applyPendingNavigationNow: function () {
+    this.scheduleTransitionFrame(() => {
+      this.scheduleTransitionFrame(() => this.restoreOrNavigate());
+    });
   },
 
   // ============================================================
@@ -968,7 +909,21 @@ const TabNavigationManager = {
    * Ativa programaticamente a aba Operator.
    */
   switchToOperatorTab: function () {
+    const operatorPane = document.getElementById('operator-tab-pane');
     const operatorTab = document.getElementById('operator-tab');
+    const isOperatorAlreadyActive = !!(
+      operatorPane &&
+      (operatorPane.classList.contains('active') || operatorPane.classList.contains('show'))
+    );
+
+    if (isOperatorAlreadyActive) {
+      this.cancelPendingTabWork();
+      this.scheduleTransitionFrame(() => {
+        this.restoreOrNavigate();
+      });
+      return;
+    }
+
     if (operatorTab) {
       // Usa a API do Bootstrap para ativar a aba
       const bsTab = new bootstrap.Tab(operatorTab);
@@ -1359,147 +1314,6 @@ const TabNavigationManager = {
     requestAnimationFrame(() => {
       window.dispatchEvent(new Event('resize'));
     });
-  },
-
-  // ============================================================
-  // FUNÇÃO: Forçar reflow da aba Edit
-  // ============================================================
-  /**
-   * forceEditTabReflow
-   * -------------------
-   * Força o navegador a redesenhar a aba Edit para evitar
-   * problemas de renderização após troca de aba.
-   */
-  forceEditTabReflow: function () {
-    const editPane = document.getElementById('edit-tab-pane');
-    const formatBar = document.querySelector('.format-bar, .toolbar-format');
-    const editorContainer = document.getElementById('document-content-container');
-    const textEditor = document.querySelector('.text-editor-area');
-
-    // Força reflow do painel Edit
-    if (editPane) {
-      void editPane.offsetHeight;
-      void editPane.offsetWidth;
-      void editPane.getBoundingClientRect();
-
-      editPane.classList.add('force-reflow');
-      void editPane.offsetHeight;
-      editPane.classList.remove('force-reflow');
-    }
-
-    // Força reflow da barra de formatação
-    if (formatBar) {
-      void formatBar.offsetHeight;
-      formatBar.style.visibility = 'visible';
-      formatBar.style.opacity = '1';
-    }
-
-    // Força reflow do container do editor
-    if (editorContainer) {
-      void editorContainer.offsetHeight;
-      void editorContainer.scrollHeight;
-    }
-
-    // Força reflow do editor de texto
-    if (textEditor) {
-      textEditor.style.opacity = '0.99';
-      void textEditor.offsetHeight;
-      textEditor.style.opacity = '1';
-    }
-
-    console.log('✅ forceEditTabReflow executado');
-  },
-
-  // ============================================================
-  // FUNÇÃO: Sincronizar posição do Operator para o Editor
-  // ============================================================
-  /**
-   * syncOperatorPositionToEditor
-   * -----------------------------
-   * Quando voltar do Operator para o Edit, sincroniza a posição
-   * do texto no Editor para mostrar a palavra que estava visível
-   * no Operator.
-   */
-  syncOperatorPositionToEditor: function () {
-    console.log('🔄 syncOperatorPositionToEditor: INICIANDO sincronização...');
-
-    // Se não há palavra capturada, não faz nada
-    if (this.operatorVisibleWordIndex === null) {
-      console.log('ℹ️ Nenhuma palavra do Operator para sincronizar com o Editor (operatorVisibleWordIndex é null)');
-      return;
-    }
-
-    console.log(`📍 Palavra capturada do Operator: índice ${this.operatorVisibleWordIndex}`);
-
-    const editor = document.querySelector('.editor-container.active .text-editor-area');
-    if (!editor) {
-      console.log('❌ syncOperatorPositionToEditor: editor ativo não encontrado');
-      console.log('Tentando buscar qualquer .text-editor-area...');
-      const anyEditor = document.querySelector('.text-editor-area');
-      if (anyEditor) {
-        console.log('⚠️ Encontrado .text-editor-area mas sem .editor-container.active');
-      } else {
-        console.log('❌ Nenhum .text-editor-area encontrado no DOM');
-      }
-      return;
-    }
-
-    console.log('✅ Editor ativo encontrado:', editor.className);
-
-    const targetIndex = this.operatorVisibleWordIndex;
-    console.log(`🎯 Buscando palavra #${targetIndex} no Editor...`);
-
-    // Encontra a palavra no editor
-    const wordLocation = this.findWordByIndexInEditor(editor, targetIndex);
-
-    if (wordLocation) {
-      console.log(`✅ Palavra encontrada no Editor: "${wordLocation.word}" (node: ${wordLocation.node.nodeType})`);
-
-      try {
-        // Cria um range para obter a posição Y da palavra
-        const range = document.createRange();
-        range.setStart(wordLocation.node, wordLocation.startOffset);
-        range.setEnd(wordLocation.node, wordLocation.endOffset);
-
-        // Obtém a posição da palavra no editor
-        const rect = range.getBoundingClientRect();
-        const editorRect = editor.getBoundingClientRect();
-
-        console.log('📐 Posições:', {
-          wordRect: { top: rect.top, bottom: rect.bottom },
-          editorRect: { top: editorRect.top, height: editor.clientHeight },
-          editorScrollTop: editor.scrollTop
-        });
-
-        // Calcula o scroll necessário para posicionar a palavra próxima ao topo (30%)
-        const targetScroll = editor.scrollTop + (rect.top - editorRect.top) - (editor.clientHeight * 0.3);
-        const finalScroll = Math.max(0, targetScroll);
-
-        console.log(`📍 Scroll calculado: atual=${editor.scrollTop}px, alvo=${finalScroll.toFixed(0)}px`);
-        console.log(`🎬 Aplicando scroll para: ${finalScroll.toFixed(0)}px (palavra: "${wordLocation.word}")`);
-
-        // Aplica o scroll suavemente (o próprio editor é scrollável)
-        editor.scrollTo({
-          top: finalScroll,
-          behavior: 'smooth'
-        });
-
-        // Verifica após um momento se o scroll foi aplicado
-        setTimeout(() => {
-          console.log(`✅ Scroll aplicado. Posição final: ${editor.scrollTop}px`);
-        }, 300);
-
-        console.log(`✅✅ Editor sincronizado com sucesso para palavra #${targetIndex}`);
-      } catch (error) {
-        console.error('❌ Erro ao sincronizar posição:', error);
-      }
-    } else {
-      console.warn(`❌ Palavra #${targetIndex} não encontrada no Editor`);
-    }
-
-    // Limpa a palavra capturada após usar
-    console.log('🧹 Limpando operatorVisibleWordIndex...');
-    this.operatorVisibleWordIndex = null;
   },
 
   // ============================================================

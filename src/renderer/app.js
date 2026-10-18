@@ -265,7 +265,9 @@ document.addEventListener("DOMContentLoaded", () => {
       ipcRenderer.send("save-settings", { defaultFont: fontName });
     } catch (_) { }
 
-    if (typeof syncContentToPrompter === "function") syncContentToPrompter();
+    if (typeof syncContentToPrompter === "function") {
+      syncContentToPrompter({ preserveVisibleAnchor: true });
+    }
     if (typeof markDocumentAsUnsaved === "function" && typeof activeDocumentId !== "undefined") {
       markDocumentAsUnsaved(activeDocumentId);
     }
@@ -399,6 +401,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const underlineBtn = document.getElementById("underline-btn");
   const fontFamilySelect = document.getElementById("font-family-select");
   const fontSizeSelect = document.getElementById("font-size-select");
+  const lineSpacingToolbar = document.getElementById("line-spacing-toolbar");
+  const prompterMarginSelect = document.getElementById("prompter-margin-select");
+  const operatorEditPanel = document.getElementById("operator-edit-panel");
 
   // ============================================================
   // SEÇÃO 5: SELETORES DO DOM - OPERATOR TOOLBAR
@@ -414,6 +419,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const opBtnReset = document.getElementById("op-btn-reset");
   const opBtnLoop = document.getElementById("op-btn-loop");
   const opBtnSettings = document.getElementById("op-btn-settings");
+  const opBtnToggleEditPanel = document.getElementById("op-btn-toggle-edit-panel");
 
   // ============================================================
   // SEÇÃO 6: SELETORES DO DOM - CONTROLES DE PLAYBACK
@@ -430,6 +436,301 @@ document.addEventListener("DOMContentLoaded", () => {
   // O elemento que vai rolar e o Marcador
   const prompterContainer = document.querySelector(".prompter-in-control");
   const cueMarkerControl = document.getElementById("cueMarker-control");
+
+  // Seleciona um valor no <select>; se a opção não existir, cria uma para nunca
+  // exibir o campo vazio (ex.: espaçamento/margem/tamanho vindos das Preferences).
+  function setSelectValueSafe(select, value, label) {
+    if (!select || value === undefined || value === null || value === "") return;
+    const strValue = String(value);
+    let option = Array.from(select.options).find((o) => o.value === strValue);
+    if (!option) {
+      option = new Option(label || strValue, strValue);
+      select.add(option);
+    }
+    select.value = strValue;
+  }
+
+  // O modo edição é o PRÓPRIO texto do prompter, editável: copia para o painel o
+  // mesmo fundo, cor, escala de fonte e margens do prompter (via variáveis CSS).
+  function applyPrompterLookToEditPanel() {
+    const control = document.getElementById("prompterText-control");
+    const container = document.querySelector(".prompter-in-control");
+    const editor = getActiveTextEditorArea();
+    if (!operatorEditPanel || !control || !container) return;
+
+    const controlStyle = window.getComputedStyle(control);
+    const bg = window.getComputedStyle(container).backgroundColor;
+    const fg = controlStyle.color;
+
+    // Escala = tamanho (px) do prompter / tamanho (px) base do editor.
+    let zoom = 1;
+    if (editor) {
+      const prompterPx = parseFloat(controlStyle.fontSize);
+      const editorPx = parseFloat(window.getComputedStyle(editor).fontSize);
+      if (prompterPx > 0 && editorPx > 0) zoom = prompterPx / editorPx;
+    }
+
+    const style = operatorEditPanel.style;
+    style.setProperty("--op-edit-bg", bg);
+    style.setProperty("--op-edit-fg", fg);
+    style.setProperty("--op-edit-zoom", String(zoom));
+    style.setProperty("--op-edit-pad-l", controlStyle.paddingLeft);
+    style.setProperty("--op-edit-pad-r", controlStyle.paddingRight);
+  }
+
+  // Mantém o visual do modo edição (escala/cor/margens) em dia quando o prompter
+  // muda com o painel aberto (ex.: Prompter Font Scale vindo das Preferences).
+  function refreshEditPanelLookIfOpen() {
+    if (operatorEditPanel && !operatorEditPanel.classList.contains("collapsed")) {
+      applyPrompterLookToEditPanel();
+    }
+  }
+
+  // Âncora (parágrafo + fração) de uma linha de referência dentro de uma lista de blocos.
+  function captureAnchorFromBlocks(blocks, refY) {
+    if (!blocks.length) return null;
+
+    let chosen = blocks.length - 1;
+    for (let i = 0; i < blocks.length; i++) {
+      if (refY < blocks[i].getBoundingClientRect().bottom) {
+        chosen = i;
+        break;
+      }
+    }
+
+    const r = blocks[chosen].getBoundingClientRect();
+    return {
+      idx: chosen,
+      totalBlocks: blocks.length,
+      fraction: Math.max(0, Math.min(1, (refY - r.top) / (r.height || 1))),
+      text: normalizeAnchorText(blocks[chosen].textContent),
+      prevText: chosen > 0 ? normalizeAnchorText(blocks[chosen - 1].textContent) : "",
+      nextText: chosen < blocks.length - 1 ? normalizeAnchorText(blocks[chosen + 1].textContent) : "",
+    };
+  }
+
+  const EDITOR_REF_FRAC = 0.3;
+
+  // Trecho que o usuário está vendo no EDITOR (linha a 30% do topo da área visível).
+  function captureEditorAnchorInfo() {
+    const editor = getActiveTextEditorArea();
+    if (!editor || editor.clientHeight <= 0) return null;
+
+    const anchor = captureAnchorFromBlocks(
+      getBlockElements(editor),
+      editor.getBoundingClientRect().top + editor.clientHeight * EDITOR_REF_FRAC
+    );
+    return anchor ? { anchor, cueFrac: EDITOR_REF_FRAC } : null;
+  }
+
+  // Trecho sob a seta do prompter, no formato aceito por syncEditorScrollToPrompterAnchor.
+  function capturePrompterAnchorInfo() {
+    const container = document.querySelector(".prompter-in-control");
+    if (!container || container.clientHeight <= 0) return null;
+
+    const anchor = captureCueAnchor();
+    if (!anchor) return null;
+
+    const rect = container.getBoundingClientRect();
+    return {
+      anchor,
+      cueFrac: Math.max(0, Math.min(1, (getCueViewportY() - rect.top) / (rect.height || 1))),
+    };
+  }
+
+  // Posiciona o editor no trecho descrito por anchorInfo.
+  function syncEditorScrollToPrompterAnchor(anchorInfo) {
+    const editor = getActiveTextEditorArea();
+    if (!editor || !anchorInfo || !anchorInfo.anchor) return;
+
+    const blocks = getBlockElements(editor);
+    if (!blocks.length) return;
+
+    const idx = findAnchorBlockIndex(blocks, anchorInfo.anchor);
+    const blockRect = blocks[idx].getBoundingClientRect();
+    const pointY = blockRect.top + anchorInfo.anchor.fraction * (blockRect.height || 0);
+    const editorRect = editor.getBoundingClientRect();
+    const targetY = editorRect.top + editor.clientHeight * anchorInfo.cueFrac;
+
+    editor.scrollTop = Math.max(0, editor.scrollTop + (pointY - targetY));
+  }
+
+  // Qualquer interação manual cancela re-ancoragens pendentes (edição e mudanças de estilo).
+  let _positionHoldRunId = 0;
+  let _activeHold = null;
+  function invalidatePositionHolds() {
+    _positionHoldRunId += 1;
+    _activeHold = null;
+  }
+  const cancelPositionHolds = (e) => {
+    if (e && e.target && e.target.closest && e.target.closest("#toolbar-content, #operator-toolbar")) return;
+    invalidatePositionHolds();
+  };
+  document.addEventListener("wheel", cancelPositionHolds, { capture: true, passive: true });
+  document.addEventListener("pointerdown", cancelPositionHolds, true);
+  document.addEventListener("keydown", cancelPositionHolds, true);
+
+  function runAtCheckpoints(delays, runId, fn) {
+    delays.forEach((ms) => {
+      setTimeout(() => {
+        if (runId !== _positionHoldRunId) return;
+        fn();
+      }, ms);
+    });
+  }
+
+  /**
+   * Segura o ponto de leitura (prompter) e o ponto visto no editor durante uma
+   * mudança de estilo/configuração (fonte, tamanho, cor, margem, escala...).
+   * Reaplica a âncora após o reflow até o layout estabilizar, então o texto
+   * nunca volta ao início nem se desloca.
+   */
+  function holdReadPosition() {
+    const operatorPane = document.getElementById("operator-tab-pane");
+    if (!operatorPane || !operatorPane.classList.contains("active")) return;
+
+    const runId = ++_positionHoldRunId;
+    const container = document.querySelector(".prompter-in-control");
+    const control = document.getElementById("prompterText-control");
+    if (!container || !control) return;
+
+    // Mudanças encadeadas (ação + settings devolvidas pelo main) reutilizam a âncora
+    // original: recapturar no meio do reflow guardaria um ponto já deslocado.
+    let hold = _activeHold && Date.now() - _activeHold.time < 1500 ? _activeHold : null;
+    if (!hold) {
+      const editing = !!operatorEditPanel && !operatorEditPanel.classList.contains("collapsed");
+      hold = {
+        time: Date.now(),
+        promptAnchor: container.clientHeight > 0 ? captureCueAnchor() : null,
+        fallbackScroll: ScrollEngine.decimalScroll || container.scrollTop || 0,
+        editorInfo: editing ? captureEditorAnchorInfo() : null,
+      };
+    }
+    _activeHold = hold;
+    const { promptAnchor, fallbackScroll, editorInfo } = hold;
+
+    runAtCheckpoints([0, 80, 250, 600, 1200], runId, () => {
+      if (!ScrollEngine.isRunning) {
+        let restored = false;
+        if (promptAnchor) {
+          ScrollEngine.invalidateMetrics();
+          restored = restoreCueAnchor(promptAnchor);
+        }
+        if (!restored && fallbackScroll > 0 && Math.abs(container.scrollTop - fallbackScroll) > 1) {
+          ScrollEngine.decimalScroll = fallbackScroll;
+          container.scrollTop = fallbackScroll;
+        }
+
+        const contentH = control.offsetHeight || control.scrollHeight || 1;
+        ipcRenderer.send("sync-scroll-position", {
+          textPercent: Math.min(1, Math.max(0, (ScrollEngine.decimalScroll || 0) / contentH)),
+        });
+      }
+
+      if (editorInfo && !operatorEditPanel.classList.contains("collapsed")) {
+        syncEditorScrollToPrompterAnchor(editorInfo);
+      }
+    });
+  }
+
+  // Esc captura o trecho ANTES de qualquer mudança de layout (sair do fullscreen,
+  // abrir o painel...), para o editor abrir exatamente no ponto que o operador via.
+  let _escPreAnchor = null;
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.key !== "Escape") return;
+      const collapsed = !operatorEditPanel || operatorEditPanel.classList.contains("collapsed");
+      _escPreAnchor = collapsed ? { info: capturePrompterAnchorInfo(), time: Date.now() } : null;
+    },
+    true
+  );
+
+  // Estado do último fechamento do painel: permite reabrir (Esc, Esc) exatamente
+  // onde o editor estava, se o prompter não foi movido nesse intervalo.
+  let _lastEditClose = null;
+
+  function setOperatorEditPanelCollapsed(
+    collapsed,
+    { navigateToCaret: wantCaretNav = true, anchorInfo: providedAnchor = null } = {}
+  ) {
+    if (!operatorEditPanel) return;
+
+    const wasCollapsed = operatorEditPanel.classList.contains("collapsed");
+    if (wasCollapsed !== collapsed) {
+      invalidatePositionHolds();
+      let anchorInfo = null;
+
+      if (!collapsed) {
+        // Descarta caret antigo: só vale o que for posicionado nesta sessão de edição.
+        if (typeof TabNavigationManager !== "undefined") {
+          TabNavigationManager.lastCaretEditor = null;
+          TabNavigationManager.lastCaretNode = null;
+        }
+
+        // Ao abrir a edição, pausa a rolagem para o texto não fugir enquanto digita.
+        if (typeof ScrollEngine !== "undefined" && ScrollEngine.isRunning) {
+          ScrollEngine.pause();
+          ipcRenderer.send("control-prompter", "pause");
+        }
+
+        // Trecho sob a seta ANTES de cobrir o prompter (ou capturado antes do Esc).
+        anchorInfo = providedAnchor || capturePrompterAnchorInfo();
+
+        // Reabertura sem o prompter ter se movido: volta ao ponto exato da edição anterior.
+        const promptScroll = ScrollEngine.decimalScroll || 0;
+        if (_lastEditClose && Math.abs(_lastEditClose.promptScroll - promptScroll) < 1 && _lastEditClose.editorInfo) {
+          anchorInfo = _lastEditClose.editorInfo;
+        }
+      } else {
+        _lastEditClose = {
+          editorInfo: captureEditorAnchorInfo(),
+          promptScroll: ScrollEngine.decimalScroll || 0,
+        };
+      }
+
+      // Saindo da edição: o prompter deve abrir exatamente no ponto onde o cursor estava.
+      let navigateToCaret = false;
+      if (collapsed && wantCaretNav && typeof TabNavigationManager !== "undefined") {
+        navigateToCaret = TabNavigationManager.captureEditorCaretAsPendingNavigation();
+        if (navigateToCaret) flushSyncContentToPrompter();
+      }
+
+      // O painel é uma camada sobre o prompter (não altera o tamanho dele), então
+      // a posição de leitura do prompter é preservada sem nenhum ajuste.
+      operatorEditPanel.classList.toggle("collapsed", collapsed);
+
+      if (navigateToCaret) TabNavigationManager.applyPendingNavigationNow();
+
+      if (!collapsed) {
+        applyPrompterLookToEditPanel();
+        syncEditorScrollToPrompterAnchor(anchorInfo);
+
+        // O reflow (janela saindo do fullscreen, fontes) pode mover o editor: reaplica.
+        const runId = _positionHoldRunId;
+        runAtCheckpoints([60, 200, 450, 900], runId, () => {
+          if (!operatorEditPanel.classList.contains("collapsed")) {
+            applyPrompterLookToEditPanel();
+            syncEditorScrollToPrompterAnchor(anchorInfo);
+          }
+        });
+      }
+    }
+
+    document.body.classList.toggle("operator-edit-mode", !collapsed);
+
+    if (opBtnToggleEditPanel) {
+      opBtnToggleEditPanel.classList.toggle("active", !collapsed);
+      opBtnToggleEditPanel.setAttribute(
+        "title",
+        collapsed ? "Edit script (Esc)" : "Back to prompter (Esc)"
+      );
+    }
+  }
+
+  function ensureOperatorEditPanelVisible(anchorInfo = null) {
+    setOperatorEditPanelCollapsed(false, { anchorInfo });
+  }
 
   // ============================================================
   // SEÇÃO 7: SELETORES DO DOM - MODAL DE BUSCA
@@ -505,7 +806,7 @@ document.addEventListener("DOMContentLoaded", () => {
     isInverted: false,
     isLooping: false,
     marginIndex: 0,
-    margins: ["0px", "10%", "20%", "30%"],
+    margins: [40, 0, 100, 200, 300],
   };
 
   // Preferências globais carregadas do main process
@@ -577,6 +878,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   ipcRenderer.on('settings-updated-globally', (event, settings) => {
     console.log("⚙️ Settings recebidas:", settings);
+
+    // Qualquer mudança de configuração (fonte, escala, cores, margens...) mantém o ponto de leitura.
+    holdReadPosition();
 
     // Guarda o defaultFontSize anterior ANTES de sobrescrever globalPrefs,
     // para detectar se o usuário realmente alterou o tamanho nas Preferences.
@@ -690,7 +994,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (typeof applySettingsToVisuals === 'function') {
-      applySettingsToVisuals();
+      preserveOperatorReadPosition(() => {
+        applySettingsToVisuals();
+      }, 1);
+      refreshEditPanelLookIfOpen();
     }
   });
 
@@ -1067,11 +1374,24 @@ document.addEventListener("DOMContentLoaded", () => {
       prompterContainer.style.display = 'block';
       prompterText.style.paddingTop = '40px';
 
-      const userMargin = prefs.prompterMargin || 40;
+      const parsedMargin = Number.parseInt(prefs.prompterMargin, 10);
+      const userMargin = Number.isFinite(parsedMargin) ? parsedMargin : 40;
       const safeZoneArrow = 20;
       prompterText.style.paddingLeft = `${userMargin + safeZoneArrow}px`;
       prompterText.style.paddingRight = `${userMargin}px`;
       prompterText.style.lineHeight = currentLineSpacing || prefs.lineSpacing || 1.5;
+
+      if (lineSpacingToolbar) {
+        setSelectValueSafe(lineSpacingToolbar, parseFloat(currentLineSpacing || prefs.lineSpacing || 1.5), `Line ${parseFloat(currentLineSpacing || prefs.lineSpacing || 1.5)}x`);
+      }
+      if (prompterMarginSelect) {
+        setSelectValueSafe(prompterMarginSelect, userMargin, `Margin ${userMargin}`);
+      }
+
+      const foundMarginIndex = operatorState.margins.indexOf(Number(userMargin));
+      if (foundMarginIndex >= 0) {
+        operatorState.marginIndex = foundMarginIndex;
+      }
 
       applyPrompterTextAlign(getEditorTextAlign(getActiveTextEditorArea()));
 
@@ -1461,7 +1781,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (_syncPrompterTimer) {
         clearTimeout(_syncPrompterTimer);
         _syncPrompterTimer = null;
-        if (typeof syncContentToPrompter === "function") syncContentToPrompter();
+        if (typeof syncContentToPrompter === "function") {
+          syncContentToPrompter();
+        }
       }
 
       if (typeof updateReadProgress === "function") updateReadProgress(true, true);
@@ -1734,7 +2056,9 @@ document.addEventListener("DOMContentLoaded", () => {
       document.execCommand("foreColor", false, "#000000");
 
       // Sincroniza imediatamente
-      if (typeof syncContentToPrompter === "function") syncContentToPrompter();
+      if (typeof syncContentToPrompter === "function") {
+        syncContentToPrompter({ preserveVisibleAnchor: true });
+      }
       saveSelection();
     });
   }
@@ -1894,7 +2218,9 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       // Força o envio imediato pro Operator
-      if (typeof syncContentToPrompter === "function") syncContentToPrompter();
+      if (typeof syncContentToPrompter === "function") {
+        syncContentToPrompter({ preserveVisibleAnchor: true });
+      }
 
       saveSelection();
       const editor = document.querySelector(".text-editor-area");
@@ -2025,7 +2351,9 @@ document.addEventListener("DOMContentLoaded", () => {
       // (Opcional) Se quiser inserir com um espaço depois, use: '* '
 
       // Sincroniza com o prompter imediatamente
-      if (typeof syncContentToPrompter === "function") syncContentToPrompter();
+      if (typeof syncContentToPrompter === "function") {
+        syncContentToPrompter({ preserveVisibleAnchor: true });
+      }
     });
   }
 
@@ -3006,9 +3334,9 @@ document.addEventListener("DOMContentLoaded", () => {
               document.body.classList.remove("operator-fullscreen-mode");
               ipcRenderer.send("control-window", "fullscreen");
             });
-          } else {
-            ScrollEngine.stop();
           }
+          // Fora do fullscreen o Esc NÃO para/zera o prompter: o handler abaixo
+          // pausa (se estiver rolando) e alterna o modo edição, mantendo a posição.
         },
         pauseResume: () => {
           if (ScrollEngine.isRunning) {
@@ -3172,16 +3500,31 @@ document.addEventListener("DOMContentLoaded", () => {
     const operatorPane = document.getElementById("operator-tab-pane");
     if (!operatorPane || !operatorPane.classList.contains("show")) return;
 
-    // Bloqueia Tab para evitar navegação indesejada e abertura de modais
+    // Bloqueia Tab no prompter para evitar navegação indesejada e abertura de modais.
+    // Dentro do painel de edição o Tab segue o comportamento normal.
     if (e.key === "Tab") {
+      if (e.target && e.target.closest && e.target.closest("#operator-edit-panel")) return;
       e.preventDefault();
       e.stopPropagation();
       return;
     }
 
-    // Trata Escape para sair do fullscreen e voltar para a aba Edit
+    // Esc: sai do fullscreen e abre o modo de edição na própria Operator;
+    // fora do fullscreen alterna entre modo edição e modo operação.
     if (e.key === "Escape") {
-      if (document.body.classList.contains("operator-fullscreen-mode")) {
+      if (document.querySelector(".modal.show")) return;
+      const quickMsg = document.getElementById("quick-message-modal");
+      if (quickMsg && !quickMsg.classList.contains("d-none")) return;
+      const inFullscreen = document.body.classList.contains("operator-fullscreen-mode");
+      // Âncora capturada no início do Esc (antes de sair do fullscreen alterar o layout).
+      const preAnchor =
+        _escPreAnchor && Date.now() - _escPreAnchor.time < 600 ? _escPreAnchor.info : null;
+
+      e.preventDefault();
+      // Impede o HotkeyHandler de também chamar ScrollEngine.stop() (resetaria o scroll).
+      e.stopImmediatePropagation();
+
+      if (inFullscreen) {
         const run = (typeof runFullscreenChangePreservingAnchor === "function")
           ? runFullscreenChangePreservingAnchor
           : (fn) => fn();
@@ -3189,9 +3532,14 @@ document.addEventListener("DOMContentLoaded", () => {
           document.body.classList.remove("operator-fullscreen-mode");
           ipcRenderer.send("control-window", "fullscreen");
         });
+        ensureOperatorEditPanelVisible(preAnchor);
+        getActiveTextEditorArea()?.focus({ preventScroll: true });
+      } else if (operatorEditPanel && operatorEditPanel.classList.contains("collapsed")) {
+        ensureOperatorEditPanelVisible(preAnchor);
+        getActiveTextEditorArea()?.focus({ preventScroll: true });
       } else {
-        e.preventDefault();
-        document.getElementById("edit-tab")?.click();
+        setOperatorEditPanelCollapsed(true, { navigateToCaret: false });
+        document.querySelector(".prompter-in-control")?.focus({ preventScroll: true });
       }
     }
   });
@@ -4079,6 +4427,63 @@ document.addEventListener("DOMContentLoaded", () => {
 
   }
 
+  function preserveOperatorReadPosition(applyChange, stabilizePasses = 0) {
+    if (typeof applyChange !== "function") return;
+
+    const control = document.getElementById("prompterText-control");
+    const container = document.querySelector(".prompter-in-control");
+
+    if (!control || !container) {
+      applyChange();
+      return;
+    }
+
+    const wasRunning = typeof ScrollEngine !== "undefined" && ScrollEngine.isRunning;
+    const fallbackScroll =
+      typeof ScrollEngine !== "undefined" && Number.isFinite(ScrollEngine.decimalScroll)
+        ? ScrollEngine.decimalScroll
+        : (container.scrollTop || 0);
+    const cueAnchor = typeof captureCueAnchor === "function" ? captureCueAnchor() : null;
+
+    applyChange();
+
+    let restoredByAnchor = false;
+    if (cueAnchor && typeof restoreCueAnchor === "function") {
+      restoredByAnchor = restoreCueAnchor(cueAnchor);
+      if (restoredByAnchor && stabilizePasses > 0 && typeof stabilizeCueAnchorAfterRemoteEdit === "function") {
+        stabilizeCueAnchorAfterRemoteEdit(cueAnchor, stabilizePasses);
+      }
+    }
+
+    if (!restoredByAnchor) {
+      const containerHeight = container.clientHeight || 0;
+      const contentHeight = control.offsetHeight || control.scrollHeight || 0;
+      const maxScroll = Math.max(0, contentHeight - containerHeight + containerHeight / 2);
+      const clampedScroll = Math.max(0, Math.min(fallbackScroll, maxScroll));
+
+      if (typeof ScrollEngine !== "undefined") {
+        ScrollEngine.decimalScroll = clampedScroll;
+      }
+
+      if (wasRunning) {
+        control.style.willChange = "transform";
+        control.style.transform = `translate3d(0, -${clampedScroll}px, 0)`;
+      } else {
+        control.style.transform = "none";
+        container.style.overflowY = "auto";
+        container.scrollTop = clampedScroll;
+      }
+    }
+
+    const contentH = control.offsetHeight || control.scrollHeight || 1;
+    const currentScroll =
+      typeof ScrollEngine !== "undefined" && Number.isFinite(ScrollEngine.decimalScroll)
+        ? ScrollEngine.decimalScroll
+        : container.scrollTop || 0;
+    const textPercent = Math.min(1, Math.max(0, currentScroll / contentH));
+    ipcRenderer.send("sync-scroll-position", { textPercent });
+  }
+
   function applyTextAlignment(command) {
     const editor = getActiveTextEditorArea();
     if (!editor) return;
@@ -4089,7 +4494,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.execCommand(command, false, null);
 
     markDocumentAsUnsaved(activeDocumentId);
-    syncContentToPrompter();
+    syncContentToPrompter({ preserveVisibleAnchor: true });
     updateFormatMenuState();
   }
 
@@ -4103,7 +4508,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const editor = getActiveTextEditorArea();
     if (editor) editor.focus();
     markDocumentAsUnsaved(activeDocumentId);
-    syncContentToPrompter();
+    syncContentToPrompter({ preserveVisibleAnchor: true });
     updateFormatMenuState();
   }
 
@@ -4116,6 +4521,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!isNaN(numVal) && numVal > 0) {
       currentLineSpacing = numVal;
       if (globalPrefs) globalPrefs.lineSpacing = numVal;
+      if (lineSpacingToolbar) {
+        setSelectValueSafe(lineSpacingToolbar, numVal, `Line ${numVal}x`);
+      }
     }
 
     applyStyle("formatBlock", "div");
@@ -4126,7 +4534,7 @@ document.addEventListener("DOMContentLoaded", () => {
       node.style.lineHeight = value;
     }
     markDocumentAsUnsaved(activeDocumentId);
-    syncContentToPrompter();
+    syncContentToPrompter({ preserveVisibleAnchor: true });
   }
 
   // ============================================================
@@ -4842,28 +5250,96 @@ document.addEventListener("DOMContentLoaded", () => {
     ipcRenderer.send("save-settings", { mirrorMode: transformVal });
   }
 
-  if (opBtnMargin) {
-    // Definimos as margens em PIXELS
-    operatorState.margins = [0, 100, 200, 300];
+  function applyPrompterMargins(marginVal, shouldPersist = true) {
+    const numericMargin = Number.parseInt(marginVal, 10);
+    if (!Number.isFinite(numericMargin)) return;
 
+    const textControl = document.getElementById("prompterText-control");
+    if (!textControl) return;
+
+    preserveOperatorReadPosition(() => {
+      const safeZoneArrow = 20;
+      textControl.style.paddingLeft = `${numericMargin + safeZoneArrow}px`;
+      textControl.style.paddingRight = `${numericMargin}px`;
+    }, 1);
+
+    if (prompterMarginSelect) {
+      setSelectValueSafe(prompterMarginSelect, numericMargin, `Margin ${numericMargin}`);
+    }
+
+    const foundIndex = operatorState.margins.indexOf(numericMargin);
+    operatorState.marginIndex = foundIndex >= 0 ? foundIndex : 0;
+
+    if (globalPrefs) {
+      globalPrefs.prompterMargin = numericMargin;
+    }
+
+    if (shouldPersist) {
+      ipcRenderer.send("save-settings", {
+        prompterMargin: numericMargin,
+      });
+    }
+
+    if (operatorEditPanel && !operatorEditPanel.classList.contains("collapsed")) {
+      applyPrompterLookToEditPanel();
+    }
+
+    console.log("Margem alterada para:", `${numericMargin}px`);
+  }
+
+  if (opBtnMargin) {
     opBtnMargin.addEventListener("click", () => {
       operatorState.marginIndex = (operatorState.marginIndex + 1) % operatorState.margins.length;
-
       const marginVal = operatorState.margins[operatorState.marginIndex];
+      applyPrompterMargins(marginVal, true);
+    });
+  }
 
-      // 1. Aplica visualmente NO SEU PC (Para você ter uma prévia)
-      const textControl = document.getElementById("prompterText-control");
-      if (textControl) {
-        textControl.style.paddingLeft = `${marginVal}px`;
-        textControl.style.paddingRight = `${marginVal}px`;
+  if (prompterMarginSelect) {
+    prompterMarginSelect.addEventListener("change", (event) => {
+      applyPrompterMargins(event.target.value, true);
+    });
+  }
+
+  if (lineSpacingToolbar) {
+    lineSpacingToolbar.addEventListener("change", (event) => {
+      const value = event.target.value;
+      if (value) {
+        applyLineSpacing(value);
       }
+    });
+  }
 
-      // 2. Envia para a TV (Broadcast)
-      ipcRenderer.send("save-settings", {
-        prompterMargin: marginVal,
+  window.addEventListener("operator-edit-panel:close", () => {
+    setOperatorEditPanelCollapsed(true);
+  });
+
+  // Toda mudança vinda da barra de formatação / toolbar do Operator (fonte, tamanho,
+  // cor, alinhamento, espaçamento, margem, inverter, espelhar...) mantém o ponto do texto.
+  const HOLD_TOOLBAR_SELECTOR =
+    "#toolbar-content, #op-btn-invert, #op-btn-margin, #op-btn-mirror-h, #op-btn-mirror-v";
+  ["change", "click"].forEach((type) => {
+    document.addEventListener(
+      type,
+      (e) => {
+        if (e.target && e.target.closest && e.target.closest(HOLD_TOOLBAR_SELECTOR)) {
+          holdReadPosition();
+        }
+      },
+      true
+    );
+  });
+
+  if (opBtnToggleEditPanel && operatorEditPanel) {
+    setOperatorEditPanelCollapsed(operatorEditPanel.classList.contains("collapsed"));
+    opBtnToggleEditPanel.addEventListener("click", () => {
+      const collapsed = !operatorEditPanel.classList.contains("collapsed");
+      setOperatorEditPanelCollapsed(collapsed);
+      if (!collapsed) getActiveTextEditorArea()?.focus({ preventScroll: true });
+
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event("resize"));
       });
-
-      console.log("Margem alterada para:", marginVal + "px");
     });
   }
 
@@ -4915,8 +5391,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (opBtnFullscreen) {
     opBtnFullscreen.addEventListener("click", () => {
+      // Sai do modo edição (se estiver nele) e vai para o prompter em tela cheia.
+      const wasEditing = !!operatorEditPanel && !operatorEditPanel.classList.contains("collapsed");
+      if (wasEditing) setOperatorEditPanelCollapsed(true);
+
       runFullscreenChangePreservingAnchor(() => {
-        document.body.classList.toggle("operator-fullscreen-mode");
+        if (wasEditing) {
+          document.body.classList.add("operator-fullscreen-mode");
+        } else {
+          document.body.classList.toggle("operator-fullscreen-mode");
+        }
         ipcRenderer.send("control-window", "fullscreen");
       });
     });
@@ -5137,6 +5621,8 @@ document.addEventListener("DOMContentLoaded", () => {
   function syncContentToPrompter(options = {}) {
     const editor = getActiveTextEditorArea();
     const control = document.getElementById("prompterText-control");
+    const preserveAnchor =
+      options.preserveScrollDuringRemoteEdit === true || options.preserveVisibleAnchor === true;
     const skipRemoteBroadcast =
       options.skipRemoteBroadcast === true || !shouldBroadcastToRemotes();
 
@@ -5153,16 +5639,28 @@ document.addEventListener("DOMContentLoaded", () => {
     const content = getCleanContent(editor);
     if (content === _lastPrompterHtml) {
       const isRemoteEdit = options.preserveScrollDuringRemoteEdit === true;
+      const cueAnchor = preserveAnchor ? captureCueAnchor() : null;
       applyPrompterContainerStyles(control, editor, isRemoteEdit);
       applyPrompterFontScale(control, currentFontSizePT || globalPrefs?.defaultFontSize);
+      if (cueAnchor && control && restoreCueAnchor(cueAnchor)) {
+        const contentH = control.offsetHeight || control.scrollHeight || 1;
+        const textPercent = Math.min(1, Math.max(0, (ScrollEngine.decimalScroll || 0) / contentH));
+        ipcRenderer.send("sync-scroll-position", { textPercent });
+      }
       return;
     }
 
     const finalContent = processPrompterHtml(content);
     if (finalContent === _lastPrompterHtml) {
       const isRemoteEdit = options.preserveScrollDuringRemoteEdit === true;
+      const cueAnchor = preserveAnchor ? captureCueAnchor() : null;
       applyPrompterContainerStyles(control, editor, isRemoteEdit);
       applyPrompterFontScale(control, currentFontSizePT || globalPrefs?.defaultFontSize);
+      if (cueAnchor && control && restoreCueAnchor(cueAnchor)) {
+        const contentH = control.offsetHeight || control.scrollHeight || 1;
+        const textPercent = Math.min(1, Math.max(0, (ScrollEngine.decimalScroll || 0) / contentH));
+        ipcRenderer.send("sync-scroll-position", { textPercent });
+      }
       return;
     }
 
@@ -5195,7 +5693,6 @@ document.addEventListener("DOMContentLoaded", () => {
       // (e não o pixel) para o texto não saltar quando inserem/removem
       // trecho acima do ponto de leitura. Capturada ANTES de trocar o HTML.
       // ===================================================================
-      const preserveAnchor = options.preserveScrollDuringRemoteEdit === true;
       const cueAnchor = preserveAnchor ? captureCueAnchor() : null;
 
       // ===================================================================
@@ -5247,7 +5744,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Faz 2 passes extras para absorver reflow tardio (ex.: espaço/paste)
         // e tornar a atualização visualmente imperceptível.
-        stabilizeCueAnchorAfterRemoteEdit(cueAnchor, 2);
+        const extraPasses = options.preserveScrollDuringRemoteEdit === true ? 2 : 1;
+        stabilizeCueAnchorAfterRemoteEdit(cueAnchor, extraPasses);
       } else if (wasRunning) {
         const containerHeight = container ? container.clientHeight : 0;
         const contentHeight = control.offsetHeight;
@@ -5878,11 +6376,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const doc = getActiveDocument();
     const editor = getActiveTextEditorArea();
 
+    // Ações de formatação/estilo não podem mover o ponto do texto.
+    if (/^(set-|align-)/.test(action)) holdReadPosition();
+
     switch (action) {
       case "new-script":
         createNewDocument();
+        ensureOperatorEditPanelVisible();
         bootstrap.Tab.getOrCreateInstance(
-          document.getElementById("edit-tab")
+          document.getElementById("operator-tab")
         ).show();
         break;
       case "open-script":
@@ -6129,8 +6631,9 @@ document.addEventListener("DOMContentLoaded", () => {
   if (newScriptBtn)
     newScriptBtn.addEventListener("click", () => {
       createNewDocument();
+      ensureOperatorEditPanelVisible();
       bootstrap.Tab.getOrCreateInstance(
-        document.getElementById("edit-tab")
+        document.getElementById("operator-tab")
       ).show();
     });
   if (openScriptBtn)
@@ -6330,10 +6833,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // Cria o documento (que já limpa a formatação)
     const newDoc = createNewDocument(doc.content, doc.name, doc.path);
 
-    // Muda para a aba "Edit"
-    const editTab = document.getElementById("edit-tab");
-    if (editTab) {
-      const tabInstance = bootstrap.Tab.getOrCreateInstance(editTab);
+    // Muda para a aba "Operator"
+    const operatorTab = document.getElementById("operator-tab");
+    if (operatorTab) {
+      ensureOperatorEditPanelVisible();
+      const tabInstance = bootstrap.Tab.getOrCreateInstance(operatorTab);
       tabInstance.show();
     }
 
@@ -6512,10 +7016,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // 2. Cria novo documento com o conteúdo do backup
     const newDoc = createNewDocument(cleanContent, `[Backup] ${data.name}`, null);
 
-    // 3. Muda para a aba "Edit"
-    const editTab = document.getElementById("edit-tab");
-    if (editTab) {
-      const tabInstance = bootstrap.Tab.getOrCreateInstance(editTab);
+    // 3. Muda para a aba "Operator"
+    const operatorTab = document.getElementById("operator-tab");
+    if (operatorTab) {
+      ensureOperatorEditPanelVisible();
+      const tabInstance = bootstrap.Tab.getOrCreateInstance(operatorTab);
       tabInstance.show();
     }
 
@@ -8964,20 +9469,19 @@ document.addEventListener("DOMContentLoaded", () => {
     addLogEntry(data);
   });
 
-  // 4. ESCONDER O LOG NA ABA "OPERATOR"
-  document.addEventListener('click', (e) => {
-    // Verifica se clicou em algo que tem texto (abas)
-    const targetText = e.target.innerText || "";
+  // 4. Esconde o log enquanto a aba Operator está ativa
+  const syncLogVisibilityByTab = () => {
+    const operatorPane = document.getElementById('operator-tab-pane');
+    if (!operatorPane || !logContainer) return;
+    const isOperatorActive =
+      operatorPane.classList.contains('active') || operatorPane.classList.contains('show');
+    logContainer.classList.toggle('log-hidden', isOperatorActive);
+  };
 
-    // Se clicou na aba Operator, adiciona a classe que esconde
-    if (targetText.includes('Operator')) {
-      logContainer.classList.add('log-hidden');
-    }
-    // Se clicou em Home ou Edit, remove a classe e mostra de novo
-    else if (targetText.includes('Home') || targetText.includes('Edit')) {
-      logContainer.classList.remove('log-hidden');
-    }
+  document.querySelectorAll('[data-bs-toggle="tab"]').forEach((tabButton) => {
+    tabButton.addEventListener('shown.bs.tab', syncLogVisibilityByTab);
   });
+  syncLogVisibilityByTab();
 
 
 
@@ -9020,6 +9524,16 @@ document.addEventListener("DOMContentLoaded", () => {
         fontSelect.add(newOpt);
         fontSelect.value = globalPrefs.defaultFont;
       }
+    }
+
+    if (lineSpacingToolbar && globalPrefs.lineSpacing) {
+      setSelectValueSafe(lineSpacingToolbar, parseFloat(globalPrefs.lineSpacing), `Line ${parseFloat(globalPrefs.lineSpacing)}x`);
+    }
+
+    if (prompterMarginSelect && globalPrefs.prompterMargin !== undefined) {
+      const parsedMargin = Number.parseInt(globalPrefs.prompterMargin, 10);
+      const safeMargin = Number.isFinite(parsedMargin) ? parsedMargin : 40;
+      setSelectValueSafe(prompterMarginSelect, safeMargin, `Margin ${safeMargin}`);
     }
 
 
@@ -9156,6 +9670,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const prompterText = document.getElementById('prompterText-control');
     if (prompterText) {
       applyPrompterFontScale(prompterText, sizeInPt);
+      refreshEditPanelLookIfOpen();
     }
 
     // Sincroniza com janela de projeção externa
@@ -9206,9 +9721,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const sizeSelect = document.getElementById('font-size-toolbar-fix');
           const sizeCustom = document.getElementById('font-size-custom');
           if (sizeSelect) {
-            // Tenta selecionar o valor exato; se não existir, limpa
-            const opt = sizeSelect.querySelector(`option[value="${pt}"]`);
-            sizeSelect.value = opt ? pt : '';
+            setSelectValueSafe(sizeSelect, pt);
           }
           if (sizeCustom) sizeCustom.value = pt;
         }
@@ -9374,7 +9887,9 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
-    if (typeof syncContentToPrompter === "function") syncContentToPrompter();
+    if (typeof syncContentToPrompter === "function") {
+      syncContentToPrompter({ preserveVisibleAnchor: !appliedPartial });
+    }
     if (activeDocumentId) markDocumentAsUnsaved(activeDocumentId);
 
     // Retorna true quando aplicou SOMENTE na seleção (parcial), para o chamador
@@ -9389,11 +9904,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const prompterText = document.getElementById('prompterText-control');
 
     if (prompterText) {
-      // APLICAÇÃO DIRETA E FORÇADA
-      applyPrompterFontScale(prompterText, sizeInPt);
-      // Respeita o espaçamento de linha escolhido (Preferences), em vez de forçar 1.4
-      prompterText.style.lineHeight =
-        currentLineSpacing || (globalPrefs && globalPrefs.lineSpacing) || 1.4;
+      preserveOperatorReadPosition(() => {
+        applyPrompterFontScale(prompterText, sizeInPt);
+        prompterText.style.lineHeight =
+          currentLineSpacing || (globalPrefs && globalPrefs.lineSpacing) || 1.4;
+      }, 1);
+      refreshEditPanelLookIfOpen();
     }
 
     console.log(`✅ Font Size Operator atualizado com escala (base Edit: ${sizeInPt}pt)`);
@@ -9412,7 +9928,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Atualiza a caixa de entrada da toolbar
     const toolbarSizeFix = document.getElementById('font-size-toolbar-fix');
     if (fontSize && toolbarSizeFix) {
-      toolbarSizeFix.value = fontSize;
+      setSelectValueSafe(toolbarSizeFix, fontSize);
     }
 
     // Atualiza memória global

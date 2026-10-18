@@ -37,6 +37,291 @@
   flex-wrap: wrap;
 }
 
+#operator-workspace {
+  min-height: 0;
+}
+
+/* Palco: o prompter ocupa tudo; o modo edição é uma camada que o COBRE por inteiro
+   (sem dividir a tela). O prompter segue por baixo com o mesmo tamanho, então o
+   scroll/posição de leitura não muda ao entrar/sair da edição. */
+#operator-stage {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+#operator-prompter-wrapper {
+  position: absolute !important;
+  inset: 0;
+}
+
+#operator-edit-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--background-primary);
+}
+
+#operator-edit-panel.collapsed {
+  display: none !important;
+}
+
+#operator-edit-panel #document-content-container {
+  min-height: 120px;
+  flex: 1 1 auto;
+}
+
+/* Estado vazio: nenhum roteiro aberto */
+#operator-edit-panel #document-content-container:empty::before {
+  content: "No script open — use File > New Script or Open.";
+  display: block;
+  padding: 24px;
+  color: var(--text-tertiary, #888);
+  font-style: italic;
+}
+
+/* ------------------------------------------------------------------
+   MODO EDIÇÃO = O PRÓPRIO TEXTO DO PROMPTER, EDITÁVEL
+   Fundo, cor, escala de fonte e margens vêm do prompter (variáveis
+   --op-edit-* definidas em app.js: applyPrompterLookToEditPanel).
+   ------------------------------------------------------------------ */
+#operator-edit-panel #document-content-container,
+#operator-edit-panel .editor-container {
+  background-color: var(--op-edit-bg, #000);
+}
+
+#operator-edit-panel .text-editor-area {
+  background-color: var(--op-edit-bg, #000) !important;
+  color: var(--op-edit-fg, #fff) !important;
+  caret-color: var(--op-edit-fg, #fff);
+  padding-top: 40px !important;
+  padding-bottom: 200px !important;
+  padding-left: var(--op-edit-pad-l, 60px) !important;
+  padding-right: calc(var(--op-edit-pad-r, 40px) + 3%) !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  text-rendering: optimizeLegibility;
+}
+
+/* A escala é aplicada nos blocos (e não no contêiner de rolagem) para não
+   distorcer a altura/rolagem do editor. */
+#operator-edit-panel .text-editor-area > * {
+  zoom: var(--op-edit-zoom, 1);
+}
+
+#operator-edit-panel .text-editor-area p,
+#operator-edit-panel .text-editor-area div,
+#operator-edit-panel .text-editor-area h1,
+#operator-edit-panel .text-editor-area h2,
+#operator-edit-panel .text-editor-area h3 {
+  margin-top: 0 !important;
+  margin-bottom: 0.5em;
+}
+
+/* Mesmas regras do prompter (processPrompterHtml): preto e fundo branco
+   explícitos viram a cor padrão do prompter. */
+#operator-edit-panel .text-editor-area [style*="color: rgb(0, 0, 0)"],
+#operator-edit-panel .text-editor-area [style*="color:#000000"],
+#operator-edit-panel .text-editor-area [style*="color: black"] {
+  color: var(--op-edit-fg, #fff) !important;
+}
+
+#operator-edit-panel .text-editor-area [style*="background-color: rgb(255, 255, 255)"],
+#operator-edit-panel .text-editor-area [style*="background-color: white"] {
+  background-color: transparent !important;
+}
+
+/* ------------------------------------------------------------------
+   BARRAS DO MODO EDIÇÃO EM TEMA CLARO (branco); só a área do texto é preta.
+   Cobre a toolbar do Operator + barra de formatação + abas de documento.
+   ------------------------------------------------------------------ */
+
+/* A barra de progresso do prompter (z-index 9999) vazava por cima da edição */
+body.operator-edit-mode #prompter-custom-scrollbar {
+  display: none !important;
+}
+
+/* --- Toolbar do Operator (linha de cima) --- */
+body.operator-edit-mode #operator-toolbar {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #dfe3ea !important;
+  min-height: 0;
+  padding: 8px 14px !important;
+}
+
+body.operator-edit-mode #operator-toolbar .btn-tool {
+  color: #4a5160 !important;
+  padding: 4px 11px !important;
+  border-radius: 8px;
+}
+
+body.operator-edit-mode #operator-toolbar .btn-tool i {
+  font-size: 19px !important;
+}
+
+body.operator-edit-mode #operator-toolbar .btn-tool:hover,
+body.operator-edit-mode #operator-toolbar .btn-tool.active {
+  background-color: rgba(0, 120, 212, 0.12) !important;
+  color: #0078d4 !important;
+  box-shadow: none;
+}
+
+body.operator-edit-mode #operator-toolbar .tool-separator {
+  background-color: #d5dae3;
+  height: 20px;
+  margin: 0 8px;
+}
+
+/* --- Barra de formatação --- */
+#operator-edit-panel #toolbar-content {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #dfe3ea !important;
+  box-shadow: none !important;
+  padding: 8px 14px !important;
+  gap: 8px !important;
+  color: #1f2430;
+}
+
+#operator-edit-panel #toolbar-content .vr {
+  background-color: #d5dae3;
+  opacity: 1;
+  margin: 0 4px !important;
+}
+
+/* Botões */
+#operator-edit-panel #toolbar-content .btn,
+#operator-edit-panel #toolbar-content .btn-light,
+#operator-edit-panel #toolbar-content .btn-group .btn {
+  background-color: #ffffff !important;
+  color: #2b3140 !important;
+  border: 1px solid #cfd5df !important;
+  border-radius: 7px;
+  box-shadow: none !important;
+}
+
+#operator-edit-panel #toolbar-content .btn:hover,
+#operator-edit-panel #toolbar-content .btn-light:hover,
+#operator-edit-panel #toolbar-content .btn-group .btn:hover {
+  background-color: rgba(0, 120, 212, 0.1) !important;
+  color: #0078d4 !important;
+  border-color: #0078d4 !important;
+}
+
+#operator-edit-panel #toolbar-content .btn.active,
+#operator-edit-panel #toolbar-content .btn.tool-active,
+#operator-edit-panel #toolbar-content .btn-mode.active,
+#operator-edit-panel #toolbar-content .btn-group .btn.show {
+  background-color: rgba(0, 120, 212, 0.16) !important;
+  color: #0078d4 !important;
+  border-color: #0078d4 !important;
+}
+
+#operator-edit-panel #toolbar-content .text-warning { color: #d99100 !important; }
+#operator-edit-panel #toolbar-content .text-danger { color: #dc3545 !important; }
+#operator-edit-panel #toolbar-content .text-primary { color: #0d6efd !important; }
+
+/* Selects e campo numérico */
+#operator-edit-panel #toolbar-content select,
+#operator-edit-panel #toolbar-content input[type="number"] {
+  background-color: #ffffff !important;
+  color: #1f2430 !important;
+  border: 1px solid #cfd5df !important;
+  border-radius: 7px;
+}
+
+#operator-edit-panel #toolbar-content select {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23596072' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e") !important;
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 14px 10px;
+}
+
+#operator-edit-panel #toolbar-content select option {
+  background-color: #ffffff;
+  color: #1f2430;
+}
+
+#operator-edit-panel #toolbar-content select:hover,
+#operator-edit-panel #toolbar-content input[type="number"]:hover {
+  border-color: #0078d4 !important;
+}
+
+#operator-edit-panel #toolbar-content select:focus,
+#operator-edit-panel #toolbar-content input[type="number"]:focus {
+  border-color: #0078d4 !important;
+  box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.18) !important;
+}
+
+#operator-edit-panel #toolbar-content input::placeholder {
+  color: #8a92a3;
+}
+
+/* Alternador cor do texto / marca-texto / borracha */
+#operator-edit-panel #toolbar-content .mode-switch-group {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Amostras de cor */
+#operator-edit-panel #toolbar-content .color-btn {
+  border: 2px solid #cfd5df !important;
+  border-radius: 7px;
+}
+
+#operator-edit-panel #toolbar-content .color-btn:hover {
+  border-color: #0078d4 !important;
+}
+
+/* Menu "Aa" (maiúsculas/minúsculas) */
+#operator-edit-panel #toolbar-content .dropdown-menu {
+  background-color: #ffffff;
+  border: 1px solid #cfd5df;
+}
+
+#operator-edit-panel #toolbar-content .dropdown-item {
+  color: #2b3140;
+}
+
+#operator-edit-panel #toolbar-content .dropdown-item:hover {
+  background-color: rgba(0, 120, 212, 0.1);
+  color: #0078d4;
+}
+
+/* --- Abas dos documentos abertos --- */
+#operator-edit-panel #document-tabs-bar {
+  background-color: #f3f5f9 !important;
+  border-bottom: 1px solid #dfe3ea !important;
+  padding: 6px 12px 0 12px;
+}
+
+#operator-edit-panel .document-tab {
+  background-color: #e8ebf1;
+  color: #5a6275;
+  border: 1px solid transparent;
+  border-bottom: none;
+  padding: 7px 14px;
+  font-size: 0.85rem;
+}
+
+#operator-edit-panel .document-tab:hover {
+  background-color: #dde2ea;
+  color: #1f2430;
+}
+
+#operator-edit-panel .document-tab.active {
+  background-color: #ffffff;
+  color: #1f2430;
+  border-color: #dfe3ea;
+  border-top: 2px solid #0078d4;
+  box-shadow: none;
+}
+
+#operator-edit-panel .document-tab .close-tab:hover {
+  color: #ff6b6b;
+}
+
 
 /* --------------------------------------------------------------------------
    1.2 BOTÕES DE FERRAMENTA (.btn-tool)
@@ -140,6 +425,30 @@ body.font-boost #prompterText-control font {
   display: none !important;
 }
 
+/* Barra de rolagem discreta no modo edição (permite correr o texto rápido
+   arrastando). Sobrescreve a regra que esconde as barras do painel Operator. */
+#operator-edit-panel .text-editor-area::-webkit-scrollbar {
+  display: block !important;
+  width: 12px;
+}
+
+#operator-edit-panel .text-editor-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#operator-edit-panel .text-editor-area::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  min-height: 48px;
+}
+
+#operator-edit-panel .text-editor-area::-webkit-scrollbar-thumb:hover,
+#operator-edit-panel .text-editor-area::-webkit-scrollbar-thumb:active {
+  background-color: rgba(255, 255, 255, 0.5);
+}
+
 /* Remove outline de foco no container do prompter */
 .prompter-in-control:focus,
 .prompter-in-control:focus-visible,
@@ -156,7 +465,8 @@ body.font-boost #prompterText-control font {
 
 body.operator-fullscreen-mode #custom-title-bar,
 body.operator-fullscreen-mode #main-tab-container,
-body.operator-fullscreen-mode #operator-toolbar {
+body.operator-fullscreen-mode #operator-toolbar,
+body.operator-fullscreen-mode #operator-edit-panel {
   display: none !important;
 }
 

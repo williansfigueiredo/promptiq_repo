@@ -112,10 +112,6 @@
                 <button class="nav-link active" id="home-tab" data-bs-toggle="tab" data-bs-target="#home-tab-pane" type="button" role="tab"><i class="bi bi-house-door"></i> Home </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="edit-tab" data-bs-toggle="tab" data-bs-target="#edit-tab-pane" type="button" role="tab"> <i class="bi bi-pencil-square"></i> Edit</button>
-
-            </li>
-            <li class="nav-item" role="presentation">
                 <button class="nav-link" id="operator-tab" data-bs-toggle="tab" data-bs-target="#operator-tab-pane" type="button" role="tab"><i class="bi bi-card-text"></i> Operator</button>
             </li>
         </ul>
@@ -208,8 +204,8 @@
             </div>
             <ul class="list-unstyled mb-0">
                 <li class="mb-2"><i class="bi bi-check-circle-fill me-2" style="font-size: 0.8rem;"></i>Use <mark>Ctrl+S</mark> to save your work</li>
-                <li class="mb-2"><i class="bi bi-check-circle-fill me-2" style="font-size: 0.8rem;"></i>Switch to <strong>Edit</strong> tab to write your script</li>
-                <li class="mb-2"><i class="bi bi-check-circle-fill me-2" style="font-size: 0.8rem;"></i>Use <strong>Operator</strong> tab to control the teleprompter</li>
+                <li class="mb-2"><i class="bi bi-check-circle-fill me-2" style="font-size: 0.8rem;"></i>Use <strong>Operator</strong> tab to edit and control your script</li>
+                <li class="mb-2"><i class="bi bi-check-circle-fill me-2" style="font-size: 0.8rem;"></i>Toggle the editor panel inside <strong>Operator</strong> when needed</li>
                 <li class="mb-0"><i class="bi bi-check-circle-fill me-2" style="font-size: 0.8rem;"></i>Press <mark>Space</mark> to play/pause scrolling</li>
             </ul>
         </div>
@@ -229,116 +225,11 @@
    </div>
  </div>
 
-        <div class="tab-pane fade" id="edit-tab-pane" role="tabpanel">
-            <div class="d-flex flex-column h-100">
-                <div id="toolbar-content" class="p-2 border-bottom d-flex align-items-center gap-2 flex-wrap bg-light">
-                    
-                    <div class="d-flex gap-1">
-                           <select id="font-family-select" class="form-select form-select-sm font-select-width" title="Fonte">
-                           <option value="Arial" style="font-family: Arial;">Arial</option>
-                           <option value="Verdana" style="font-family: Verdana;">Verdana</option>
-                           <option value="Times New Roman" style="font-family: 'Times New Roman';">Times New Roman</option>
-                           <option value="Courier New" style="font-family: 'Courier New';">Courier New</option>
-                           <option value="Georgia" style="font-family: Georgia;">Georgia</option>
-                           <option value="Impact" style="font-family: Impact;">Impact</option>
-                           <option value="Tahoma" style="font-family: Tahoma;">Tahoma</option>
-                           <option value="OpenDyslexic" style="font-family: 'OpenDyslexic';">OpenDyslexic</option>
-                        </select>
-                        <select id="font-size-toolbar-fix" class="form-select form-select-sm ms-2" style="width: 70px;">
-                        <option value="12">12</option>
-                        <option value="14">14</option>
-                        <option value="18">18</option>
-                        <option value="24">24</option>
-                        <option value="30">30</option>
-                        <option value="38">38</option>
-                        <option value="48">48</option>
-                        <option value="60">60</option>
-                        </select>
-                        <input type="number" id="font-size-custom" placeholder="Ou digite aqui..." min="8" max="100">
-
-                    </div>
-
-                    <div class="vr mx-1"></div>
-
-<div class="d-flex align-items-center gap-2 mx-2 p-1">
-    
-    <div id="color-mode-switch" class="mode-switch-group">
-        <button type="button" class="btn btn-sm btn-mode active" data-mode="foreground" title="Font Color">
-            <i class="bi bi-type"></i>
-        </button>
-        
-        <button type="button" class="btn btn-sm btn-mode" data-mode="background" title="Highlight Color (Background)">
-            <i class="bi bi-paint-bucket"></i>
-        </button>
-        
-        <button type="button" class="btn btn-sm btn-mode text-danger" id="btn-reset-color" title="Remove Colors">
-            <i class="bi bi-eraser-fill"></i>
-        </button>
-    </div>
-    
-    <button class="color-btn swatch-black" data-color="#000000" title="Black"></button>
-    <button class="color-btn swatch-yellow" data-color="#FFFF00" title="Yellow"></button>
-    <button class="color-btn swatch-green" data-color="#00FF00" title="Green"></button>
-    <button class="color-btn swatch-pink" data-color="#FF69B4" title="Pink"></button>
-    <button class="color-btn swatch-cyan" data-color="#00FFFF" title="Cyan"></button>
-</div>
-
-                    <div id="custom-color-palette" class="palette-popup" style="display: none;"></div>
-
-                    <div class="vr mx-1"></div>
-
-                    <div class="btn-group" role="group">
-                        <button id="bold-btn" class="btn btn-sm btn-light border" title="Bold (Ctrl+B)"><i class="bi bi-type-bold"></i></button>
-                        <button id="italic-btn" class="btn btn-sm btn-light border" title="Italic (Ctrl+I)"><i class="bi bi-type-italic"></i></button>
-                        <button id="underline-btn" class="btn btn-sm btn-light border" title="Underline (Ctrl+U)"><i class="bi bi-type-underline"></i></button>
-                        
-                        <div class="btn-group" role="group">
-                            <button id="case-btn" type="button" class="btn btn-sm btn-light border dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Uppercase/Lowercase">
-                                <i class="bi bi-type"></i>
-                            </button>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="#" data-action="set-case-lower">Lowercase</a></li>
-                                <li><a class="dropdown-item" href="#" data-action="set-case-upper">Uppercase</a></li>
-                                <li><a class="dropdown-item" href="#" data-action="set-case-title">Title Case</a></li>
-                            </ul>
-                        </div>
-                    </div>
-
-                    <div class="vr mx-1"></div>
-
-                    <div class="btn-group" role="group">
-                        <button id="align-left-btn" class="btn btn-sm btn-light border" title="Align Left"><i class="bi bi-text-left"></i></button>
-                        <button id="align-center-btn" class="btn btn-sm btn-light border" title="Align Center"><i class="bi bi-text-center"></i></button>
-                        <button id="align-right-btn" class="btn btn-sm btn-light border" title="Align Right"><i class="bi bi-text-right"></i></button>
-                    </div>
-
-                    <div class="vr mx-1"></div>
-
-                    <div class="btn-group" role="group">
-                        <button id="bookmark-btn" class="btn btn-sm btn-light border" title="Bookmark"><i class="bi bi-bookmark-fill"></i></button>
-                        <button id="timeline-btn" class="btn btn-sm btn-light border text-primary" title="History / Timeline"><i class="bi bi-clock-history"></i></button>
-                    </div>
-
-                    <div class="vr mx-1"></div>
-
-                    <div class="btn-group" role="group">
-                        <button id="clean-script-btn" class="btn btn-sm btn-light border text-warning" title="Script Cleanup - Removes technical markers (LED, SOUND, LIGHT, ONLINE, timestamps) and keeps only MC speech lines">
-                            <i class="bi bi-scissors"></i> Script Cleanup
-                        </button>
-                    </div>
-
-                </div>
-                
-                <div id="document-tabs-bar" class="bg-light border-bottom"></div>
-                <div id="document-content-container" class="flex-grow-1 position-relative"></div>
-                
-            </div>
-        </div>
-        
         <div class="tab-pane fade" id="operator-tab-pane" role="tabpanel">
-             <div class="d-flex flex-column h-100">
-                 
+             <div class="d-flex flex-column h-100" id="operator-workspace">
                  <div id="operator-toolbar" class="d-flex align-items-center gap-2 flex-shrink-0">
+                    <button class="btn btn-tool" title="Edit script / Hide editor (Esc)" id="op-btn-toggle-edit-panel"><i class="bi bi-pencil-square"></i></button>
+                    <div class="tool-separator"></div>
                     <button class="btn btn-tool" title="Invert Colors" id="op-btn-invert"><i class="bi bi-palette-fill"></i></button>
                     <div class="tool-separator"></div>
                 
@@ -360,10 +251,132 @@
 </button>
                  </div>
 
-                 <div id="operator-prompter-wrapper" class="flex-grow-1 position-relative overflow-hidden" style="background-color: #000000;">
+                 <div id="operator-stage">
+                 <div id="operator-edit-panel" class="operator-edit-panel collapsed">
+                    <div id="toolbar-content" class="p-2 border-bottom d-flex align-items-center gap-2 flex-wrap bg-light">
+                        
+                        <div class="d-flex gap-1">
+                            <select id="font-family-select" class="form-select form-select-sm font-select-width" title="Fonte">
+                            <option value="Arial" style="font-family: Arial;">Arial</option>
+                            <option value="Verdana" style="font-family: Verdana;">Verdana</option>
+                            <option value="Times New Roman" style="font-family: 'Times New Roman';">Times New Roman</option>
+                            <option value="Courier New" style="font-family: 'Courier New';">Courier New</option>
+                            <option value="Georgia" style="font-family: Georgia;">Georgia</option>
+                            <option value="Impact" style="font-family: Impact;">Impact</option>
+                            <option value="Tahoma" style="font-family: Tahoma;">Tahoma</option>
+                            <option value="OpenDyslexic" style="font-family: 'OpenDyslexic';">OpenDyslexic</option>
+                            </select>
+                            <select id="font-size-toolbar-fix" class="form-select form-select-sm ms-2" style="width: 70px;">
+                            <option value="12">12</option>
+                            <option value="14">14</option>
+                            <option value="18">18</option>
+                            <option value="24">24</option>
+                            <option value="30">30</option>
+                            <option value="38">38</option>
+                            <option value="48">48</option>
+                            <option value="60">60</option>
+                            </select>
+                            <input type="number" id="font-size-custom" placeholder="Ou digite aqui..." min="8" max="100">
+                            <select id="line-spacing-toolbar" class="form-select form-select-sm ms-2" style="width: 120px;" title="Line spacing (espaçamento entre linhas)">
+                                <option value="1.0">Line 1.0x</option>
+                                <option value="1.2">Line 1.2x</option>
+                                <option value="1.4">Line 1.4x</option>
+                                <option value="1.5">Line 1.5x</option>
+                                <option value="1.6">Line 1.6x</option>
+                                <option value="1.7">Line 1.7x</option>
+                                <option value="1.8">Line 1.8x</option>
+                                <option value="2">Line 2.0x</option>
+                                <option value="2.5">Line 2.5x</option>
+                            </select>
+                            <select id="prompter-margin-select" class="form-select form-select-sm ms-2" style="width: 130px;" title="Prompter margins (margens laterais)">
+                                <option value="0">Margin 0</option>
+                                <option value="20">Margin 20</option>
+                                <option value="40">Margin 40</option>
+                                <option value="100">Margin 100</option>
+                                <option value="200">Margin 200</option>
+                                <option value="300">Margin 300</option>
+                            </select>
+                        </div>
+
+                        <div class="vr mx-1"></div>
+
+                        <div class="d-flex align-items-center gap-2 mx-2 p-1">
+                            <div id="color-mode-switch" class="mode-switch-group">
+                                <button type="button" class="btn btn-sm btn-mode active" data-mode="foreground" title="Font Color">
+                                    <i class="bi bi-type"></i>
+                                </button>
+                                
+                                <button type="button" class="btn btn-sm btn-mode" data-mode="background" title="Highlight Color (Background)">
+                                    <i class="bi bi-paint-bucket"></i>
+                                </button>
+                                
+                                <button type="button" class="btn btn-sm btn-mode text-danger" id="btn-reset-color" title="Remove Colors">
+                                    <i class="bi bi-eraser-fill"></i>
+                                </button>
+                            </div>
+                            
+                            <button class="color-btn swatch-black" data-color="#000000" title="Black"></button>
+                            <button class="color-btn swatch-yellow" data-color="#FFFF00" title="Yellow"></button>
+                            <button class="color-btn swatch-green" data-color="#00FF00" title="Green"></button>
+                            <button class="color-btn swatch-pink" data-color="#FF69B4" title="Pink"></button>
+                            <button class="color-btn swatch-cyan" data-color="#00FFFF" title="Cyan"></button>
+                        </div>
+
+                        <div id="custom-color-palette" class="palette-popup" style="display: none;"></div>
+
+                        <div class="vr mx-1"></div>
+
+                        <div class="btn-group" role="group">
+                            <button id="bold-btn" class="btn btn-sm btn-light border" title="Bold (Ctrl+B)"><i class="bi bi-type-bold"></i></button>
+                            <button id="italic-btn" class="btn btn-sm btn-light border" title="Italic (Ctrl+I)"><i class="bi bi-type-italic"></i></button>
+                            <button id="underline-btn" class="btn btn-sm btn-light border" title="Underline (Ctrl+U)"><i class="bi bi-type-underline"></i></button>
+                            
+                            <div class="btn-group" role="group">
+                                <button id="case-btn" type="button" class="btn btn-sm btn-light border dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Uppercase/Lowercase">
+                                    <i class="bi bi-type"></i>
+                                </button>
+                                <ul class="dropdown-menu">
+                                    <li><a class="dropdown-item" href="#" data-action="set-case-lower">Lowercase</a></li>
+                                    <li><a class="dropdown-item" href="#" data-action="set-case-upper">Uppercase</a></li>
+                                    <li><a class="dropdown-item" href="#" data-action="set-case-title">Title Case</a></li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="vr mx-1"></div>
+
+                        <div class="btn-group" role="group">
+                            <button id="align-left-btn" class="btn btn-sm btn-light border" title="Align Left"><i class="bi bi-text-left"></i></button>
+                            <button id="align-center-btn" class="btn btn-sm btn-light border" title="Align Center"><i class="bi bi-text-center"></i></button>
+                            <button id="align-right-btn" class="btn btn-sm btn-light border" title="Align Right"><i class="bi bi-text-right"></i></button>
+                            <button id="align-justify-btn" class="btn btn-sm btn-light border" title="Justify"><i class="bi bi-justify"></i></button>
+                        </div>
+
+                        <div class="vr mx-1"></div>
+
+                        <div class="btn-group" role="group">
+                            <button id="bookmark-btn" class="btn btn-sm btn-light border" title="Bookmark"><i class="bi bi-bookmark-fill"></i></button>
+                            <button id="timeline-btn" class="btn btn-sm btn-light border text-primary" title="History / Timeline"><i class="bi bi-clock-history"></i></button>
+                        </div>
+
+                        <div class="vr mx-1"></div>
+
+                        <div class="btn-group" role="group">
+                            <button id="clean-script-btn" class="btn btn-sm btn-light border text-warning" title="Script Cleanup - Removes technical markers (LED, SOUND, LIGHT, ONLINE, timestamps) and keeps only MC speech lines">
+                                <i class="bi bi-scissors"></i> Script Cleanup
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="document-tabs-bar" class="bg-light border-bottom"></div>
+                    <div id="document-content-container" class="flex-grow-1 position-relative"></div>
+                 </div>
+
+                 <div id="operator-prompter-wrapper" class="position-relative overflow-hidden" style="background-color: #000000;">
                      <div class="prompter-in-control">
                         <div id="prompterText-control"></div>
                     </div>
+                 </div>
                  </div>
              </div>
         </div>
