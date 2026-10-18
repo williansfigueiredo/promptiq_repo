@@ -489,10 +489,19 @@ document.addEventListener("DOMContentLoaded", () => {
     style.setProperty("--op-edit-pad-r", controlStyle.paddingRight);
   }
 
+  function isEditPanelOpen() {
+    return !!operatorEditPanel && !operatorEditPanel.classList.contains("collapsed");
+  }
+
+  // O prompter (oculto durante a edição) mudou de layout/conteúdo desde a abertura?
+  // Se sim, ao fechar a edição ele é reancorado no ponto de leitura de antes.
+  let _promptDirty = false;
+  let _openPromptAnchor = null;
+
   // Mantém o visual do modo edição (escala/cor/margens) em dia quando o prompter
   // muda com o painel aberto (ex.: Prompter Font Scale vindo das Preferences).
   function refreshEditPanelLookIfOpen() {
-    if (operatorEditPanel && !operatorEditPanel.classList.contains("collapsed")) {
+    if (isEditPanelOpen()) {
       applyPrompterLookToEditPanel();
     }
   }
@@ -501,13 +510,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function captureAnchorFromBlocks(blocks, refY) {
     if (!blocks.length) return null;
 
-    let chosen = blocks.length - 1;
-    for (let i = 0; i < blocks.length; i++) {
-      if (refY < blocks[i].getBoundingClientRect().bottom) {
-        chosen = i;
-        break;
-      }
-    }
+    const chosen = firstBlockBelow(blocks, refY);
 
     const r = blocks[chosen].getBoundingClientRect();
     return {
@@ -609,15 +612,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const control = document.getElementById("prompterText-control");
     if (!container || !control) return;
 
+    const editing = isEditPanelOpen();
+    // Com a edição aberta só o EDITOR está visível: o prompter (oculto) é reancorado
+    // uma única vez ao fechar o painel, em vez de forçar seu layout a cada mudança.
+    if (editing) _promptDirty = true;
+
     // Mudanças encadeadas (ação + settings devolvidas pelo main) reutilizam a âncora
     // original: recapturar no meio do reflow guardaria um ponto já deslocado.
     let hold = _activeHold && Date.now() - _activeHold.time < 1500 ? _activeHold : null;
     if (!hold) {
-      const editing = !!operatorEditPanel && !operatorEditPanel.classList.contains("collapsed");
       hold = {
         time: Date.now(),
-        promptAnchor: container.clientHeight > 0 ? captureCueAnchor() : null,
-        fallbackScroll: ScrollEngine.decimalScroll || container.scrollTop || 0,
+        promptAnchor: !editing && container.clientHeight > 0 ? captureCueAnchor() : null,
+        fallbackScroll: ScrollEngine.decimalScroll || (editing ? 0 : container.scrollTop) || 0,
         editorInfo: editing ? captureEditorAnchorInfo() : null,
       };
     }
@@ -625,7 +632,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const { promptAnchor, fallbackScroll, editorInfo } = hold;
 
     runAtCheckpoints([0, 80, 250, 600, 1200], runId, () => {
-      if (!ScrollEngine.isRunning) {
+      if (!ScrollEngine.isRunning && !isEditPanelOpen()) {
         let restored = false;
         if (promptAnchor) {
           ScrollEngine.invalidateMetrics();
@@ -691,7 +698,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         // Trecho sob a seta ANTES de cobrir o prompter (ou capturado antes do Esc).
-        anchorInfo = providedAnchor || capturePrompterAnchorInfo();
+        _openPromptAnchor = providedAnchor || capturePrompterAnchorInfo();
+        _promptDirty = false;
+        anchorInfo = _openPromptAnchor;
 
         // Reabertura sem o prompter ter se movido: volta ao ponto exato da edição anterior.
         const promptScroll = ScrollEngine.decimalScroll || 0;
@@ -734,7 +743,18 @@ document.addEventListener("DOMContentLoaded", () => {
         ipcRenderer.send("sync-scroll-position", {
           textPercent: Math.min(1, Math.max(0, (ScrollEngine.decimalScroll || 0) / contentH)),
         });
+      } else if (collapsed && !navigateToCaret && _promptDirty && _openPromptAnchor) {
+        // Fonte/escala/texto mudaram com o prompter oculto: volta ao ponto de leitura de antes.
+        flushSyncContentToPrompter();
+        if (restoreCueAnchor(_openPromptAnchor.anchor)) {
+          const control = document.getElementById("prompterText-control");
+          const contentH = (control && (control.offsetHeight || control.scrollHeight)) || 1;
+          ipcRenderer.send("sync-scroll-position", {
+            textPercent: Math.min(1, Math.max(0, (ScrollEngine.decimalScroll || 0) / contentH)),
+          });
+        }
       }
+      if (collapsed) _promptDirty = false;
 
       if (!collapsed) {
         applyPrompterLookToEditPanel();
@@ -3810,8 +3830,18 @@ document.addEventListener("DOMContentLoaded", () => {
     setMenuCheckState("spell-check", isActive);
   }
 
+  // Agrupa chamadas repetidas (teclas, cliques, seleção) em uma por frame: queryCommandState
+  // força recálculo de estilo/layout e era executado várias vezes seguidas.
+  let _formatMenuStateRaf = 0;
   function updateFormatMenuState() {
-    // 1. Garante que temos um editor
+    if (_formatMenuStateRaf) return;
+    _formatMenuStateRaf = requestAnimationFrame(() => {
+      _formatMenuStateRaf = 0;
+      updateFormatMenuStateNow();
+    });
+  }
+
+  function updateFormatMenuStateNow() {
     const editor = getActiveTextEditorArea();
     if (!editor) return;
 
@@ -4485,6 +4515,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const container = document.querySelector(".prompter-in-control");
 
     if (!control || !container) {
+      applyChange();
+      return;
+    }
+
+    // Modo edição aberto: o prompter está oculto; só marca para reancorar ao fechar.
+    if (isEditPanelOpen()) {
+      _promptDirty = true;
       applyChange();
       return;
     }
@@ -5406,7 +5443,10 @@ document.addEventListener("DOMContentLoaded", () => {
     opBtnToggleEditPanel.addEventListener("click", () => {
       const collapsed = !operatorEditPanel.classList.contains("collapsed");
       setOperatorEditPanelCollapsed(collapsed);
-      if (!collapsed) getActiveTextEditorArea()?.focus({ preventScroll: true });
+      if (!collapsed) {
+        // Foco depois do primeiro frame: o painel aparece antes do layout forçado pelo foco.
+        requestAnimationFrame(() => getActiveTextEditorArea()?.focus({ preventScroll: true }));
+      }
 
       requestAnimationFrame(() => {
         window.dispatchEvent(new Event("resize"));
@@ -5578,6 +5618,48 @@ document.addEventListener("DOMContentLoaded", () => {
   // SEÇÃO 33: SINCRONIZAÇÃO EDITOR → PROMPTER
   // ============================================================
   let _lastPrompterHtml = "";
+  // Assinaturas (por nó de 1º nível) do último conteúdo aplicado ao prompter.
+  let _promptSigs = null;
+
+  function promptNodeSig(n) {
+    return n.nodeType === 1 ? n.outerHTML : n.nodeType === 3 ? "#t" + n.data : "#o" + n.nodeType;
+  }
+
+  /**
+   * Atualiza #prompterText-control trocando apenas o trecho que mudou (prefixo/sufixo
+   * iguais são mantidos, com seus estilos e marcações de leitura). Retorna os nós
+   * novos, ou null quando o conteúdo foi trocado por inteiro.
+   */
+  function patchPrompterContent(control, html) {
+    const tpl = document.createElement("template");
+    tpl.innerHTML = html;
+    const incoming = Array.from(tpl.content.childNodes);
+    const sigs = incoming.map(promptNodeSig);
+    const old = _promptSigs;
+    _promptSigs = sigs;
+
+    const oldLen = control.childNodes.length;
+    let prefix = 0;
+    let suffix = 0;
+    if (old && old.length === oldLen && oldLen > 0) {
+      const max = Math.min(oldLen, sigs.length);
+      while (prefix < max && old[prefix] === sigs[prefix]) prefix++;
+      while (suffix < max - prefix && old[oldLen - 1 - suffix] === sigs[sigs.length - 1 - suffix]) suffix++;
+    }
+
+    if (prefix + suffix === 0) {
+      control.replaceChildren(...incoming);
+      return null;
+    }
+
+    const oldNodes = Array.from(control.childNodes);
+    const reference = oldLen - suffix < oldLen ? oldNodes[oldLen - suffix] : null;
+    for (let i = prefix; i < oldLen - suffix; i++) control.removeChild(oldNodes[i]);
+
+    const fresh = incoming.slice(prefix, sigs.length - suffix);
+    fresh.forEach((node) => control.insertBefore(node, reference));
+    return fresh;
+  }
   let _syncPrompterTimer = null;
   let _remoteTextTimer = null;
   let _lastRemoteHtml = "";
@@ -5585,7 +5667,10 @@ document.addEventListener("DOMContentLoaded", () => {
   function scheduleSyncContentToPrompter() {
     clearTimeout(_syncPrompterTimer);
     if (ScrollEngine.isRunning) return;
-    _syncPrompterTimer = setTimeout(syncContentToPrompter, 80);
+    // Roteiros grandes: agrupa mais as teclas (cada sync reenvia o texto inteiro por IPC
+    // para a projeção/remotos), sem atrasar perceptivelmente os roteiros normais.
+    const delay = 80 + Math.min(320, Math.floor(_lastPrompterHtml.length / 2000));
+    _syncPrompterTimer = setTimeout(syncContentToPrompter, delay);
   }
 
   function flushSyncContentToPrompter() {
@@ -5700,6 +5785,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!editor) {
       if (control && control.innerHTML !== "") {
         control.innerHTML = "";
+        _promptSigs = null;
         _lastPrompterHtml = "";
         _lastRemoteHtml = "";
         ipcRenderer.send("update-prompter-content", "");
@@ -5737,6 +5823,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     _lastPrompterHtml = finalContent;
     _lastRemoteHtml = finalContent;
+    if (isEditPanelOpen()) _promptDirty = true;
 
     if (typeof ScrollEngine !== "undefined") ScrollEngine.invalidateMetrics();
 
@@ -5767,19 +5854,24 @@ document.addEventListener("DOMContentLoaded", () => {
       const cueAnchor = preserveAnchor ? captureCueAnchor() : null;
 
       // ===================================================================
-      // Atualizar conteúdo no DOM
+      // Atualizar conteúdo no DOM — só os blocos que mudaram (sem refazer o texto
+      // inteiro do prompter: evita reparse/layout de milhares de parágrafos por tecla).
       // ===================================================================
-      control.innerHTML = finalContent;
+      const freshNodes = patchPrompterContent(control, finalContent);
 
-      clearParaIndexing(control);
-      getBlockElements(control).forEach((block, i) => {
-        block.setAttribute("data-para-idx", String(i));
-      });
-
-      control.querySelectorAll("p, div, h1, h2, h3").forEach((p) => {
+      const styleBlock = (p) => {
         if (!p.style.marginBottom) p.style.marginBottom = "0.5em";
         p.style.marginTop = "0";
-      });
+      };
+      if (freshNodes) {
+        freshNodes.forEach((n) => {
+          if (n.nodeType !== 1) return;
+          if (n.matches("p, div, h1, h2, h3")) styleBlock(n);
+          n.querySelectorAll("p, div, h1, h2, h3").forEach(styleBlock);
+        });
+      } else {
+        control.querySelectorAll("p, div, h1, h2, h3").forEach(styleBlock);
+      }
 
       // ===================================================================
       // CORREÇÃO: skipFontSize=true durante edição remota
@@ -5832,7 +5924,7 @@ document.addEventListener("DOMContentLoaded", () => {
         requestAnimationFrame(() => {
           ScrollEngine.decimalScroll = clampedScroll;
         });
-      } else if (savedScroll > 0 && container) {
+      } else if (savedScroll > 0 && container && !isEditPanelOpen()) {
         container.style.overflowY = "auto";
         control.style.transform = "none";
         container.scrollTop = savedScroll;
@@ -5842,7 +5934,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (voiceModeActive) prepararRoteiroParaLeitura();
 
-    if (skipRemoteBroadcast && !options.skipReadProgressRebroadcast) {
+    if (skipRemoteBroadcast && !options.skipReadProgressRebroadcast && !isEditPanelOpen()) {
       rebroadcastReadProgress();
     }
   }
@@ -6017,6 +6109,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const control = document.getElementById("prompterText-control");
     const container = document.querySelector(".prompter-in-control");
     if (!control || !container) return null;
+    // Com o modo edição aberto o prompter fica oculto (content-visibility): medir o
+    // texto dele forçaria o layout completo a cada ação. A âncora é guardada na abertura
+    // e reaplicada ao fechar (ver _openPromptAnchor / _promptDirty).
+    if (isEditPanelOpen()) return null;
     // Operator oculto (outra aba): sem layout não há âncora confiável.
     if (container.clientHeight === 0) return null;
 
@@ -6025,15 +6121,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const cueY = getCueViewportY();
 
-    let chosen = -1;
-    for (let i = 0; i < blocks.length; i++) {
-      const r = blocks[i].getBoundingClientRect();
-      if (cueY < r.bottom || i === blocks.length - 1) {
-        chosen = i;
-        break;
-      }
-    }
-    if (chosen < 0) chosen = blocks.length - 1;
+    // Os blocos estão em ordem vertical: busca binária pelo primeiro cujo fim passa da seta
+    // (evita medir milhares de parágrafos).
+    const chosen = firstBlockBelow(blocks, cueY);
 
     const r = blocks[chosen].getBoundingClientRect();
     const h = r.height || 1;
@@ -6049,8 +6139,25 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
+  /** Índice do primeiro bloco cujo fim (bottom) fica abaixo de y; o último se nenhum. */
+  function firstBlockBelow(blocks, y) {
+    let lo = 0;
+    let hi = blocks.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (y < blocks[mid].getBoundingClientRect().bottom) hi = mid;
+      else lo = mid + 1;
+    }
+    return lo;
+  }
+
   /** Encontra, no novo conteúdo, o bloco que corresponde à âncora. */
   function findAnchorBlockIndex(blocks, anchor) {
+    // 0) Atalho: o bloco no mesmo índice ainda tem o mesmo texto (caso comum).
+    if (anchor.text && anchor.idx >= 0 && anchor.idx < blocks.length &&
+        normalizeAnchorText(blocks[anchor.idx].textContent) === anchor.text) {
+      return anchor.idx;
+    }
     // 1) Texto exato do bloco-âncora (escolhe o índice mais próximo do antigo)
     if (anchor.text) {
       let best = -1;
@@ -6225,6 +6332,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function hasBlockText(el) {
     if (!el || el.nodeType !== 1) return false;
+    // Caminho rápido (maioria dos parágrafos): primeiro filho é texto com conteúdo,
+    // sem montar a string textContent inteira de cada bloco.
+    const first = el.firstChild;
+    if (first && first.nodeType === 3 && first.data.trim()) return true;
     return !!(el.textContent || "").replace(/\u00a0/g, " ").trim() || el.querySelector("br,img,hr");
   }
 
@@ -6244,9 +6355,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     [textEl, editor].forEach((container) => {
       if (!container) return;
-      clearParaIndexing(container);
-      getBlockElements(container).forEach((block, i) => {
-        block.setAttribute("data-para-idx", String(i));
+
+      // Só escreve no DOM o que mudou (evita invalidar estilo de milhares de nós a cada tecla).
+      const blocks = getBlockElements(container);
+      const keep = new Set(blocks);
+      container.querySelectorAll("[data-para-idx]").forEach((el) => {
+        if (!keep.has(el)) el.removeAttribute("data-para-idx");
+      });
+      blocks.forEach((block, i) => {
+        const value = String(i);
+        if (block.getAttribute("data-para-idx") !== value) block.setAttribute("data-para-idx", value);
       });
     });
   }
@@ -9783,26 +9901,34 @@ document.addEventListener("DOMContentLoaded", () => {
         lastEditorRange = range.cloneRange();
       }
 
-      // Detecta o tamanho da fonte no ponto da seleção/cursor
-      let node = range.startContainer;
-      if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
-
-      if (node) {
-        const computed = window.getComputedStyle(node);
-        const px = parseFloat(computed.fontSize);
-        if (px > 0) {
-          const pt = Math.round((px / 96) * 72);
-          // Atualiza a toolbar sem disparar eventos de change
-          const sizeSelect = document.getElementById('font-size-toolbar-fix');
-          const sizeCustom = document.getElementById('font-size-custom');
-          if (sizeSelect) {
-            setSelectValueSafe(sizeSelect, pt);
-          }
-          if (sizeCustom) sizeCustom.value = pt;
-        }
-      }
+      // Detecta o tamanho da fonte no ponto da seleção/cursor (agrupado por frame:
+      // getComputedStyle força recálculo de estilo e selectionchange dispara a cada tecla).
+      scheduleToolbarSizeSync(range.startContainer);
     }
   });
+
+  let _toolbarSizeSyncRaf = 0;
+  function scheduleToolbarSizeSync(startContainer) {
+    if (_toolbarSizeSyncRaf) cancelAnimationFrame(_toolbarSizeSyncRaf);
+    _toolbarSizeSyncRaf = requestAnimationFrame(() => {
+      _toolbarSizeSyncRaf = 0;
+      let node = startContainer;
+      if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+      if (!node || !node.isConnected) return;
+
+      const px = parseFloat(window.getComputedStyle(node).fontSize);
+      if (px > 0) {
+        const pt = Math.round((px / 96) * 72);
+        // Atualiza a toolbar sem disparar eventos de change
+        const sizeSelect = document.getElementById('font-size-toolbar-fix');
+        const sizeCustom = document.getElementById('font-size-custom');
+        if (sizeSelect && sizeSelect.value !== String(pt)) {
+          setSelectValueSafe(sizeSelect, pt);
+        }
+        if (sizeCustom) sizeCustom.value = pt;
+      }
+    });
+  }
 
   // 2) mousedown em QUALQUER elemento FORA do editor: salva o range
   //    uma última vez. Isso cobre selects, inputs, botões da toolbar.

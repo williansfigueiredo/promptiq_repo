@@ -243,8 +243,9 @@
                     <div class="tool-separator"></div>
                     <button class="btn btn-tool" title="Settings" id="op-btn-settings"><i class="bi bi-sliders"></i></button>
                     <div class="ms-auto d-flex gap-1 align-items-center"></div>
-<button id="btn-voice-tracking" class="btn btn-sm btn-light border" title="Enable Voice Scrolling (Voice Tracking)">
-  <i class="bi bi-mic"></i> <span id="voice-status-label" style="font-size: 0.7rem;">Loading...</span>
+<!-- Voice Tracking (Vosk) desativado por enquanto: botão oculto e módulo/modelo não são carregados. -->
+<button id="btn-voice-tracking" class="btn btn-sm btn-light border d-none" disabled title="Voice Tracking (disabled)">
+  <i class="bi bi-mic"></i> <span id="voice-status-label" style="font-size: 0.7rem;">OFF</span>
 </button>
 <button class="btn btn-warning btn-sm" onclick="require('electron').ipcRenderer.send('open-projection-window')">
     <i class="bi bi-display"></i> Extend Screen
@@ -843,12 +844,11 @@
 </div>
 
 <script src="../../src/renderer/lib/bootstrap.bundle.min.js"></script>
-<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
 <script src="../../src/renderer/modules/hotkey-handler.js"></script>
 <script src="../../src/renderer/modules/tab-navigation.js"></script>
 <script src="../../src/renderer/lib/diff.min.js"></script>
 <script src="../../src/renderer/modules/keyboard-handler.js"></script>
-<script src="../../src/renderer/modules/voice-module.js"></script>
+<!-- voice-module.js (Vosk) desativado: não carregar para economizar RAM/CPU -->
 <script type="module" src="../../src/renderer/app.js"></script>
 
 </body>

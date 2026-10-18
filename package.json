@@ -85,6 +85,8 @@
       "!**/.env.*",
       "!scripts/**",
       "!model/**",
+      "!public/model/**",
+      "!node_modules/vosk-browser/**",
       "!.vscode/**"
     ],
     "asar": true,

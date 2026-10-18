@@ -21,6 +21,5 @@ if (fs.existsSync(bytecodePath)) {
   loadScript('../../src/renderer/modules/hotkey-handler.js');
   loadScript('../../src/renderer/modules/tab-navigation.js');
   loadScript('../../src/renderer/modules/keyboard-handler.js');
-  loadScript('../../src/renderer/modules/voice-module.js');
   loadScript('../../src/renderer/app.js');
 }

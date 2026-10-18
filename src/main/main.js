@@ -428,8 +428,8 @@ function initializeApp() {
   // Garante que a pasta de backups existe antes de tudo
   ensureBackupDirectory();
 
-  // Inicia servidor HTTP para servir o modelo VOSK
-  startModelServer();
+  // Servidor do modelo VOSK desativado (Voice Tracking oculto): não inicia, economiza RAM/CPU.
+  // startModelServer();
 
   controlWindow = new BrowserWindow({
     width: 1200, height: 800, title: "promptiq - Editor",
@@ -511,7 +511,7 @@ function createSplashWindow() {
     } finally {
       if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
     }
-  }, 5000);
+  }, 2000);
 }
 
 // ============================================================

@@ -55,6 +55,13 @@
   inset: 0;
 }
 
+/* Com o modo edição aberto o prompter está coberto: o navegador não precisa
+   estilizar/diagramar milhares de parágrafos a cada tecla. A posição de rolagem é
+   mantida e o layout é refeito sob demanda (ao fechar a edição ou ao medir). */
+body.operator-edit-mode #operator-prompter-wrapper {
+  content-visibility: hidden;
+}
+
 #operator-edit-panel {
   position: absolute;
   inset: 0;
@@ -109,6 +116,13 @@
    distorcer a altura/rolagem do editor. */
 #operator-edit-panel .text-editor-area > * {
   zoom: var(--op-edit-zoom, 1);
+}
+
+/* Roteiros longos: blocos fora da tela não são diagramados (a altura de cada bloco já
+   visto é lembrada por "auto"). Abre a edição e reage às teclas de forma bem mais leve. */
+#operator-edit-panel .text-editor-area > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 3em;
 }
 
 #operator-edit-panel .text-editor-area p,
