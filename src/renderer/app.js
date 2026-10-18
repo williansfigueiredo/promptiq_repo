@@ -4512,29 +4512,40 @@ document.addEventListener("DOMContentLoaded", () => {
     updateFormatMenuState();
   }
 
+  // Espaçamento entre linhas é GLOBAL (editor + prompter + preferências). Antes ele
+  // embrulhava o parágrafo atual num <div> com line-height inline, conflitando com o
+  // valor do prompter/editor (só um bloco mudava e o inline vencia mudanças futuras).
   function applyLineSpacing(value) {
-    restoreSelection();
-    const editor = getActiveTextEditorArea();
-    if (!editor) return;
-
     const numVal = parseFloat(value);
-    if (!isNaN(numVal) && numVal > 0) {
-      currentLineSpacing = numVal;
-      if (globalPrefs) globalPrefs.lineSpacing = numVal;
-      if (lineSpacingToolbar) {
-        setSelectValueSafe(lineSpacingToolbar, numVal, `Line ${numVal}x`);
-      }
+    if (isNaN(numVal) || numVal <= 0) return;
+
+    holdReadPosition();
+
+    currentLineSpacing = numVal;
+    if (globalPrefs) globalPrefs.lineSpacing = numVal;
+    if (lineSpacingToolbar) {
+      setSelectValueSafe(lineSpacingToolbar, numVal, `Line ${numVal}x`);
     }
 
-    applyStyle("formatBlock", "div");
-    const selection = window.getSelection();
-    if (selection.rangeCount > 0) {
-      let node = selection.anchorNode;
-      if (node.nodeType === 3) node = node.parentNode;
-      node.style.lineHeight = value;
-    }
-    markDocumentAsUnsaved(activeDocumentId);
+    document.querySelectorAll(".text-editor-area").forEach((area) => {
+      area.style.lineHeight = String(numVal);
+      area.querySelectorAll('[style*="line-height"]').forEach((el) => {
+        el.style.removeProperty("line-height");
+        if (!el.getAttribute("style")) el.removeAttribute("style");
+      });
+    });
+
+    const prompter = document.getElementById("prompterText-control");
+    if (prompter) prompter.style.lineHeight = String(numVal);
+    refreshEditPanelLookIfOpen();
+
+    try {
+      ipcRenderer.send("save-settings", { lineSpacing: numVal });
+    } catch (_) { }
+
+    if (activeDocumentId) markDocumentAsUnsaved(activeDocumentId);
     syncContentToPrompter({ preserveVisibleAnchor: true });
+    if (typeof broadcastStylesUpdate === "function") broadcastStylesUpdate();
   }
 
   // ============================================================
