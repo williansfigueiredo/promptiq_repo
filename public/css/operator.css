@@ -479,6 +479,21 @@ body.operator-fullscreen-mode #operator-tab-pane {
   z-index: 9999;
 }
 
+/* Tela cheia: sem seta do mouse (inclui a seta do marcador, que define cursor inline). */
+body.operator-fullscreen-mode,
+body.operator-fullscreen-mode * {
+  cursor: none !important;
+}
+
+/* Modo edição: a seta do mouse sempre visível (cursor de texto sobre o editor). */
+body.operator-edit-mode #operator-edit-panel {
+  cursor: default;
+}
+
+body.operator-edit-mode #operator-edit-panel .text-editor-area {
+  cursor: text;
+}
+
 
 /* --------------------------------------------------------------------------
    1.6 VOICE TRACKING (Controle de Voz)

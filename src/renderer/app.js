@@ -18,6 +18,17 @@
 
 document.addEventListener("DOMContentLoaded", () => {
 
+  // Focar o editor por código (toolbar, menus) faz o navegador rolar até o cursor de
+  // texto — que costuma estar longe do trecho que o operador está vendo, e o texto
+  // "pula". Sem opções explícitas, o foco programático do editor nunca rola.
+  const nativeHtmlFocus = HTMLElement.prototype.focus;
+  HTMLElement.prototype.focus = function (options) {
+    if (options === undefined && this.classList && this.classList.contains("text-editor-area")) {
+      return nativeHtmlFocus.call(this, { preventScroll: true });
+    }
+    return nativeHtmlFocus.call(this, options);
+  };
+
   // ============================================================
   // SEÇÃO 1: IMPORTAÇÃO DE DEPENDÊNCIAS
   // ============================================================
@@ -5353,7 +5364,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // cor, alinhamento, espaçamento, margem, inverter, espelhar...) mantém o ponto do texto.
   const HOLD_TOOLBAR_SELECTOR =
     "#toolbar-content, #op-btn-invert, #op-btn-margin, #op-btn-mirror-h, #op-btn-mirror-v";
-  ["change", "click"].forEach((type) => {
+  // "input" vem ANTES de "change" nos selects/inputs da barra e já aplica a mudança:
+  // capturar só em "change" guardaria um ponto já deslocado.
+  ["input", "change", "click", "keydown"].forEach((type) => {
     document.addEventListener(
       type,
       (e) => {
