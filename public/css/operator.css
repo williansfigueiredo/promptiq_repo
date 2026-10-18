@@ -112,12 +112,6 @@ body.operator-edit-mode #operator-prompter-wrapper {
   text-rendering: optimizeLegibility;
 }
 
-/* A escala é aplicada nos blocos (e não no contêiner de rolagem) para não
-   distorcer a altura/rolagem do editor. */
-#operator-edit-panel .text-editor-area > * {
-  zoom: var(--op-edit-zoom, 1);
-}
-
 /* Roteiros longos: blocos fora da tela não são diagramados (a altura de cada bloco já
    visto é lembrada por "auto"). Abre a edição e reage às teclas de forma bem mais leve. */
 #operator-edit-panel .text-editor-area > * {

@@ -461,30 +461,21 @@ document.addEventListener("DOMContentLoaded", () => {
     select.value = strValue;
   }
 
-  // O modo edição é o PRÓPRIO texto do prompter, editável: copia para o painel o
-  // mesmo fundo, cor, escala de fonte e margens do prompter (via variáveis CSS).
+  // O modo edição mostra o texto no tamanho REAL (o número da barra, sem o Prompter Font
+  // Scale); a escala em % só vale no prompter/tela cheia. Aqui só copiamos fundo, cor e
+  // margens do prompter (via variáveis CSS).
   function applyPrompterLookToEditPanel() {
     const control = document.getElementById("prompterText-control");
     const container = document.querySelector(".prompter-in-control");
-    const editor = getActiveTextEditorArea();
     if (!operatorEditPanel || !control || !container) return;
 
     const controlStyle = window.getComputedStyle(control);
     const bg = window.getComputedStyle(container).backgroundColor;
     const fg = controlStyle.color;
 
-    // Escala = tamanho (px) do prompter / tamanho (px) base do editor.
-    let zoom = 1;
-    if (editor) {
-      const prompterPx = parseFloat(controlStyle.fontSize);
-      const editorPx = parseFloat(window.getComputedStyle(editor).fontSize);
-      if (prompterPx > 0 && editorPx > 0) zoom = prompterPx / editorPx;
-    }
-
     const style = operatorEditPanel.style;
     style.setProperty("--op-edit-bg", bg);
     style.setProperty("--op-edit-fg", fg);
-    style.setProperty("--op-edit-zoom", String(zoom));
     style.setProperty("--op-edit-pad-l", controlStyle.paddingLeft);
     style.setProperty("--op-edit-pad-r", controlStyle.paddingRight);
   }
