@@ -972,6 +972,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Esc captura o trecho ANTES de qualquer mudança de layout (sair do fullscreen,
   // abrir o painel...), para o editor abrir exatamente no ponto que o operador via.
   let _escPreAnchor = null;
+  // Evita Esc repetido enquanto a transição edição → tela cheia ainda está em andamento.
+  let _escEnteringFullscreen = false;
   document.addEventListener(
     "keydown",
     (e) => {
@@ -3923,9 +3925,25 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (operatorEditPanel && operatorEditPanel.classList.contains("collapsed")) {
         ensureOperatorEditPanelVisible(preAnchor);
         getActiveTextEditorArea()?.focus({ preventScroll: true });
-      } else {
-        setOperatorEditPanelCollapsed(true, { navigateToCaret: false });
+      } else if (!_escEnteringFullscreen) {
+        // Edição → operação: fecha a edição no ponto do cursor e já entra em tela cheia
+        // (mesmo efeito do botão Toggle fullscreen), sem precisar de clique.
+        _escEnteringFullscreen = true;
+        setOperatorEditPanelCollapsed(true, { navigateToCaret: true });
         document.querySelector(".prompter-in-control")?.focus({ preventScroll: true });
+
+        // A navegação até o cursor é aplicada em 2 frames: espera concluir para o
+        // fullscreen capturar/restaurar a âncora já no ponto correto.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          _escEnteringFullscreen = false;
+          if (document.body.classList.contains("operator-fullscreen-mode")) return;
+          if (operatorEditPanel && !operatorEditPanel.classList.contains("collapsed")) return;
+          runFullscreenChangePreservingAnchor(() => {
+            document.body.classList.add("operator-fullscreen-mode");
+            ipcRenderer.send("control-window", "fullscreen");
+          });
+          document.querySelector(".prompter-in-control")?.focus({ preventScroll: true });
+        }));
       }
     }
   });
