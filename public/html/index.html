@@ -69,6 +69,8 @@
                         <div class="menu-item-separator"></div>
                         <div class="menu-item" data-action="find-replace">Find & Replace <span class="menu-shortcut">Ctrl + F</span></div>
                         <div class="menu-item-separator"></div>
+                        <div class="menu-item" data-action="backup-sync">Backup Sync...</div>
+                        <div class="menu-item-separator"></div>
                         <div class="menu-item" data-action="open-preferences">Preferences...</div>
                     </div>
                 </div>
@@ -97,6 +99,7 @@
                     </div>
                 </div>
              </div>
+             <span id="backup-sync-badge" class="badge bg-danger app-no-drag ms-2 d-none" title="Backup Sync"></span>
         </div>
 
         <div id="window-controls" class="app-no-drag">
@@ -633,6 +636,75 @@
         </div>
     </div>
 
+    <div class="modal fade" id="backupSyncModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content shadow-lg border-0">
+                <div class="modal-header border-bottom-0 pb-0">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-hdd-network me-2"></i>Backup Sync</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body p-4">
+                    <div class="alert alert-light border d-flex align-items-center justify-content-between mb-3 shadow-sm">
+                        <span class="text-muted fw-500">Status: <strong class="text-dark" id="backup-status-text">OFF</strong></span>
+                        <i class="bi bi-circle-fill text-danger" id="backup-status-dot" style="font-size: 12px;"></i>
+                    </div>
+
+                    <div class="btn-group w-100 mb-3" role="group" aria-label="Backup Sync role">
+                        <input type="radio" class="btn-check" name="backup-role" id="backup-role-primary" autocomplete="off" checked>
+                        <label class="btn btn-outline-primary btn-sm" for="backup-role-primary"><i class="bi bi-broadcast me-1"></i>This PC is the PRIMARY</label>
+                        <input type="radio" class="btn-check" name="backup-role" id="backup-role-backup" autocomplete="off">
+                        <label class="btn btn-outline-primary btn-sm" for="backup-role-backup"><i class="bi bi-shield-check me-1"></i>This PC is the BACKUP</label>
+                    </div>
+
+                    <div id="backup-primary-panel">
+                        <p class="small text-muted mb-2">Shares every text edit, document, style and reading position with the backup PC. Only the operator can use this channel (separate from the scriptwriter link).</p>
+                        <div class="input-group input-group-sm mb-2">
+                            <span class="input-group-text">Port</span>
+                            <input type="number" id="backup-primary-port" class="form-control" min="1024" max="65535" value="3002">
+                            <button id="backup-primary-toggle" class="btn btn-sm btn-primary"><i class="bi bi-broadcast me-1"></i> Start sharing</button>
+                        </div>
+                        <div id="backup-primary-info" class="d-none p-2 rounded border">
+                            <div class="small text-muted">Address (type it on the backup PC)</div>
+                            <div id="backup-primary-addresses" class="fw-bold font-monospace mb-2" style="white-space: pre-line;"></div>
+                            <div class="small text-muted">PIN</div>
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <span id="backup-primary-pin" class="fs-4 fw-bold font-monospace"></span>
+                                <button class="btn btn-sm btn-outline-secondary" id="backup-copy-pin" title="Copy PIN"><i class="bi bi-clipboard"></i></button>
+                            </div>
+                            <div id="backup-primary-clients" class="small text-muted"></div>
+                            <button class="btn btn-sm btn-outline-primary mt-2" id="backup-test-btn"><i class="bi bi-activity me-1"></i> Test connection</button>
+                        </div>
+                    </div>
+
+                    <div id="backup-backup-panel" class="d-none">
+                        <p class="small text-muted mb-2">Connect to the PRIMARY PC. Everything it receives and edits will be mirrored here (read-only until you take over).</p>
+                        <div class="row g-2 mb-2">
+                            <div class="col-8">
+                                <input type="text" id="backup-host" class="form-control form-control-sm font-monospace" placeholder="Primary IP (e.g. 192.168.0.10)" autocomplete="off" spellcheck="false">
+                            </div>
+                            <div class="col-4">
+                                <input type="number" id="backup-port" class="form-control form-control-sm" min="1" max="65535" value="3002" placeholder="Port">
+                            </div>
+                            <div class="col-12">
+                                <input type="text" id="backup-pin" class="form-control form-control-sm font-monospace" maxlength="6" inputmode="numeric" placeholder="6-digit PIN" autocomplete="off">
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button id="backup-connect-toggle" class="btn btn-sm btn-primary"><i class="bi bi-plug-fill me-1"></i> Connect</button>
+                            <button id="backup-takeover-btn" class="btn btn-sm btn-warning d-none"><i class="bi bi-arrow-repeat me-1"></i> Take over as primary</button>
+                            <button id="backup-ping-btn" class="btn btn-sm btn-outline-secondary d-none"><i class="bi bi-activity me-1"></i> Test connection</button>
+                        </div>
+                        <div id="backup-backup-info" class="small text-muted mt-2 d-none"></div>
+                    </div>
+
+                    <div id="backup-test-result" class="d-none"></div>
+                    <div id="backup-error" class="alert alert-danger small mt-3 mb-0 d-none"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="vscode-log-container" class="log-container">
     <div id="log-header" class="log-header" onclick="toggleLogPanel()">
         <span id="log-chevron" class="log-chevron">▶</span> 
@@ -848,6 +920,7 @@
 <script src="../../src/renderer/modules/tab-navigation.js"></script>
 <script src="../../src/renderer/lib/diff.min.js"></script>
 <script src="../../src/renderer/modules/keyboard-handler.js"></script>
+<script src="../../src/renderer/modules/backup-sync.js"></script>
 <!-- voice-module.js (Vosk) desativado: não carregar para economizar RAM/CPU -->
 <script type="module" src="../../src/renderer/app.js"></script>
 

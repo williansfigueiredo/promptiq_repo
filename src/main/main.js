@@ -1675,6 +1675,9 @@ ipcMain.handle('toggle-server', async (event, mode) => {
   }
 });
 
+// Espelhamento PRIMARY → BACKUP (canal separado do roteirista, porta 3002, só para o operador)
+require('./handlers/backup-sync-handlers').initBackupSyncHandlers();
+
 let _lastEmitLogTime = 0;
 
 function emitReadProgressToRemotes() {

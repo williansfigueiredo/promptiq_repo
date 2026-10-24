@@ -4580,6 +4580,58 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // ------------------------------------------------------------
+  // Ponte para o módulo backup-sync.js (espelhamento PRIMARY → BACKUP).
+  // Só expõe funções já existentes; não altera nenhum fluxo do roteirista remoto.
+  // ------------------------------------------------------------
+  window.PromptiqBackupBridge = {
+    listDocuments: () => documents.map((d) => ({ id: d.id, name: d.name })),
+    hasDocument: (id) => documents.some((d) => d.id === id),
+    getActiveId: () => activeDocumentId,
+    getEditor: (id) => document.querySelector(`#doc-${id} .text-editor-area`),
+    getCleanHtml: (editor) => getCleanContent(editor),
+    createDocument: (html, name) => createNewDocument(html, name, null),
+    activateDocument: (id) => activateDocument(id),
+    removeDocument: (id) => removeDocumentFromDOM(id),
+    renameDocument: (id, name) => {
+      const doc = documents.find((d) => d.id === id);
+      if (!doc || doc.name === name) return;
+      doc.name = name;
+      updateTabTitle(id, name, doc.saved);
+      if (id === activeDocumentId) updateTitle();
+    },
+    // Documento espelhado: somente leitura e sem aviso de "não salvo" ao fechar.
+    setMirrorMode: (id, on) => {
+      const doc = documents.find((d) => d.id === id);
+      const editor = document.querySelector(`#doc-${id} .text-editor-area`);
+      if (doc) {
+        doc.isMirror = on;
+        if (on) {
+          doc.saved = true;
+          updateTabTitle(id, doc.name, true);
+        }
+      }
+      if (editor) editor.contentEditable = on ? "false" : "true";
+    },
+    applyContent: (id, html, style) => {
+      const editor = document.querySelector(`#doc-${id} .text-editor-area`);
+      if (!editor) return false;
+      if (typeof html === "string") applyHtmlToEditorPatched(editor, html);
+      if (style) {
+        const isActive = id === activeDocumentId;
+        editor.style.fontSize = style.fontSize || "";
+        editor.style.fontFamily = style.fontFamily || "";
+        editor.style.lineHeight = style.lineHeight || "";
+        editor.style.textAlign = style.textAlign || "";
+        const pt = parseFloat(style.fontSize);
+        if (isActive && pt > 0) currentFontSizePT = pt;
+        if (isActive && style.fontFamily) currentFontFamily = style.fontFamily;
+      }
+      return true;
+    },
+    syncPrompter: () => syncContentToPrompter({ preserveVisibleAnchor: true }),
+  };
+
   function reorderDocumentsToMatchTabOrder() {
     if (!documentTabsBar) return;
 

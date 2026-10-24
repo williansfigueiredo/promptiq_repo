@@ -5,4 +5,5 @@
 require('./modules/hotkey-handler.js');
 require('./modules/tab-navigation.js');
 require('./modules/keyboard-handler.js');
+require('./modules/backup-sync.js');
 require('./app.js');
