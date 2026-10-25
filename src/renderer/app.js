@@ -8481,186 +8481,78 @@ document.addEventListener("DOMContentLoaded", () => {
             formattedDoc = oldVer;
             sourceDoc = newVer;
           } else {
-            // Nenhum é current - pergunta ao usuário
-            const choice = confirm(
-              `Which document has the FORMATTING ([MC] yellow, colors)?\n\n` +
-              `[OK] = ${newVer.displayName} (right)\n` +
-              `[Cancel] = ${oldVer.displayName} (left)`
+            // Só o documento que está sendo editado pode receber as mudanças
+            alert(
+              "Apply Text Changes edits the document you are currently editing.\n\n" +
+              "Select the active document (\"Atual\") as one of the two items."
             );
-            formattedDoc = choice ? newVer : oldVer;
-            sourceDoc = choice ? oldVer : newVer;
+            return;
           }
 
           console.log('[Timeline] Documento formatado:', formattedDoc.displayName);
           console.log('[Timeline] Documento fonte:', sourceDoc.displayName);
 
-          // Textos para comparação
-          const formattedText = formattedDoc.textContent || formattedDoc.content;
-          const sourceText = sourceDoc.textContent || sourceDoc.content;
+          // Aplica o TEXTO da fonte num rascunho do documento formatado, parágrafo a parágrafo:
+          // o que não mudou não é tocado (formatação intacta)
+          const VD = window.PromptiqVersionDiff;
+          const scratch = document.createElement('div');
+          scratch.innerHTML = formattedDoc.content || '';
+          const result = VD.applyTextChanges(scratch, sourceDoc.textContent || '');
+          const st = result.stats;
 
-          // Calcula o diff
-          const changes = Diff.diffWords(formattedText, sourceText);
-
-          // Separa adições e remoções
-          const additions = changes.filter(p => p.added);
-          const removals = changes.filter(p => p.removed);
-
-          if (additions.length === 0 && removals.length === 0) {
+          if (st.identical) {
             alert("The texts are identical. No changes to apply.");
             return;
           }
-
-          // Mostra preview
-          let preview = `Apply changes from "${sourceDoc.displayName}" to "${formattedDoc.displayName}"?\n\n`;
-
-          if (additions.length > 0) {
-            preview += `ADD (${additions.length} segments):\n`;
-            additions.slice(0, 3).forEach(p => {
-              preview += `  ✅ "${p.value.substring(0, 40)}${p.value.length > 40 ? '...' : ''}"\n`;
-            });
+          if (!result.verified) {
+            alert("These differences could not be applied exactly, so nothing was changed.\n\nUse \"Use: ...\" to replace the whole document instead.");
+            return;
           }
 
-          if (removals.length > 0) {
-            preview += `\nREMOVE (${removals.length} segments):\n`;
-            removals.slice(0, 3).forEach(p => {
-              preview += `  ❌ "${p.value.substring(0, 40)}${p.value.length > 40 ? '...' : ''}"\n`;
-            });
-          }
-
-          preview += `\nYour formatting ([MC], colors) will be PRESERVED.`;
+          const clip = (s) => (s.length > 60 ? s.substring(0, 60) + '...' : s);
+          const wordsOf = (row, type) => row.parts.filter((p) => p.type === type).map((p) => p.text.trim()).join(' ');
+          let preview = `Apply changes from "${sourceDoc.displayName}" to "${formattedDoc.displayName}"?\n\n` +
+            `${st.added} paragraph(s) ADDED, ${st.removed} REMOVED, ${st.changed} EDITED\n`;
+          result.rows.filter((r) => r.type !== 'same').slice(0, 6).forEach((r) => {
+            if (r.type === 'added') preview += `\n  ✅ + "${clip(r.text)}"`;
+            else if (r.type === 'removed') preview += `\n  ❌ - "${clip(r.text)}"`;
+            else preview += `\n  ✏️ "${clip(wordsOf(r, 'removed'))}" → "${clip(wordsOf(r, 'added'))}"`;
+          });
+          if (st.added + st.removed + st.changed > 6) preview += `\n  ...`;
+          preview += `\n\nParagraphs that did not change keep their formatting.\nThe version before this is saved in the Version History (and Ctrl+Z can undo it).`;
 
           if (!confirm(preview)) return;
 
-          // ========================================
-          // MERGE INTELIGENTE - NOVA ABORDAGEM
-          // ========================================
-          // Estratégia: reconstrói o texto final baseado no diff,
-          // depois tenta aplicar a formatação do documento original
+          // Guarda a versão de antes no histórico do documento: aparece no Version History e
+          // pode ser restaurada com "Use: ..." mesmo se o Ctrl+Z não estiver disponível.
+          const activeDocForHistory = getActiveDocument();
+          if (activeDocForHistory) {
+            if (!Array.isArray(activeDocForHistory.history)) activeDocForHistory.history = [];
+            activeDocForHistory.history.push({
+              id: Date.now(),
+              date: `Before apply - ${new Date().toLocaleTimeString()}`,
+              content: editor.innerHTML,
+            });
+            if (activeDocForHistory.history.length > 10) activeDocForHistory.history.shift();
+          }
 
-          let mergedHtml = formattedDoc.content;
-
-          // 1. PROCESSA ADIÇÕES
-          // Para cada adição, encontra onde inserir baseado no contexto
-          changes.forEach((part, idx) => {
-            if (part.added) {
-              const textToAdd = part.value;
-
-              // Encontra o contexto ANTES (última parte não-adicionada/removida)
-              let contextBefore = "";
-              for (let i = idx - 1; i >= 0; i--) {
-                if (!changes[i].added && !changes[i].removed) {
-                  contextBefore = changes[i].value;
-                  break;
-                }
-              }
-
-              // Encontra o contexto DEPOIS (próxima parte não-adicionada/removida)
-              let contextAfter = "";
-              for (let i = idx + 1; i < changes.length; i++) {
-                if (!changes[i].added && !changes[i].removed) {
-                  contextAfter = changes[i].value;
-                  break;
-                }
-              }
-
-              console.log('[Merge] Adicionando:', textToAdd.substring(0, 50));
-              console.log('[Merge] Contexto antes:', contextBefore.substring(Math.max(0, contextBefore.length - 30)));
-              console.log('[Merge] Contexto depois:', contextAfter.substring(0, 30));
-
-              // Tenta encontrar o ponto de inserção
-              if (contextBefore) {
-                // Pega os últimos N caracteres do contexto para localização mais precisa
-                const searchContext = contextBefore.replace(/\s+/g, '').slice(-30);
-
-                // Encontra a posição no HTML (ignora tags)
-                // Cria regex que ignora tags HTML entre os caracteres
-                const flexibleSearch = searchContext
-                  .split('')
-                  .map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-                  .join('(?:<[^>]*>)*\\s*');
-
-                try {
-                  const regex = new RegExp(flexibleSearch, 'i');
-                  const match = regex.exec(mergedHtml);
-
-                  if (match) {
-                    let insertPos = match.index + match[0].length;
-
-                    // CORREÇÃO: Avança até sair de qualquer tag span aberta
-                    // Procura a próxima tag de fechamento </span> ou </div> ou quebra de linha
-                    const afterMatch = mergedHtml.slice(insertPos);
-                    const closeTagMatch = afterMatch.match(/^[^<]*(<\/span>|<\/div>|<br\s*\/?>|<\/p>)/i);
-
-                    if (closeTagMatch) {
-                      // Insere DEPOIS da tag de fechamento para não herdar estilo
-                      insertPos += closeTagMatch.index + closeTagMatch[0].length;
-                    }
-
-                    // Insere o texto - agora fora de tags de formatação
-                    mergedHtml = mergedHtml.slice(0, insertPos) + textToAdd + mergedHtml.slice(insertPos);
-                    console.log('[Merge] Texto inserido na posição:', insertPos);
-                  } else {
-                    console.log('[Merge] Contexto não encontrado, tentando inserção simples');
-                    // Fallback: insere após encontrar texto similar
-                    const simpleSearch = contextBefore.slice(-15);
-                    const simplePos = mergedHtml.indexOf(simpleSearch);
-                    if (simplePos !== -1) {
-                      const insertAt = simplePos + simpleSearch.length;
-                      mergedHtml = mergedHtml.slice(0, insertAt) + textToAdd + mergedHtml.slice(insertAt);
-                    }
-                  }
-                } catch (e) {
-                  console.error('[Merge] Erro no regex:', e);
-                }
-              } else if (contextAfter) {
-                // Não há contexto antes - insere no início antes do contexto depois
-                const searchContext = contextAfter.substring(0, 30);
-                const pos = mergedHtml.indexOf(searchContext);
-                if (pos !== -1) {
-                  mergedHtml = mergedHtml.slice(0, pos) + textToAdd + mergedHtml.slice(pos);
-                }
-              }
+          // Fecha o modal antes (ele prende o foco) e troca o conteúdo pelo mecanismo nativo
+          // do editor, para o Ctrl+Z desfazer a aplicação inteira.
+          const applyToEditor = () => {
+            editor.focus();
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(editor);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            const ok = document.execCommand('insertHTML', false, result.html);
+            if (!ok || VD.htmlToDiffText(editor.innerHTML) !== VD.htmlToDiffText(result.html)) {
+              editor.innerHTML = result.html;
             }
-          });
-
-          // 2. PROCESSA REMOÇÕES (remove texto do HTML)
-          removals.forEach(part => {
-            const textToRemove = part.value;
-
-            // Escapa caracteres especiais
-            const escaped = textToRemove.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-            // Remove preservando tags ao redor
-            // Regex que captura o texto mesmo com tags no meio
-            const flexibleRemove = escaped
-              .split(/\s+/)
-              .filter(w => w.length > 0)
-              .join('(?:<[^>]*>)*\\s*(?:<[^>]*>)*');
-
-            try {
-              const regex = new RegExp(flexibleRemove, 'gi');
-              mergedHtml = mergedHtml.replace(regex, '');
-            } catch (e) {
-              // Fallback: remoção direta
-              mergedHtml = mergedHtml.replace(textToRemove, '');
-            }
-          });
-
-          // 3. Limpa espaços extras
-          mergedHtml = mergedHtml
-            .replace(/(<[^>]*>)\s+(<)/g, '$1$2')
-            .replace(/\s{2,}/g, ' ')
-            .replace(/>\s+</g, '><')
-            .trim();
-
-          // 4. Aplica ao editor
-          editor.innerHTML = mergedHtml;
-          editor.dispatchEvent(new Event('input', { bubbles: true }));
-
-          console.log('[Timeline] Merge aplicado com sucesso');
-          alert('Changes applied! Check the result.');
+            editor.dispatchEvent(new Event('input', { bubbles: true }));
+          };
+          timelineModalEl.addEventListener('hidden.bs.modal', applyToEditor, { once: true });
           timelineModal.hide();
-
         } catch (error) {
           console.error('[Timeline] Erro no Apply Changes:', error);
           alert('Error applying changes: ' + error.message);
