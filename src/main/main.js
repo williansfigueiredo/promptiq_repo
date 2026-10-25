@@ -777,6 +777,50 @@ app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(
 // SEÇÃO 8: LEITURA DE ARQUIVOS (ASSÍNCRONA)
 // ============================================================
 /**
+ * extractEditorHtml
+ * ------------------
+ * Backups antigos (e arquivos .html de outros programas) trazem um DOCUMENTO completo
+ * (<!DOCTYPE>, <head>, <style>, <body>). Colar isso no editor faz o <style> valer para o app
+ * inteiro (moldura preta, margens zeradas) e o CSS aparecer como texto. Aqui ficam só os
+ * parágrafos do corpo. Conteúdo normal do editor (sem moldura de documento) passa intacto.
+ */
+function extractEditorHtml(raw) {
+  let html = String(raw || '');
+  if (!/<(!doctype|html|head|body)\b/i.test(html)) return html;
+
+  const body = /<body\b[^>]*>([\s\S]*?)<\/body\s*>/i.exec(html);
+  if (body) {
+    html = body[1];
+  } else {
+    html = html
+      .replace(/<!doctype[^>]*>/gi, '')
+      .replace(/<head\b[\s\S]*?<\/head\s*>/i, '')
+      .replace(/<\/?(html|body)\b[^>]*>/gi, '');
+  }
+  return html
+    .replace(/<(style|script|title)\b[\s\S]*?<\/\1\s*>/gi, '')
+    .replace(/<(meta|link|base)\b[^>]*>/gi, '')
+    .trim();
+}
+
+/**
+ * plainTextToHtml
+ * ----------------
+ * Texto puro (.txt) vira um parágrafo por linha; linha em branco vira parágrafo vazio.
+ * O conteúdo é escapado: "<b>" digitado num .txt é texto, não formatação.
+ */
+function plainTextToHtml(text) {
+  const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(text || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n+$/, '')
+    .split('\n')
+    .map((line) => (line.trim() === '' ? '<p><br></p>' : `<p>${escapeHtml(line)}</p>`))
+    .join('');
+}
+
+/**
  * readFileContent
  * ----------------
  * Lê conteúdo de arquivos de diferentes formatos.
@@ -801,7 +845,7 @@ async function readFileContent(filePath) {
       const ptqContent = await fsPromises.readFile(filePath, 'utf-8');
       try {
         const ptqData = JSON.parse(ptqContent);
-        return ptqData.content || '';
+        return extractEditorHtml(ptqData.content || '');
       } catch (parseError) {
         console.warn('Arquivo .ptq inválido, tratando como texto:', parseError.message);
         return ptqContent;
@@ -850,11 +894,12 @@ async function readFileContent(filePath) {
     // Verifica tags HTML comuns que indicam formatação preservada
     const htmlPattern = /<(p|div|span|br|strong|em|b|i|u|font)\b[^>]*>/i;
     if (htmlPattern.test(text)) {
-      // Arquivo contém HTML - retorna como está para preservar formatação
-      return text;
+      // Arquivo contém HTML - mantém a formatação (sem a moldura de documento, se houver)
+      return extractEditorHtml(text);
     }
 
-    return text;
+    // Texto puro: um parágrafo por linha (antes tudo virava um bloco só)
+    return plainTextToHtml(text);
 
   } catch (error) {
     throw new Error(`Erro leitura: ${error.message}`);
@@ -1269,6 +1314,7 @@ ipcMain.on('save-backup-files', async (event, backupData) => {
     const ptqFilePath = path.join(backupDir, `${baseFileName}.ptq`);
 
     // 4. Monta o conteúdo .ptq no mesmo formato nativo do app
+    // (só o HTML do editor: nada de documento completo com <style>, que vazava para a interface)
     const ptqData = {
       content: backupData.htmlContent,
       metadata: {
@@ -1280,9 +1326,12 @@ ipcMain.on('save-backup-files', async (event, backupData) => {
       }
     };
 
+    // Quebras de linha do Windows para o .txt abrir certo no Bloco de Notas e afins
+    const plainText = String(backupData.plainText || '').replace(/\r?\n/g, '\r\n');
+
     // 5. Salva os arquivos de forma assíncrona
     await Promise.all([
-      fsPromises.writeFile(txtFilePath, backupData.plainText, 'utf-8'),
+      fsPromises.writeFile(txtFilePath, plainText, 'utf-8'),
       fsPromises.writeFile(ptqFilePath, JSON.stringify(ptqData, null, 2), 'utf-8')
     ]);
 
@@ -1604,8 +1653,8 @@ ipcMain.handle('toggle-server', async (event, mode) => {
                 contentHeightPx: 0, scrollPos: 0, isScrolling: false
               });
 
-              // Busca janela ativa no momento (não guarda referência antiga)
-              const mainWin = BrowserWindow.getAllWindows().find(w => !w.isDestroyed());
+              // Busca a janela do OPERADOR no momento (nunca a da projeção, que não tem editor)
+              const mainWin = getOperatorWindow();
               if (mainWin) {
                 mainWin.webContents.send('request-text-for-remote');
                 mainWin.webContents.send('request-full-state-for-remote');
@@ -1631,8 +1680,8 @@ ipcMain.handle('toggle-server', async (event, mode) => {
             });
             socket.broadcast.to(currentSessionID).emit('server-text-update', textContent);
 
-            // Envia log para janela principal (verificando se não foi destruída)
-            const mainWin = BrowserWindow.getAllWindows().find(w => !w.isDestroyed());
+            // Envia log para a janela do operador (verificando se não foi destruída)
+            const mainWin = getOperatorWindow();
             if (mainWin) {
               mainWin.webContents.send('add-log', {
                 msg: `${editorName} is typing...`,
@@ -1644,8 +1693,8 @@ ipcMain.handle('toggle-server', async (event, mode) => {
           });
 
           socket.on('disconnect', () => {
-            // Busca janela ativa no momento do disconnect (não usa referência antiga)
-            const mainWin = BrowserWindow.getAllWindows().find(w => !w.isDestroyed());
+            // Busca a janela do operador no momento do disconnect (não usa referência antiga)
+            const mainWin = getOperatorWindow();
             if (socket.userName && mainWin) {
               mainWin.webContents.send('add-log', {
                 msg: `${socket.userName} Left the room.`,
@@ -1679,6 +1728,13 @@ ipcMain.handle('toggle-server', async (event, mode) => {
 require('./handlers/backup-sync-handlers').initBackupSyncHandlers();
 
 let _lastEmitLogTime = 0;
+
+// Janela do operador (a que tem o editor). Com a tela estendida aberta, "a primeira janela da
+// lista" passa a ser a projeção, e o pedido do texto ao roteirista que entra se perdia nela.
+function getOperatorWindow() {
+  if (controlWindow && !controlWindow.isDestroyed()) return controlWindow;
+  return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && !isProjectionWindow(w)) || null;
+}
 
 function emitReadProgressToRemotes() {
   if (!remoteIo || currentReadProgress == null) return;
@@ -1786,36 +1842,95 @@ ipcMain.on('projection-ready', (event) => {
       win.webContents.send('request-resync-data');
     }
   });
+  requestProjectionFrame();
 });
 
 
 // ============================================================
 // SEÇÃO 18: ARQUITETURA DE BROADCAST (JANELA DE PROJEÇÃO)
 // ============================================================
-// Cria janela de projeção para segunda tela (HDMI)
-// Sincroniza scroll, conteúdo e marcador entre janelas
+// Cria a janela de projeção para a tela estendida (HDMI/segundo monitor).
+// A projeção NÃO monta o texto por conta própria: o operador envia um "quadro" com o próprio
+// prompter (HTML + estilos + largura) e a rolagem, e a projeção o reproduz idêntico, apenas
+// ampliado para o tamanho do monitor (mesmas quebras de linha, mesma posição sob o marcador).
 
-ipcMain.on('open-projection-window', () => {
-  const displays = screen.getAllDisplays();
+let projectionWin = null;
+let projectionSource = null; // webContents do operador que alimenta a projeção
 
-  // Tenta encontrar display externo
-  const externalDisplay = displays.find((display) => {
-    return display.bounds.x !== 0 || display.bounds.y !== 0;
+const isProjectionWindow = (win) => !!projectionWin && !projectionWin.isDestroyed() && win === projectionWin;
+
+// Monitor externo = qualquer um que não seja o principal (cobre monitor à esquerda/acima, onde x/y são negativos).
+function getExternalDisplay() {
+  const primaryId = screen.getPrimaryDisplay().id;
+  return screen.getAllDisplays().find((display) => display.id !== primaryId) || null;
+}
+
+// Com monitor externo: tela cheia nele. Sem monitor externo: janela de pré-visualização (não cobre o operador).
+function placeProjectionWindow(win) {
+  const external = getExternalDisplay();
+  if (win.isFullScreen()) win.setFullScreen(false);
+
+  if (external) {
+    win.setBounds(external.bounds);
+    win.setFullScreen(true);
+    return;
+  }
+
+  const area = screen.getPrimaryDisplay().workArea;
+  const width = Math.round(area.width * 0.6);
+  const height = Math.round(area.height * 0.6);
+  win.setBounds({
+    x: area.x + Math.round((area.width - width) / 2),
+    y: area.y + Math.round((area.height - height) / 2),
+    width,
+    height
   });
+}
 
-  // Define posição (segunda tela se existir, senão abre na principal)
-  const displayToUse = externalDisplay || displays[0];
+function notifyProjectionState(open) {
+  BrowserWindow.getAllWindows().forEach((win) => {
+    if (!win.isDestroyed() && !isProjectionWindow(win)) win.webContents.send('projection-state', { open });
+  });
+}
 
-  const projectionWin = new BrowserWindow({
-    width: displayToUse.bounds.width,
-    height: displayToUse.bounds.height,
-    x: displayToUse.bounds.x,
-    y: displayToUse.bounds.y,
+function requestProjectionFrame() {
+  if (projectionSource && !projectionSource.isDestroyed()) {
+    projectionSource.send('projection-request-frame');
+  }
+}
+
+ipcMain.on('open-projection-window', (event) => {
+  projectionSource = event.sender;
+
+  // Uma única janela de projeção: se já existe, só traz para a frente e reenvia o quadro.
+  if (projectionWin && !projectionWin.isDestroyed()) {
+    if (projectionWin.isMinimized()) projectionWin.restore();
+    projectionWin.show();
+    projectionWin.focus();
+    notifyProjectionState(true);
+    requestProjectionFrame();
+    return;
+  }
+
+  const external = getExternalDisplay();
+  const primaryArea = screen.getPrimaryDisplay().workArea;
+  const initialBounds = external
+    ? external.bounds
+    : {
+      x: primaryArea.x + Math.round(primaryArea.width * 0.2),
+      y: primaryArea.y + Math.round(primaryArea.height * 0.2),
+      width: Math.round(primaryArea.width * 0.6),
+      height: Math.round(primaryArea.height * 0.6)
+    };
+
+  projectionWin = new BrowserWindow({
+    ...initialBounds,
     title: "Teleprompter Output",
     autoHideMenuBar: true,
     icon: APP_ICON,
     backgroundColor: '#000000',
-    fullscreen: false, // Começa em janela
+    show: false,
+    fullscreen: !!external,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -1824,25 +1939,49 @@ ipcMain.on('open-projection-window', () => {
     }
   });
 
-  projectionWin.loadFile(path.join(__dirname, '../../public/html/projection.html'));
-
-  // 🔥 CORREÇÃO CRÍTICA: Quando terminar de carregar, sincroniza TUDO
-  projectionWin.webContents.once('did-finish-load', () => {
-    console.log("✅ Janela de Broadcast carregada");
-
-    // 1. Envia as configurações
-    projectionWin.webContents.send('settings-updated-globally', currentSettings);
-
-    // 2. Pede para o App.js mandar o conteúdo
-    BrowserWindow.getAllWindows().forEach(win => {
-      if (!win.isDestroyed() && win !== projectionWin) {
-        win.webContents.send('request-resync-data');
-      }
-    });
+  const thisWindow = projectionWin;
+  thisWindow.once('ready-to-show', () => thisWindow.show());
+  thisWindow.on('closed', () => {
+    if (projectionWin === thisWindow) {
+      projectionWin = null;
+      notifyProjectionState(false);
+    }
   });
 
-  // Opcional: Abre DevTools para debug
-  // projectionWin.webContents.openDevTools();
+  thisWindow.loadFile(path.join(__dirname, '../../public/html/projection.html'));
+
+  thisWindow.webContents.once('did-finish-load', () => {
+    console.log("✅ Janela de Broadcast carregada");
+    thisWindow.webContents.send('settings-updated-globally', currentSettings);
+    notifyProjectionState(true);
+    requestProjectionFrame();
+  });
+});
+
+ipcMain.on('close-projection-window', () => {
+  if (projectionWin && !projectionWin.isDestroyed()) projectionWin.close();
+});
+
+// Monitor ligado/desligado: leva a projeção para o monitor certo.
+const repositionProjection = () => {
+  if (projectionWin && !projectionWin.isDestroyed()) placeProjectionWindow(projectionWin);
+};
+app.whenReady().then(() => {
+  screen.on('display-added', repositionProjection);
+  screen.on('display-removed', repositionProjection);
+});
+
+// Quadros do operador → projeção (só da janela que abriu a projeção)
+ipcMain.on('projection-layout', (event, payload) => {
+  if (projectionWin && !projectionWin.isDestroyed() && event.sender === projectionSource) {
+    projectionWin.webContents.send('mirror-layout', payload);
+  }
+});
+
+ipcMain.on('projection-scroll', (event, payload) => {
+  if (projectionWin && !projectionWin.isDestroyed() && event.sender === projectionSource) {
+    projectionWin.webContents.send('mirror-scroll', payload);
+  }
 });
 
 // ============================================================
@@ -1856,9 +1995,7 @@ ipcMain.on('show-standby-projection', (event, standbyData) => {
   // Encontra e envia apenas para janelas de projeção (não a principal)
   BrowserWindow.getAllWindows().forEach(win => {
     if (!win.isDestroyed()) {
-      // Verifica se é uma janela de projeção pelo título
-      const title = win.getTitle();
-      if (title === 'Teleprompter Output' || title === 'Broadcast Live') {
+      if (isProjectionWindow(win) || win.getTitle() === 'Teleprompter Output' || win.getTitle() === 'Broadcast Live') {
         win.webContents.send('standby-mode', standbyData);
         console.log('[Standby] Enviado para janela de projeção');
       }
@@ -1870,11 +2007,12 @@ ipcMain.on('show-standby-projection', (event, standbyData) => {
 // SEÇÃO 19: SINCRONIZAÇÃO EM TEMPO REAL
 // ============================================================
 // Sincroniza posição de scroll, conteúdo e marcador entre janelas
+// (a projeção recebe os quadros próprios acima; não precisa destes canais)
 
 // Sincronia de posição do scroll (60 FPS - Alta Performance)
 ipcMain.on('sync-scroll-position', (event, position) => {
   BrowserWindow.getAllWindows().forEach(win => {
-    if (!win.isDestroyed()) {
+    if (!win.isDestroyed() && !isProjectionWindow(win)) {
       win.webContents.send('update-scroll', position);
     }
   });
@@ -1886,20 +2024,16 @@ ipcMain.on('sync-scroll-position', (event, position) => {
 // Atualiza conteúdo do prompter em todas as janelas (exceto remetente)
 ipcMain.on('update-prompter-content', (event, content) => {
   BrowserWindow.getAllWindows().forEach(win => {
-    // A lógica original impedia o envio se o remetente fosse a própria janela
-    // Mas a projectionWin precisa receber de QUALQUER um.
-
-    // Se a janela não for destruída E (não for quem enviou OU for a janela de projeção)
-    if (!win.isDestroyed() && (win.webContents.id !== event.sender.id)) {
+    if (!win.isDestroyed() && !isProjectionWindow(win) && (win.webContents.id !== event.sender.id)) {
       win.webContents.send('update-prompter-content', content);
     }
   });
 });
 
-// Sincroniza tamanho da fonte do Operator para a Projection
+// Sincroniza tamanho da fonte do Operator para as demais janelas
 ipcMain.on('sync-projection-font-size', (event, fontSize) => {
   BrowserWindow.getAllWindows().forEach(win => {
-    if (!win.isDestroyed() && (win.webContents.id !== event.sender.id)) {
+    if (!win.isDestroyed() && !isProjectionWindow(win) && (win.webContents.id !== event.sender.id)) {
       win.webContents.send('sync-font-size', fontSize);
     }
   });

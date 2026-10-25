@@ -17,7 +17,14 @@
 
   const DEFAULT_PORT = 3002;
   const SEND_THROTTLE_MS = 250;
-  const POSITION_POLL_MS = 300;
+  const PROMPTER_SYNC_MS = 400;
+  const PROMPTER_SYNC_EXTRA_MAX_MS = 1200;  // espera extra em roteiros grandes
+  const PROMPTER_SYNC_MAX_WAIT_MS = 3000;   // mesmo digitando sem parar, o prompter atualiza a cada 3 s
+  const SCROLL_POLL_MS = 100;
+  const SCROLL_KEYFRAME_MS = 800;   // correção periódica enquanto o PRIMARY rola
+  const DRIFT_HARD_PX = 150;          // acima disso o BACKUP salta para o ponto certo
+  const DRIFT_DEADZONE_PX = 2;        // abaixo disso não corrige
+  const DRIFT_CATCHUP_SECONDS = 1.5;  // tempo para absorver um desvio pequeno acelerando/freando
   const MAX_HTML_LENGTH = 20 * 1024 * 1024;
   const STORAGE_HOST = 'promptiq.backup.host';
   const STORAGE_PORT = 'promptiq.backup.port';
@@ -30,6 +37,7 @@
     addresses: [],
     port: DEFAULT_PORT,
     pin: '',
+    editing: false,     // BACKUP com o espelhamento pausado para permitir edição local
     lastActivityAt: 0
   };
 
@@ -41,12 +49,52 @@
   // ============================================================
   let observer = null;
   let sendTimer = null;
-  let positionTimer = null;
+  let scrollTimer = null;
   let seq = 0;
   let lastSignature = '';
   let lastActiveId = null;
-  let lastPositionKey = '';
-  const lastDocHash = new Map();
+  let lastScrollState = '';
+  let lastScrollPx = 0;
+  let lastScrollSentAt = 0;
+  // Linha de base por documento = o que o BACKUP já tem. Só as diferenças viajam pela rede,
+  // então digitar num roteiro grande custa o mesmo que num pequeno.
+  const baselines = new Map(); // docId -> { sigs: string[], textLen, styleHash, pure }
+
+  // Parágrafos que o observador viu mudar desde o último envio. Com poucas mudanças dentro de
+  // parágrafos já conhecidos (digitação), só eles são comparados, sem reler o roteiro inteiro.
+  const MAX_DIRTY_NODES = 40;
+  const dirtyNodes = new Set();
+  let needsFullScan = true;
+
+  function noteMutations(records) {
+    if (needsFullScan) return;
+    const bridge = getBridge();
+    const activeId = bridge ? bridge.getActiveId() : null;
+    const editor = activeId == null ? null : bridge.getEditor(activeId);
+    if (!editor || state.clients === 0) {
+      needsFullScan = true;
+      return;
+    }
+    for (const record of records) {
+      let node = record.target;
+      while (node && node.parentNode !== editor) node = node.parentNode;
+      // Mudança no próprio editor (estrutura/estilo) ou fora dele (abas, outros documentos).
+      if (!node || record.target === editor) {
+        needsFullScan = true;
+        return;
+      }
+      dirtyNodes.add(node);
+      if (dirtyNodes.size > MAX_DIRTY_NODES) {
+        needsFullScan = true;
+        return;
+      }
+    }
+  }
+
+  function resetDirtyTracking() {
+    dirtyNodes.clear();
+    needsFullScan = false;
+  }
 
   function readStyle(editor) {
     if (!editor) return {};
@@ -59,11 +107,48 @@
     };
   }
 
-  function snapshotDoc(bridge, id) {
-    const editor = bridge.getEditor(id);
-    const style = readStyle(editor);
-    const html = editor ? bridge.getCleanHtml(editor) : '';
-    return { html, style, hash: `${style.fontSize}|${style.fontFamily}|${style.lineHeight}|${style.textAlign}|${html}` };
+  const styleHashOf = (s) => `${s.fontSize}|${s.fontFamily}|${s.lineHeight}|${s.textAlign}`;
+
+  // Unidades de nível superior do editor. Textos adjacentes viram uma só (como ao reinterpretar
+  // o HTML no BACKUP) e textos vazios são ignorados, para as contagens dos dois lados baterem.
+  function topLevelUnits(editor) {
+    const groups = [];
+    const sigs = [];
+    editor.childNodes.forEach((n) => {
+      if (n.nodeType === 3) {
+        if (!n.data) return;
+        const last = groups.length - 1;
+        if (last >= 0 && groups[last][0].nodeType === 3) {
+          groups[last].push(n);
+          sigs[last] += n.data;
+          return;
+        }
+        groups.push([n]);
+        sigs.push('#' + n.data);
+        return;
+      }
+      groups.push([n]);
+      sigs.push(n.nodeType === 1 ? n.outerHTML : '<!--' + n.data);
+    });
+    return { groups, sigs };
+  }
+
+  function groupsToHtml(bridge, groups) {
+    const box = document.createElement('div');
+    groups.forEach((group) => group.forEach((n) => box.appendChild(n.cloneNode(true))));
+    return bridge.getCleanHtml(box); // mesma limpeza usada em todo o app (sem marcações de busca/leitura)
+  }
+
+  // "pure": todo nível superior é um elemento (o caso normal: <p>/<div>). Só assim o índice da
+  // unidade é o índice do nó, o que permite comparar apenas os parágrafos alterados.
+  function makeBaseline(editor, style) {
+    const { groups, sigs } = topLevelUnits(editor);
+    return {
+      sigs,
+      textLen: (editor.textContent || '').length,
+      styleHash: styleHashOf(style),
+      pure: groups.every((g) => g.length === 1 && g[0].nodeType === 1)
+    };
   }
 
   function pushToBackups(message) {
@@ -74,10 +159,12 @@
   }
 
   function buildFull(bridge) {
+    baselines.clear();
     const docs = bridge.listDocuments().map((d) => {
-      const snap = snapshotDoc(bridge, d.id);
-      lastDocHash.set(d.id, snap.hash);
-      return { key: String(d.id), name: d.name, html: snap.html, style: snap.style };
+      const editor = bridge.getEditor(d.id);
+      const style = readStyle(editor);
+      if (editor) baselines.set(d.id, makeBaseline(editor, style));
+      return { key: String(d.id), name: d.name, html: editor ? bridge.getCleanHtml(editor) : '', style };
     });
     const activeId = bridge.getActiveId();
     return {
@@ -90,12 +177,101 @@
   function pushFull() {
     const bridge = getBridge();
     if (!bridge) return;
-    lastDocHash.clear();
     const list = bridge.listDocuments();
     lastSignature = list.map((d) => `${d.id}:${d.name}`).join('|');
     lastActiveId = bridge.getActiveId();
-    lastPositionKey = '';
+    lastScrollState = '';
     pushToBackups(buildFull(bridge));
+    resetDirtyTracking();
+  }
+
+  function makePatch(id, name, base, change) {
+    return {
+      type: 'patch',
+      key: String(id),
+      name,
+      activeKey: String(id),
+      baseCount: base.sigs.length,
+      baseLen: base.textLen,
+      start: change.start,
+      remove: change.remove,
+      count: change.count,
+      html: change.html,
+      style: change.style
+    };
+  }
+
+  // Caminho rápido: só compara os parágrafos marcados pelo observador. Devolve null (nada mudou),
+  // undefined (não dá para usar o caminho rápido) ou o patch.
+  function buildPatchFast(bridge, id, name, editor, base) {
+    if (needsFullScan || !base.pure || editor.childNodes.length !== base.sigs.length) return undefined;
+    const style = readStyle(editor);
+    if (styleHashOf(style) !== base.styleHash) return undefined;
+
+    const changed = new Map(); // índice -> nova assinatura
+    for (const node of dirtyNodes) {
+      if (node.nodeType !== 1 || node.parentNode !== editor) return undefined;
+      const index = Array.prototype.indexOf.call(editor.childNodes, node);
+      if (index < 0) return undefined;
+      const sig = node.outerHTML;
+      if (sig !== base.sigs[index]) changed.set(index, sig);
+    }
+    if (!changed.size) return null;
+
+    const indexes = Array.from(changed.keys());
+    const first = Math.min(...indexes);
+    const last = Math.max(...indexes);
+    const groups = [];
+    for (let i = first; i <= last; i++) groups.push([editor.childNodes[i]]);
+
+    const patch = makePatch(id, name, base, {
+      start: first,
+      remove: last - first + 1,
+      count: base.sigs.length,
+      html: groupsToHtml(bridge, groups),
+      style
+    });
+    changed.forEach((sig, index) => { base.sigs[index] = sig; });
+    base.textLen = (editor.textContent || '').length;
+    return patch;
+  }
+
+  // Caminho completo: compara todas as unidades (estrutura mudou, estilo, texto solto...).
+  function buildPatchFull(bridge, id, name, editor, base) {
+    const { groups, sigs } = topLevelUnits(editor);
+    const style = readStyle(editor);
+    const styleHash = styleHashOf(style);
+
+    const max = Math.min(base.sigs.length, sigs.length);
+    let start = 0;
+    while (start < max && base.sigs[start] === sigs[start]) start++;
+    let tail = 0;
+    while (tail < max - start &&
+      base.sigs[base.sigs.length - 1 - tail] === sigs[sigs.length - 1 - tail]) tail++;
+
+    const removed = base.sigs.length - start - tail;
+    const added = sigs.length - start - tail;
+    if (!removed && !added && styleHash === base.styleHash) return null;
+
+    const patch = makePatch(id, name, base, {
+      start,
+      remove: removed,
+      count: sigs.length,
+      html: groupsToHtml(bridge, groups.slice(start, start + added)),
+      style
+    });
+    baselines.set(id, makeBaseline(editor, style));
+    return patch;
+  }
+
+  // null = nada mudou; undefined = sem linha de base (precisa de reenvio completo).
+  function buildPatch(bridge, id, name) {
+    const editor = bridge.getEditor(id);
+    const base = baselines.get(id);
+    if (!editor || !base) return undefined;
+
+    const fast = buildPatchFast(bridge, id, name, editor, base);
+    return fast !== undefined ? fast : buildPatchFull(bridge, id, name, editor, base);
   }
 
   function collectAndSend() {
@@ -113,24 +289,20 @@
     const activeId = bridge.getActiveId();
     if (activeId !== lastActiveId) {
       lastActiveId = activeId;
-      lastPositionKey = '';
+      lastScrollState = '';
+      needsFullScan = true;
       pushToBackups({ type: 'active', key: activeId == null ? '' : String(activeId) });
     }
     if (activeId == null) return;
 
-    const snap = snapshotDoc(bridge, activeId);
-    if (lastDocHash.get(activeId) === snap.hash) return;
-    lastDocHash.set(activeId, snap.hash);
-
     const doc = list.find((d) => d.id === activeId);
-    pushToBackups({
-      type: 'doc',
-      key: String(activeId),
-      name: doc ? doc.name : '',
-      activeKey: String(activeId),
-      html: snap.html,
-      style: snap.style
-    });
+    const patch = buildPatch(bridge, activeId, doc ? doc.name : '');
+    if (patch === undefined) {
+      pushFull();
+      return;
+    }
+    resetDirtyTracking();
+    if (patch) pushToBackups(patch);
   }
 
   function scheduleSend() {
@@ -138,59 +310,79 @@
     sendTimer = setTimeout(collectAndSend, SEND_THROTTLE_MS);
   }
 
-  function pollPosition() {
+  // Rolagem: o PRIMARY informa só "está rodando? a que velocidade? onde está?". O BACKUP roda o
+  // próprio motor na mesma velocidade (suave, 60 fps) e usa estas mensagens apenas para corrigir
+  // desvios, em vez de saltar para cada posição recebida.
+  function pollScroll() {
     if (state.role !== 'primary' || state.clients === 0) return;
     const bridge = getBridge();
-    const container = document.querySelector('.prompter-in-control');
-    if (!bridge || !container || !container.clientHeight) return;
-
     const engine = window.ScrollEngine;
-    const key = `${Math.round(container.scrollTop)}|${Math.round((engine && engine.decimalScroll) || 0)}`;
-    if (key === lastPositionKey) return;
+    const container = document.querySelector('.prompter-in-control');
+    const control = document.getElementById('prompterText-control');
+    if (!bridge || !engine || !container || !control || !container.clientHeight) return;
 
-    const anchor = window.PromptiqReadAnchor ? window.PromptiqReadAnchor.capture() : null;
-    if (!anchor) return;
-    lastPositionKey = key;
+    const running = !!engine.isRunning;
+    const speed = engine.speed || 0;
+    const px = running ? (engine.decimalScroll || 0) : (container.scrollTop || 0);
+    const stateKey = `${running}|${speed}`;
+    const now = Date.now();
 
+    const stateChanged = stateKey !== lastScrollState;
+    const keyframeDue = running && now - lastScrollSentAt >= SCROLL_KEYFRAME_MS;
+    const movedManually = !running && Math.abs(px - lastScrollPx) >= 1;
+    if (!stateChanged && !keyframeDue && !movedManually) return;
+
+    lastScrollState = stateKey;
+    lastScrollPx = px;
+    lastScrollSentAt = now;
+
+    const contentHeight = control.offsetHeight || 1;
     const activeId = bridge.getActiveId();
-    pushToBackups({ type: 'pos', key: activeId == null ? '' : String(activeId), anchor });
+    pushToBackups({
+      type: 'scroll',
+      key: activeId == null ? '' : String(activeId),
+      running,
+      speed,
+      ratio: px / contentHeight,
+      contentHeight,
+      anchor: window.PromptiqReadAnchor ? window.PromptiqReadAnchor.capture() : null
+    });
   }
 
   function startPrimaryWatch() {
     stopPrimaryWatch();
     const container = $('document-content-container');
     const tabs = $('document-tabs-bar');
-    observer = new MutationObserver(scheduleSend);
-    const options = {
-      childList: true,
-      characterData: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['style', 'class']
-    };
+    observer = new MutationObserver((records) => {
+      noteMutations(records);
+      scheduleSend();
+    });
+    const options = { childList: true, characterData: true, subtree: true, attributes: true };
     if (container) observer.observe(container, options);
     if (tabs) observer.observe(tabs, { childList: true, characterData: true, subtree: true });
-    positionTimer = setInterval(pollPosition, POSITION_POLL_MS);
+    scrollTimer = setInterval(pollScroll, SCROLL_POLL_MS);
   }
 
   function stopPrimaryWatch() {
     if (observer) observer.disconnect();
     observer = null;
+    needsFullScan = true;
+    dirtyNodes.clear();
     clearTimeout(sendTimer);
     sendTimer = null;
-    clearInterval(positionTimer);
-    positionTimer = null;
-    lastDocHash.clear();
+    clearInterval(scrollTimer);
+    scrollTimer = null;
+    baselines.clear();
   }
 
   // ============================================================
   // BACKUP — recepção e aplicação
   // ============================================================
   const mirror = new Map(); // key do PRIMARY -> { localId, hash }
-  let lastPosition = null;
+  let lastScroll = null;    // { msg, receivedAt } — última mensagem de rolagem recebida
 
   // O app roda com nodeIntegration: nada vindo da rede pode virar script no editor.
-  function sanitizeHtml(html) {
+  function sanitizeFragment(html) {
     const tpl = document.createElement('template');
     tpl.innerHTML = String(html || '');
     tpl.content
@@ -206,8 +398,10 @@
         if (name.startsWith('on') || name === 'srcdoc' || dangerousUrl) el.removeAttribute(attr.name);
       });
     });
-    return tpl.innerHTML;
+    return tpl;
   }
+
+  const sanitizeHtml = (html) => sanitizeFragment(html).innerHTML;
 
   function sanitizeStyle(style) {
     const clean = {};
@@ -286,17 +480,183 @@
     return null;
   }
 
-  function applyPosition() {
+  function sanitizeScroll(message) {
+    const num = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+    const a = message.anchor;
+    const anchor = a && typeof a === 'object' && Number.isFinite(a.idx) && Number.isFinite(a.fraction)
+      ? {
+        idx: a.idx,
+        totalBlocks: num(a.totalBlocks, 0),
+        fraction: Math.max(0, Math.min(1, a.fraction)),
+        text: typeof a.text === 'string' ? a.text.slice(0, 120) : '',
+        prevText: typeof a.prevText === 'string' ? a.prevText.slice(0, 120) : '',
+        nextText: typeof a.nextText === 'string' ? a.nextText.slice(0, 120) : ''
+      }
+      : null;
+    return {
+      key: String(message.key),
+      running: message.running === true,
+      speed: Math.max(-100, Math.min(100, Math.round(num(message.speed, 0)))),
+      ratio: Math.max(0, num(message.ratio, 0)),
+      contentHeight: Math.max(1, num(message.contentHeight, 1)),
+      anchor
+    };
+  }
+
+  function setScrollPx(container, control, px) {
+    const engine = window.ScrollEngine;
+    engine.decimalScroll = px;
+    if (engine.isRunning) {
+      control.style.transform = `translate3d(0, ${-px}px, 0)`;
+    } else {
+      control.style.transform = 'none';
+      container.style.overflowY = 'auto';
+      container.scrollTop = px;
+    }
+    ipcRenderer.send('sync-scroll-position', {
+      textPercent: Math.min(1, Math.max(0, px / (control.offsetHeight || 1)))
+    });
+  }
+
+  function setMirroredSpeed(speed) {
+    const engine = window.ScrollEngine;
+    if (engine.speed === speed) return;
+    engine.setSpeed(speed);
+    ipcRenderer.send('control-prompter', { command: 'speed', value: speed });
+  }
+
+  // Para a rolagem que o espelhamento iniciou e devolve o motor ao comportamento normal.
+  function releaseMirroredScroll() {
+    const engine = window.ScrollEngine;
+    if (!engine) return;
+    engine.speedScale = 1;
+    if (engine.isRunning) {
+      engine.pause();
+      ipcRenderer.send('control-prompter', 'pause');
+    }
+  }
+
+  function mirrorScroll() {
     const bridge = getBridge();
-    if (!bridge || !lastPosition || !window.PromptiqReadAnchor) return;
+    const engine = window.ScrollEngine;
+    if (!bridge || !engine || !lastScroll || state.editing) return;
+
+    const { msg, receivedAt } = lastScroll;
+    if (activeMirrorKey(bridge) !== msg.key) return;
     if (document.body.classList.contains('operator-edit-mode')) return;
-    if (activeMirrorKey(bridge) !== lastPosition.key) return;
-    window.PromptiqReadAnchor.restore(lastPosition.anchor);
+
+    const container = document.querySelector('.prompter-in-control');
+    const control = document.getElementById('prompterText-control');
+    if (!container || !control || !container.clientHeight) return; // prompter oculto: reaplica ao voltar
+
+    // Janelas/fontes diferentes geram alturas diferentes: a velocidade acompanha a proporção.
+    const contentHeight = control.offsetHeight || 1;
+    const scale = Math.max(0.2, Math.min(5, contentHeight / msg.contentHeight));
+    const ageMs = Date.now() - receivedAt;
+
+    let target = bridge.anchorScrollTarget ? bridge.anchorScrollTarget(msg.anchor) : null;
+    if (target == null) target = msg.ratio * contentHeight;
+    if (msg.running) target += (msg.speed * 3 * scale * ageMs) / 1000;
+    target = Math.max(0, target);
+
+    if (!msg.running) {
+      releaseMirroredScroll();
+      setMirroredSpeed(msg.speed);
+      setScrollPx(container, control, target);
+      return;
+    }
+
+    engine.speedScale = scale;
+    setMirroredSpeed(msg.speed);
+
+    if (!engine.isRunning) {
+      setScrollPx(container, control, target);
+      engine.start();
+      ipcRenderer.send('control-prompter', 'play');
+      return;
+    }
+
+    const drift = target - engine.decimalScroll;
+    if (Math.abs(drift) > DRIFT_HARD_PX) {
+      setScrollPx(container, control, target);
+      return;
+    }
+
+    // Desvio pequeno: acelera/freia de leve até alcançar, sem nenhum salto visível.
+    const pxPerSecond = msg.speed * 3 * scale;
+    if (pxPerSecond !== 0 && Math.abs(drift) > DRIFT_DEADZONE_PX) {
+      const correction = (drift / DRIFT_CATCHUP_SECONDS) / pxPerSecond;
+      engine.speedScale = scale * (1 + Math.max(-0.3, Math.min(0.3, correction)));
+    }
+  }
+
+  // Aplica só o trecho que mudou no PRIMARY. Qualquer incoerência pede um reenvio completo.
+  function applyPatch(bridge, message) {
+    const entry = mirror.get(message.key);
+    const whole = (v) => Number.isInteger(v) && v >= 0;
+    if (!entry || !bridge.hasDocument(entry.localId) || typeof message.html !== 'string' ||
+      message.html.length > MAX_HTML_LENGTH ||
+      !whole(message.baseCount) || !whole(message.baseLen) || !whole(message.start) ||
+      !whole(message.remove) || !whole(message.count)) {
+      requestResync();
+      return;
+    }
+
+    const ok = bridge.patchEditorNodes(entry.localId, {
+      baseCount: message.baseCount,
+      baseLen: message.baseLen,
+      start: message.start,
+      remove: message.remove,
+      count: message.count,
+      nodes: Array.from(sanitizeFragment(message.html).content.childNodes)
+    });
+    if (!ok) {
+      requestResync();
+      return;
+    }
+
+    const style = sanitizeStyle(message.style);
+    if (JSON.stringify(style) !== JSON.stringify(entry.style)) {
+      bridge.applyContent(entry.localId, null, style);
+      entry.style = style;
+    }
+    if (message.name) bridge.renameDocument(entry.localId, sanitizeName(message.name));
+    entry.hash = null; // o conteúdo mudou: o cache do último "doc" completo não vale mais
+    if (message.activeKey && activeMirrorKey(bridge) !== message.activeKey) activateKey(bridge, message.activeKey);
+    schedulePrompterSync(message.baseLen);
+  }
+
+  let lastResyncAt = 0;
+  function requestResync() {
+    const now = Date.now();
+    if (now - lastResyncAt < 1000) return;
+    lastResyncAt = now;
+    ipcRenderer.send('backup-request-resync');
+  }
+
+  // O prompter do backup é refeito só quando o PRIMARY dá uma pausa na digitação (ou após um teto
+  // de espera), com espera proporcional ao tamanho do roteiro. Refazer o prompter é a parte mais
+  // cara (~100 ms num roteiro de 3000 parágrafos) e não precisa acompanhar cada tecla.
+  let prompterSyncTimer = null;
+  let prompterSyncFirstAt = 0;
+  function schedulePrompterSync(textLength = 0) {
+    const now = Date.now();
+    if (!prompterSyncTimer) prompterSyncFirstAt = now;
+    clearTimeout(prompterSyncTimer);
+    const wanted = PROMPTER_SYNC_MS + Math.min(PROMPTER_SYNC_EXTRA_MAX_MS, textLength / 200);
+    const delay = Math.max(0, Math.min(wanted, prompterSyncFirstAt + PROMPTER_SYNC_MAX_WAIT_MS - now));
+    prompterSyncTimer = setTimeout(() => {
+      prompterSyncTimer = null;
+      const bridge = getBridge();
+      if (bridge && state.role === 'backup' && !state.editing) bridge.syncPrompter();
+    }, delay);
   }
 
   function handleIncoming(message) {
     const bridge = getBridge();
     if (!bridge || state.role !== 'backup' || !message) return;
+    // Com a edição local liberada, nada do PRIMARY sobrescreve o texto (exceto o teste).
+    if (state.editing && message.type !== 'test') return;
 
     try {
       switch (message.type) {
@@ -311,14 +671,18 @@
           }
           break;
         }
+        case 'patch':
+          applyPatch(bridge, message);
+          state.lastActivityAt = Date.now();
+          return;
         case 'active':
           activateKey(bridge, message.key);
           bridge.syncPrompter();
           break;
-        case 'pos':
-          if (message.anchor && typeof message.anchor === 'object') {
-            lastPosition = { key: String(message.key), anchor: message.anchor };
-            applyPosition();
+        case 'scroll':
+          if (typeof message.ratio === 'number' && Number.isFinite(message.ratio)) {
+            lastScroll = { msg: sanitizeScroll(message), receivedAt: Date.now() };
+            mirrorScroll();
           }
           return;
         case 'test':
@@ -328,22 +692,51 @@
           return;
       }
       state.lastActivityAt = Date.now();
-      applyPosition();
+      mirrorScroll();
     } catch (err) {
       console.warn('[BackupSync] Falha ao aplicar atualização, pedindo reenvio completo', err);
-      ipcRenderer.send('backup-request-resync');
+      requestResync();
     }
   }
 
   function unlockMirrors() {
     const bridge = getBridge();
+    releaseMirroredScroll();
+    clearTimeout(prompterSyncTimer);
+    prompterSyncTimer = null;
     if (bridge) {
       mirror.forEach((entry) => {
         if (bridge.hasDocument(entry.localId)) bridge.setMirrorMode(entry.localId, false);
       });
     }
     mirror.clear();
-    lastPosition = null;
+    lastScroll = null;
+    state.editing = false;
+  }
+
+  // Libera a edição local pausando o espelhamento. Ao retomar, o texto do PRIMARY volta a valer.
+  function toggleEditing() {
+    const bridge = getBridge();
+    if (!bridge || state.role !== 'backup') return;
+
+    if (!state.editing) {
+      state.editing = true;
+      releaseMirroredScroll();
+      mirror.forEach((entry) => {
+        if (bridge.hasDocument(entry.localId)) bridge.setMirrorMode(entry.localId, false);
+      });
+    } else {
+      const ok = window.confirm(
+        'Resume mirroring?\n\nAnything you changed on this PC will be replaced by the primary\'s text.'
+      );
+      if (!ok) return;
+      state.editing = false;
+      mirror.forEach((entry) => {
+        if (bridge.hasDocument(entry.localId)) bridge.setMirrorMode(entry.localId, true);
+      });
+      ipcRenderer.send('backup-request-resync');
+    }
+    render(true);
   }
 
   // ============================================================
@@ -440,7 +833,7 @@
     });
     if (!result.ok) {
       state.error = result.error;
-      render();
+      render(true);
       return;
     }
     state.role = 'primary';
@@ -450,20 +843,76 @@
     state.link = 'listening';
     state.error = '';
     startPrimaryWatch();
-    render();
+    render(true);
     // Um backup pode ter conectado antes de este retorno chegar.
     if (state.clients > 0) pushFull();
   }
 
+  // Copia pelo clipboard do Electron (não depende de foco/permissão do navegador) e confirma no botão.
+  function copyWithFeedback(button, text) {
+    if (!text) return;
+    require('electron').clipboard.writeText(String(text));
+    const original = button.innerHTML;
+    button.innerHTML = '<i class="bi bi-check2"></i>';
+    button.classList.add('btn-success');
+    button.classList.remove('btn-outline-secondary');
+    setTimeout(() => {
+      button.innerHTML = original;
+      button.classList.remove('btn-success');
+      button.classList.add('btn-outline-secondary');
+    }, 1200);
+  }
+
+  // Um endereço por linha, cada um com o seu botão de copiar (só reconstrói quando muda, para o
+  // aviso "copiado" não sumir a cada atualização da janela).
+  let lastAddressKey = '';
+  function renderAddresses() {
+    const key = `${state.port}|${state.addresses.map((a) => `${a.name}=${a.ip}`).join(',')}`;
+    if (key === lastAddressKey) return;
+    lastAddressKey = key;
+
+    const box = $('backup-primary-addresses');
+    box.replaceChildren();
+    state.addresses.forEach((a) => {
+      const address = `${a.ip}:${state.port}`;
+
+      const row = document.createElement('div');
+      row.className = 'd-flex align-items-center gap-2 mb-1';
+
+      const label = document.createElement('span');
+      label.className = 'fw-bold font-monospace';
+      label.textContent = `${a.name}: ${address}`;
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-sm btn-outline-secondary';
+      button.title = `Copy ${address}`;
+      button.innerHTML = '<i class="bi bi-clipboard"></i>';
+      button.addEventListener('click', () => copyWithFeedback(button, address));
+
+      row.append(label, button);
+      box.appendChild(row);
+    });
+  }
+
   async function startBackup() {
-    const host = ($('backup-host').value || '').trim();
-    const port = Number($('backup-port').value) || DEFAULT_PORT;
+    let host = ($('backup-host').value || '').trim();
+    let port = Number($('backup-port').value) || DEFAULT_PORT;
     const pin = ($('backup-pin').value || '').trim();
+
+    // Aceita o endereço colado como "192.168.0.10:3002" (o que o botão de copiar entrega).
+    const pasted = /^(.+):(\d{1,5})$/.exec(host);
+    if (pasted) {
+      host = pasted[1];
+      port = Number(pasted[2]);
+      $('backup-host').value = host;
+      $('backup-port').value = String(port);
+    }
 
     const result = await ipcRenderer.invoke('backup-connect', { host, port, pin });
     if (!result.ok) {
       state.error = result.error;
-      render();
+      render(true);
       return;
     }
     localStorage.setItem(STORAGE_HOST, host);
@@ -471,7 +920,7 @@
     state.role = 'backup';
     state.link = 'connecting';
     state.error = '';
-    render();
+    render(true);
   }
 
   async function stopRole() {
@@ -483,7 +932,7 @@
     state.clients = 0;
     state.pin = '';
     state.error = '';
-    render();
+    render(true);
   }
 
   async function takeOver() {
@@ -503,6 +952,7 @@
         : { text: 'Waiting for backup', cls: 'warning' };
     }
     if (state.role === 'backup') {
+      if (state.editing) return { text: 'Editing — mirroring paused', cls: 'warning' };
       switch (state.link) {
         case 'connected': return { text: 'Live · mirroring', cls: 'success' };
         case 'connecting': return { text: 'Connecting…', cls: 'warning' };
@@ -520,19 +970,28 @@
     return s < 2 ? 'just now' : `${s}s ago`;
   }
 
-  function render() {
+  // O selo da barra de título só é tocado quando muda; os detalhes da janela só são desenhados
+  // enquanto ela está aberta (ou quando forçado), para o recurso não custar nada em segundo plano.
+  let lastBadgeKey = '';
+
+  function render(force = false) {
     const label = linkLabel();
     const active = state.role !== 'off';
 
     const badge = $('backup-sync-badge');
-    if (badge) {
+    const badgeText = `${state.role === 'primary' ? 'PRIMARY' : 'BACKUP'} · ${label.text}`;
+    const badgeKey = `${active}|${label.cls}|${badgeText}`;
+    if (badge && badgeKey !== lastBadgeKey) {
+      lastBadgeKey = badgeKey;
       badge.className = `badge bg-${label.cls} app-no-drag ms-2 ${active ? '' : 'd-none'}`;
       badge.style.cursor = 'pointer';
-      badge.textContent = `${state.role === 'primary' ? 'PRIMARY' : 'BACKUP'} · ${label.text}`;
+      badge.textContent = badgeText;
     }
 
+    const modalEl = $('backupSyncModal');
+    if (!modalEl || !(force === true || modalEl.classList.contains('show'))) return;
+
     const statusText = $('backup-status-text');
-    if (!statusText) return;
     statusText.textContent = active ? `${state.role.toUpperCase()} — ${label.text}` : 'OFF';
     $('backup-status-dot').className = `bi bi-circle-fill text-${label.cls}`;
 
@@ -555,8 +1014,7 @@
       : '<i class="bi bi-broadcast me-1"></i> Start sharing';
     $('backup-primary-toggle').className = `btn btn-sm ${primaryOn ? 'btn-danger' : 'btn-primary'}`;
     if (primaryOn) {
-      $('backup-primary-addresses').textContent =
-        state.addresses.map((a) => `${a.name}: ${a.ip}:${state.port}`).join('\n');
+      renderAddresses();
       $('backup-primary-pin').textContent = state.pin;
       $('backup-primary-clients').textContent =
         `${state.clients} connected · last update sent ${formatAge(state.lastActivityAt)}`;
@@ -571,9 +1029,15 @@
     $('backup-connect-toggle').className = `btn btn-sm ${backupOn ? 'btn-outline-danger' : 'btn-primary'}`;
     $('backup-takeover-btn').classList.toggle('d-none', !backupOn);
     $('backup-ping-btn').classList.toggle('d-none', !backupOn);
+    $('backup-edit-toggle').classList.toggle('d-none', !backupOn);
+    $('backup-edit-toggle').innerHTML = state.editing
+      ? '<i class="bi bi-lock me-1"></i> Resume mirroring'
+      : '<i class="bi bi-unlock me-1"></i> Unlock editing';
     $('backup-backup-info').classList.toggle('d-none', !backupOn);
     if (backupOn) {
-      $('backup-backup-info').textContent = `Documents are read-only while mirroring · last update ${formatAge(state.lastActivityAt)}`;
+      $('backup-backup-info').textContent = state.editing
+        ? 'Mirroring is paused. Changes made here stay only on this PC and are replaced when you resume.'
+        : `Documents are read-only while mirroring · last update ${formatAge(state.lastActivityAt)}`;
     }
 
     const error = $('backup-error');
@@ -585,7 +1049,7 @@
   function openModal() {
     const modalEl = $('backupSyncModal');
     if (!modalEl || !window.bootstrap) return;
-    render();
+    render(true);
     window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
   }
 
@@ -602,7 +1066,7 @@
     const badge = $('backup-sync-badge');
     if (badge) badge.addEventListener('click', openModal);
 
-    ['backup-role-primary', 'backup-role-backup'].forEach((id) => $(id).addEventListener('change', render));
+    ['backup-role-primary', 'backup-role-backup'].forEach((id) => $(id).addEventListener('change', () => render(true)));
     $('backup-primary-toggle').addEventListener('click', () => {
       state.error = '';
       (state.role === 'primary' ? stopRole() : startPrimary()).catch(console.error);
@@ -612,11 +1076,10 @@
       (state.role === 'backup' ? stopRole() : startBackup()).catch(console.error);
     });
     $('backup-takeover-btn').addEventListener('click', () => takeOver().catch(console.error));
+    $('backup-edit-toggle').addEventListener('click', toggleEditing);
     $('backup-test-btn').addEventListener('click', () => runPrimaryTest().catch(console.error));
     $('backup-ping-btn').addEventListener('click', () => runBackupPing().catch(console.error));
-    $('backup-copy-pin').addEventListener('click', () => {
-      if (state.pin) navigator.clipboard.writeText(state.pin).catch(() => { });
-    });
+    $('backup-copy-pin').addEventListener('click', () => copyWithFeedback($('backup-copy-pin'), state.pin));
 
     ipcRenderer.on('backup:status', (_event, status) => {
       if (!status) return;
@@ -644,10 +1107,10 @@
     });
     ipcRenderer.on('backup:incoming', (_event, message) => handleIncoming(message));
 
-    // Ao voltar para a aba/modo Operator no BACKUP, reaplica o último ponto de leitura.
+    // Ao voltar para a aba/modo Operator no BACKUP, reaplica a última rolagem recebida.
     const operatorTab = $('operator-tab');
-    if (operatorTab) operatorTab.addEventListener('shown.bs.tab', () => setTimeout(applyPosition, 120));
-    window.addEventListener('operator-edit-mode-changed', () => setTimeout(applyPosition, 120));
+    if (operatorTab) operatorTab.addEventListener('shown.bs.tab', () => setTimeout(mirrorScroll, 120));
+    window.addEventListener('operator-edit-mode-changed', () => setTimeout(mirrorScroll, 120));
 
     setInterval(() => {
       if (state.role !== 'off') render();

@@ -29,51 +29,69 @@
         overflow: hidden;
       }
 
-      /* === ÁREA DO TEXTO === */
-      #texto-limpo {
-        padding-top: 0;
-        margin-bottom: 50vh; /* Espaço extra no fim para subir tudo (usa margin igual ao Operator) */
-
-        /* === MUDANÇA AQUI: Margens PEQUENAS e SIMÉTRICAS === */
-        /* Isso dá mais espaço para o texto não quebrar antes da hora */
-        padding-left: 3% !important;
-        padding-right: 0% !important;
-
-        width: 96.8%;
-        text-align: center;
-        line-height: 1.7;
-        font-weight: bold;
-        text-rendering: optimizeLegibility;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-        white-space: pre-wrap;
-        will-change: transform;
-        transform: translate3d(0, 0, 0);
+      /* === TELA VIRTUAL ===
+         Reproduz o prompter do operador na MESMA largura lógica dele (quebras de linha idênticas)
+         e é ampliada por scale() para preencher o monitor. As regras abaixo espelham as do
+         operador (operator.css: .prompter-in-control / #prompterText-control); o que o operador
+         configura (fonte, tamanho, alinhamento, margens, cor) chega inline e é aplicado igual. */
+      #stage {
+        position: absolute;
+        top: 0;
+        left: 0;
+        overflow: hidden;
+        transform-origin: 0 0;
       }
 
-      /* Reforço de peso da fonte (Arial "extra bold") — controlado por
-         Preferences > Style > "Reforço de peso de fonte". Pinta um stroke
-         do mesmo tom da letra ANTES do fill, deixando os traços mais grossos
-         sem distorcer espaçamento nem mudar layout. currentColor garante
-         que acompanha cores aplicadas (amarelo, ciano, etc.). */
-      body.font-boost #texto-limpo,
-      body.font-boost #texto-limpo *,
-      body.font-boost #texto-limpo span,
-      body.font-boost #texto-limpo p,
-      body.font-boost #texto-limpo font {
-        -webkit-text-stroke: 1.2px currentColor;
+      /* display/flex/padding do contêiner vêm do operador (mirror-layout): copiar o contexto de
+         layout real dele é o que garante a mesma altura (ex.: margem do último parágrafo). */
+      #stage-viewport {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        user-select: none;
+      }
+
+      #prompterText-control {
+        font-size: 20px;
+        line-height: 1.7;
+        color: white;
+        max-width: none;
+        width: 97%;
+        margin-bottom: 200px;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        text-rendering: optimizeLegibility;
+        will-change: transform;
+      }
+
+      /* Mesmo reforço de peso do prompter do operador (a ampliação do palco escala o traço junto). */
+      body.font-boost #prompterText-control,
+      body.font-boost #prompterText-control *,
+      body.font-boost #prompterText-control span,
+      body.font-boost #prompterText-control p,
+      body.font-boost #prompterText-control font {
+        -webkit-text-stroke: 0.6px currentColor;
         paint-order: stroke fill;
       }
 
-      #texto-limpo p {
-        margin-bottom: 0.2em;
-        margin-top: 0;
-      }
-      #texto-limpo img {
+      #prompterText-control img {
         max-width: 100%;
         height: auto;
         display: block;
         margin: 0 auto;
+      }
+
+      #waiting-signal {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        width: 100%;
+        text-align: center;
+        transform: translateY(-50%);
+        font-weight: bold;
+        letter-spacing: 0.1em;
+        opacity: 0.6;
+        z-index: 5;
       }
 
       /* === 1. MARCADOR (SETA VERDE) === */
@@ -238,12 +256,18 @@
 
       <div id="cue-marker"></div>
 
-      <div id="texto-limpo">WAITING FOR SIGNAL...</div>
+      <div id="stage">
+        <div id="stage-viewport" class="prompter-in-control">
+          <div id="prompterText-control"></div>
+        </div>
+      </div>
+
+      <div id="waiting-signal">WAITING FOR SIGNAL...</div>
     </div>
 
     <script>
       const { ipcRenderer } = require("electron");
-      const textoDiv = document.getElementById("texto-limpo");
+      const textoDiv = document.getElementById("prompterText-control");
       const markerDiv = document.getElementById("cue-marker");
       const progressContainer = document.getElementById("progress-container");
       const progressThumb = document.getElementById("progress-thumb");
@@ -254,7 +278,6 @@
       const msgIconContainer = document.getElementById("msg-icon-svg");
       const msgText = document.getElementById("msg-text");
       let msgTimeout = null;
-      let lastKnownY = 0;
 
       // === MAPA DE ÍCONES OFFLINE ===
       // Incluí TODOS os ícones da sua configuração do app.js
@@ -313,67 +336,106 @@
         }
       }
 
-      function updateProgressBar(scrollY) {
-        if (progressContainer.style.display === "none") return;
-        const contentHeight = textoDiv.scrollHeight;
-        const viewportHeight =
-          document.getElementById("prompter-container").clientHeight;
-        const maxScroll = Math.max(1, contentHeight - viewportHeight);
-        const ratio = scrollY / maxScroll;
+      function updateProgressBar() {
+        if (progressContainer.style.display === "none" || !currentLayout) return;
+        const viewportHeight = document.getElementById("prompter-container").clientHeight;
+        // Mesma conta do operador: quanto do texto já passou (na escala lógica do prompter dele).
+        const maxScroll = Math.max(1, textoDiv.offsetHeight - currentLayout.height);
+        const ratio = Math.max(0, Math.min(1, scrollState.y / maxScroll));
         const trackHeight = viewportHeight - progressThumb.clientHeight;
-        let thumbTop = ratio * trackHeight;
-        thumbTop = Math.max(0, Math.min(thumbTop, trackHeight));
-        progressThumb.style.top = `${thumbTop}px`;
+        progressThumb.style.top = `${Math.max(0, Math.min(ratio * trackHeight, trackHeight))}px`;
       }
 
-      ipcRenderer.on("update-prompter-content", (e, content) => {
-        if (content) {
-          textoDiv.innerHTML = content;
-          setTimeout(() => updateProgressBar(lastKnownY), 100);
+      // ============================================================
+      // TELA VIRTUAL: reproduz o prompter do operador (mesma largura lógica) e amplia
+      // ============================================================
+      let currentLayout = null;
+      let lastHtml = null;
+      let lastStyle = null;
+      let stageScale = 1;
+      let lastTransform = "";
+      const scrollState = { y: 0, v: 0, running: false, t: 0 };
+      const stageEl = document.getElementById("stage");
+      const viewportEl = document.getElementById("stage-viewport");
+      const waitingEl = document.getElementById("waiting-signal");
+
+      // Escala = largura do monitor / largura do prompter do operador. O palco tem a altura que
+      // couber no monitor, então a proporção de tela diferente só muda quantas linhas aparecem.
+      function layoutStage() {
+        if (!currentLayout) return;
+        stageScale = window.innerWidth / currentLayout.width;
+        stageEl.style.width = currentLayout.width + "px";
+        stageEl.style.height = window.innerHeight / stageScale + "px";
+        stageEl.style.transform = `scale(${stageScale})`;
+        placeMarker();
+      }
+
+      function placeMarker() {
+        if (!currentLayout) return;
+        markerDiv.style.display = currentLayout.cueVisible === false ? "none" : "flex";
+        markerDiv.style.top = currentLayout.cueFrac * 100 + "%";
+      }
+
+      ipcRenderer.on("mirror-layout", (e, layout) => {
+        if (!layout) return;
+        currentLayout = layout;
+        waitingEl.style.display = "none";
+
+        if (layout.html !== lastHtml) {
+          textoDiv.innerHTML = layout.html;
+          lastHtml = layout.html;
         }
-        textoDiv.style.transform = `translate3d(0, -${lastKnownY}px, 0)`;
+        if (layout.style !== lastStyle) {
+          textoDiv.setAttribute("style", layout.style); // zera o transform; é reaplicado a cada quadro
+          lastStyle = layout.style;
+          lastTransform = "";
+        }
+        viewportEl.style.textAlign = layout.viewport.textAlign;
+        viewportEl.style.display = layout.viewport.display || "block";
+        viewportEl.style.flexDirection = layout.viewport.flexDirection || "";
+        viewportEl.style.alignItems = layout.viewport.alignItems || "";
+        viewportEl.style.padding = layout.viewport.padding || "";
+        document.body.classList.toggle("font-boost", layout.fontBoost);
+        document.body.style.backgroundColor = layout.bg;
+        progressContainer.style.backgroundColor = layout.bg;
+
+        layoutStage();
+        renderFrame();
       });
 
-      // === SINCRONIZAÇÃO DE TAMANHO DA FONTE ===
-      // Recebe o tamanho da fonte do Operator em tempo real
-      ipcRenderer.on("sync-font-size", (e, fontSize) => {
-        if (fontSize > 0) {
-          textoDiv.style.fontSize = fontSize + "pt";
-        }
+      ipcRenderer.on("mirror-scroll", (e, s) => {
+        if (!s) return;
+        scrollState.y = s.y;
+        scrollState.v = s.v || 0;
+        scrollState.running = !!s.running;
+        scrollState.t = s.t;
       });
 
-      // === SINCRONIZAÇÃO DE SCROLL (BASEADA EM PORCENTAGEM DO TEXTO) ===
-      // Sincronização direta: a porcentagem representa quanto do texto já passou
-      ipcRenderer.on("update-scroll", (e, data) => {
-        let targetY = 0;
-
-        // Altura real do texto (sem margin-bottom)
-        const textHeight = textoDiv.offsetHeight;
-
-        if (typeof data === "number") {
-          // Número direto = pixels (legado)
-          targetY = data;
-        } else if (typeof data === "object") {
-          if (data.textPercent !== undefined) {
-            // Porcentagem do texto - aplica diretamente
-            targetY = data.textPercent * textHeight;
-          } else if (data.ratio !== undefined) {
-            // Fallback: razão de scroll (legado)
-            const container = document.getElementById("prompter-container");
-            const containerHeight = container ? container.clientHeight : window.innerHeight;
-            const localMaxScroll = Math.max(1, textHeight - containerHeight);
-            targetY = data.ratio * localMaxScroll;
-          }
+      // Posição exibida: a do operador (+ avanço estimado entre mensagens enquanto roda), ajustada
+      // para que a MESMA linha fique sob o marcador, qualquer que seja a altura do monitor.
+      function renderFrame() {
+        if (!currentLayout) return;
+        let y = scrollState.y;
+        if (scrollState.running) {
+          y += (scrollState.v * Math.min(Math.max(0, Date.now() - scrollState.t), 250)) / 1000;
         }
+        const stageHeight = window.innerHeight / stageScale;
+        const offset = y + currentLayout.cueFrac * (currentLayout.height - stageHeight);
 
-        // Garante valor não negativo
-        targetY = Math.max(0, targetY);
+        const transform = `translate3d(0, ${-offset}px, 0)`;
+        if (transform !== lastTransform) {
+          textoDiv.style.transform = transform;
+          lastTransform = transform;
+          updateProgressBar();
+        }
+      }
 
-        lastKnownY = targetY;
-        textoDiv.style.transform = `translate3d(0, -${targetY}px, 0)`;
+      (function loop() {
+        renderFrame();
+        requestAnimationFrame(loop);
+      })();
 
-        if (typeof updateProgressBar === "function") updateProgressBar(targetY);
-      });
+      window.addEventListener("resize", layoutStage);
 
       // === EXIBIÇÃO DE MENSAGENS COM ÍCONE OFFLINE ===
       ipcRenderer.on("show-overlay-message", (e, item) => {
@@ -403,78 +465,16 @@
         }, 4000);
       });
 
-      let projPrevDefaultFontSize = null;
-
+      // Fonte, tamanho, margens, alinhamento e cores NÃO são lidos daqui: vêm do próprio prompter do
+      // operador (mirror-layout), para o texto da projeção ser idêntico ao dele.
       ipcRenderer.on("settings-updated-globally", (e, settings) => {
-        // 1. Configurações Básicas de Cor e Fonte
-        if (settings.backgroundColor)
-          document.body.style.backgroundColor = settings.backgroundColor;
-        if (settings.defaultFontColor)
-          textoDiv.style.color = settings.defaultFontColor;
-
-        // Reforço de peso de fonte (Preferences > Style > "Reforço de peso de fonte")
-        // Default true: se a chave não existir ainda, ativa.
-        const boost = (settings.fontWeightBoost !== false);
-        document.body.classList.toggle("font-boost", boost);
-
-        // === 1.1 BARRA DE PROGRESSO - Adapta cores ao tema ===
-        // A barra de fundo segue o backgroundColor, o thumb segue a cor do texto
-        if (settings.backgroundColor) {
-          progressContainer.style.backgroundColor = settings.backgroundColor;
-        }
-        if (settings.defaultFontColor) {
-          progressThumb.style.backgroundColor = settings.defaultFontColor;
-        }
-
-        if (settings.defaultFontSize) {
-          // Só aplica se o defaultFontSize mudou em Preferences (ou é carga inicial).
-          // Evita resetar a fonte ativa ao salvar outras opções (ex.: reforço de fonte).
-          const fontSizeChanged = projPrevDefaultFontSize === null
-            || settings.defaultFontSize !== projPrevDefaultFontSize;
-          if (fontSizeChanged) {
-            textoDiv.style.fontSize = settings.defaultFontSize + "pt";
-          }
-          projPrevDefaultFontSize = settings.defaultFontSize;
-        }
-        if (settings.defaultFont)
-          textoDiv.style.fontFamily = settings.defaultFont;
-        if (settings.lineSpacing)
-          textoDiv.style.lineHeight = settings.lineSpacing;
-
-        // === LÓGICA DA MARGEM (CORRIGIDA PARA VENCER O !IMPORTANT) ===
-        if (settings.prompterMargin !== undefined) {
-          // Se a margem for 0 (estado inicial/reset), removemos o estilo inline.
-          // Assim, o CSS original (3% na esquerda, 0% na direita) volta a mandar.
-          if (settings.prompterMargin === 0) {
-            textoDiv.style.removeProperty("padding-left");
-            textoDiv.style.removeProperty("padding-right");
-          } else {
-            // Se for diferente de 0 (ex: 100, 200, 300), forçamos a nova margem
-            // usando 'important' para passar por cima do CSS.
-            const marginVal = settings.prompterMargin + "px";
-
-            textoDiv.style.setProperty("padding-left", marginVal, "important");
-            textoDiv.style.setProperty("padding-right", marginVal, "important");
-          }
-        }
-
-        // === 3. LÓGICA DO ESPELHAMENTO (HORIZONTAL E VERTICAL) ===
-        // Aplicamos o flip no container principal para inverter tudo (texto + margens)
+        // === ESPELHAMENTO (HORIZONTAL E VERTICAL) ===
+        // O flip é aplicado no container inteiro (texto, marcador, barra de progresso e mensagens).
         const container = document.getElementById("prompter-container");
-        
-        // Calcula os valores de escala baseado nos estados de flip
         const scaleX = settings.flipHorizontal ? -1 : 1;
         const scaleY = settings.flipVertical ? -1 : 1;
-        
-        // Aplica a transformação combinada (permite H, V ou ambos)
-        if (settings.flipHorizontal || settings.flipVertical) {
-          container.style.transform = `scale(${scaleX}, ${scaleY})`;
-        } else {
-          // Volta ao normal
-          container.style.transform = "none";
-        }
-        
-        console.log("🗂️ Espelhamento - H:", settings.flipHorizontal, "V:", settings.flipVertical);
+        container.style.transform =
+          settings.flipHorizontal || settings.flipVertical ? `scale(${scaleX}, ${scaleY})` : "none";
 
         // Ajustes do Marcador (Seta)
         renderMarker(
@@ -483,9 +483,12 @@
         );
 
         // Ajuste da Barra de Progresso
+        if (settings.defaultFontColor) {
+          progressThumb.style.backgroundColor = settings.defaultFontColor;
+        }
         if (settings.showProgressIndicator) {
           progressContainer.style.display = "block";
-          updateProgressBar(lastKnownY);
+          updateProgressBar();
         } else {
           progressContainer.style.display = "none";
         }
@@ -494,11 +497,6 @@
       window.onload = () => {
         ipcRenderer.send("projection-ready");
         ipcRenderer.send("request-initial-settings");
-
-        setTimeout(() => {
-          const height = window.innerHeight;
-          markerDiv.style.top = height / 2 + "px";
-        }, 500);
       };
 
       document.addEventListener("keydown", (e) => {

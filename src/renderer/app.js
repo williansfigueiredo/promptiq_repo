@@ -2216,7 +2216,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const deltaTime = Math.min(now - this.lastFrameTime, 48);
       this.lastFrameTime = now;
 
-      const speedMultiplier = 3.0;
+      // speedScale só é usado pelo Backup Sync (compensa janelas de tamanhos diferentes).
+      const speedMultiplier = 3.0 * (this.speedScale || 1);
       const pixelsPerSecond = this.speed * speedMultiplier;
       const pixelsToScroll = (pixelsPerSecond * deltaTime) / 1000;
 
@@ -4629,7 +4630,58 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       return true;
     },
-    syncPrompter: () => syncContentToPrompter({ preserveVisibleAnchor: true }),
+    syncPrompter: (preserveAnchor = true) =>
+      syncContentToPrompter(preserveAnchor ? { preserveVisibleAnchor: true } : {}),
+    // Troca só um trecho dos nós de nível superior do editor (patch do Backup Sync).
+    patchEditorNodes: (id, patch) => {
+      const editor = document.querySelector(`#doc-${id} .text-editor-area`);
+      if (!editor) return false;
+      // Mesma contagem do PRIMARY: textos adjacentes são uma unidade e textos vazios não contam.
+      const unitsOf = () => {
+        const units = [];
+        editor.childNodes.forEach((n) => {
+          if (n.nodeType === 3) {
+            if (!n.data) return;
+            const last = units[units.length - 1];
+            if (last && last[0].nodeType === 3) {
+              last.push(n);
+              return;
+            }
+          }
+          units.push([n]);
+        });
+        return units;
+      };
+
+      const units = unitsOf();
+      const end = patch.start + patch.remove;
+      if (units.length !== patch.baseCount || end > units.length) return false;
+      if ((editor.textContent || "").length !== patch.baseLen) return false;
+
+      const reference = end < units.length ? units[end][0] : null;
+      for (let i = patch.start; i < end; i++) units[i].forEach((n) => editor.removeChild(n));
+      patch.nodes.forEach((n) => editor.insertBefore(n, reference));
+
+      // O cache do patch de remoto não enxerga esta alteração: força a próxima aplicação completa.
+      const patchState = _editorPatchState.get(editor);
+      if (patchState) patchState.dirty = true;
+      return unitsOf().length === patch.count;
+    },
+    // Rolagem em que a âncora ficaria sob a seta (sem aplicar). Null se o prompter está oculto.
+    anchorScrollTarget: (anchor) => {
+      const control = document.getElementById("prompterText-control");
+      const container = document.querySelector(".prompter-in-control");
+      if (!anchor || !control || !container || container.clientHeight === 0) return null;
+      const blocks = getBlockElements(control);
+      if (!blocks.length) return null;
+
+      const r = blocks[findAnchorBlockIndex(blocks, anchor)].getBoundingClientRect();
+      const delta = r.top + anchor.fraction * (r.height || 0) - getCueViewportY();
+      const current = ScrollEngine.isRunning ? ScrollEngine.decimalScroll || 0 : container.scrollTop || 0;
+      const contentH = control.offsetHeight || control.scrollHeight || 0;
+      const maxScroll = Math.max(0, contentH - container.clientHeight + container.clientHeight / 2);
+      return Math.max(0, Math.min(current + delta, maxScroll));
+    },
   };
 
   function reorderDocumentsToMatchTabOrder() {
@@ -8146,19 +8198,23 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- RENDERIZAR LISTA LATERAL ---
   function renderTimelineList(activeDoc) {
     timelineList.innerHTML = "";
+    diffSelectionOrder = [];
 
     // 1. O Documento Atual (Topo da lista)
     const editorArea = getActiveTextEditorArea(); // Sua função existente
     const currentHtml = editorArea ? editorArea.innerHTML : "";
-    const currentText = editorArea ? editorArea.innerText : "";
     const currentName = activeDoc.name || activeDoc.filename || "Current File";
+
+    // Todas as origens passam pelo mesmo normalizador (um parágrafo por linha) para o diff
+    // comparar texto com texto, e não HTML com innerText com texto de PDF.
+    const toDiffText = (html) => window.PromptiqVersionDiff.htmlToDiffText(html);
 
     const currentItem = {
       id: "current",
       displayName: currentName,
       subInfo: "Editing now (Active Tab)",
       content: currentHtml,     // HTML para restauração
-      textContent: currentText, // Texto para comparação diff
+      textContent: toDiffText(currentHtml), // Texto para comparação diff
       type: "current",
       timestamp: Date.now(), // Mais recente possível
     };
@@ -8168,12 +8224,13 @@ document.addEventListener("DOMContentLoaded", () => {
       .filter((d) => d.id !== activeDoc.id)
       .map((d) => {
         const tabContent = getTabContentFromDOM(d.id);
+        const tabHtml = tabContent.html || d.content || "";
         return {
           id: `tab-${d.id}`,
           displayName: d.name || d.filename || `Doc ${d.id}`,
           subInfo: "Other Open Tab",
-          content: tabContent.html || d.content,   // HTML para restauração
-          textContent: tabContent.text || d.content, // Texto para diff
+          content: tabHtml,   // HTML para restauração
+          textContent: toDiffText(tabHtml), // Texto para diff
           type: "tab",
           timestamp: Date.now() - 100, // Um pouco mais antigo que o atual
         };
@@ -8188,7 +8245,7 @@ document.addEventListener("DOMContentLoaded", () => {
         displayName: h.date, // Data/Hora como título
         subInfo: "Versão Salva",
         content: h.content,      // Isso já deveria ser HTML preservado
-        textContent: h.content,  // Para diff (remove tags se necessário)
+        textContent: toDiffText(h.content),  // Para diff (sem tags)
         type: "history",
         timestamp: h.id, // Assumindo que o ID do histórico é Date.now()
       }));
@@ -8196,6 +8253,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // 4. Documentos Importados (PDF, DOC, DOCX)
     const imported = importedDiffDocuments.map(doc => ({
       ...doc,
+      textContent: toDiffText(doc.content),
       subInfo: `📄 ${doc.subInfo}`
     }));
 
@@ -8258,16 +8316,26 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --- LÓGICA DE SELEÇÃO E COMPARAÇÃO ---
+  // Ordem em que o usuário marcou os itens: o 1º marcado é a referência (1st) e o 2º é o
+  // comparado (2nd), então "removido do 1st / adicionado no 2nd" sempre bate com o que ele escolheu.
+  let diffSelectionOrder = [];
+
   function handleSelection(allItems) {
-    // Pega todos os checkboxes marcados na tela
     const checkedBoxes = Array.from(
       document.querySelectorAll("#timeline-list input:checked")
     );
+    const checkedIds = checkedBoxes.map((cb) => cb.value);
 
-    // REGRA DE OURO: Só permite 2. Se marcar o 3º, remove o 1º.
-    if (checkedBoxes.length > 2) {
-      const first = checkedBoxes.shift(); // Pega o mais antigo da seleção
-      first.checked = false; // Desmarca ele visualmente
+    diffSelectionOrder = diffSelectionOrder.filter((id) => checkedIds.includes(id));
+    checkedIds.forEach((id) => {
+      if (!diffSelectionOrder.includes(id)) diffSelectionOrder.push(id);
+    });
+
+    // REGRA DE OURO: Só permite 2. Se marcar o 3º, remove o mais antigo da seleção.
+    while (diffSelectionOrder.length > 2) {
+      const oldestId = diffSelectionOrder.shift();
+      const box = checkedBoxes.find((cb) => cb.value === oldestId);
+      if (box) box.checked = false;
     }
 
     // Atualiza classes CSS (azul quando selecionado)
@@ -8279,14 +8347,9 @@ document.addEventListener("DOMContentLoaded", () => {
         else el.classList.remove("active");
       });
 
-    // Pega os IDs selecionados
-    const finalChecked = document.querySelectorAll(
-      "#timeline-list input:checked"
-    );
-    const selectedIds = Array.from(finalChecked).map((cb) => cb.value);
-
-    // Filtra os dados originais
-    const selectedData = allItems.filter((i) => selectedIds.includes(i.id));
+    const selectedData = diffSelectionOrder
+      .map((id) => allItems.find((i) => i.id === id))
+      .filter(Boolean);
 
     updateSplitView(selectedData);
   }
@@ -8309,73 +8372,52 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Caso 2: Dois itens selecionados -> COMPARAÇÃO
-    // Ordena para que o "current" fique sempre na esquerda como ORIGINAL
-    items.sort((a, b) => {
-      if (a.type === "current") return -1;
-      if (b.type === "current") return 1;
-      return a.timestamp - b.timestamp;
-    });
-
+    // A ordem é a da seleção (1º marcado = referência/esquerda, 2º = comparado/direita)
     const oldVer = items[0]; // REFERÊNCIA - documento da esquerda
     const newVer = items[1]; // COMPARADO - documento da direita
 
     // Atualiza Títulos
     diffTitleLeft.innerText = oldVer.displayName + " (Referência)";
     diffTitleRight.innerText = newVer.displayName + " (Diferenças)";
-    diffStatusText.innerText = `Comparando: ${oldVer.displayName} -> ${newVer.displayName}`;
 
-    // Roda a biblioteca Diff usando textContent (texto puro para comparação)
-    const oldText = oldVer.textContent || oldVer.content;
-    const newText = newVer.textContent || newVer.content;
-    const diff = Diff.diffWords(oldText, newText);
+    // Texto já normalizado (um parágrafo por linha) em renderTimelineList
+    const VD = window.PromptiqVersionDiff;
+    const oldText = oldVer.textContent;
+    const newText = newVer.textContent;
+    const { rows, stats } = VD.buildDiffRows(oldText, newText);
 
-    // Limpa Painéis
     diffLeftPanel.innerHTML = "";
     diffRightPanel.innerHTML = "";
 
-    // Estatísticas
-    let addedCount = 0;
-    let removedCount = 0;
-
-    // ========================================
-    // PAINEL ESQUERDO: TEXTO REFERÊNCIA LIMPO
-    // Mostra APENAS o texto original, sem NENHUMA marcação
-    // ========================================
+    // PAINEL ESQUERDO: texto de referência limpo, sem nenhuma marcação
     const leftContainer = document.createElement('div');
-    leftContainer.style.cssText = 'white-space: pre-wrap; padding: 12px; line-height: 1.6;';
-    leftContainer.textContent = oldText;  // Texto puro, sem marcações
+    leftContainer.style.cssText = 'padding: 12px; line-height: 1.6;';
+    leftContainer.appendChild(
+      VD.renderRows(
+        (oldText ? oldText.split('\n') : []).map((text) => ({ type: 'same', text })),
+        document
+      )
+    );
     diffLeftPanel.appendChild(leftContainer);
 
-    // ========================================
-    // PAINEL DIREITO: TEXTO COM DIFERENÇAS INLINE
-    // - VERMELHO TACHADO = texto que foi REMOVIDO (estava em v1, não está em v2)
-    // - VERDE = texto que foi ADICIONADO (não estava em v1, está em v2)
-    // ========================================
+    // PAINEL DIREITO: texto do 2º com as diferenças em relação ao 1º
+    //  - VERMELHO TACHADO = estava no 1º e NÃO está no 2º (removido)
+    //  - VERDE = NÃO estava no 1º e está no 2º (adicionado)
     const rightContainer = document.createElement('div');
-    rightContainer.style.cssText = 'white-space: pre-wrap; padding: 12px; line-height: 1.6;';
-
-    diff.forEach((part) => {
-      const span = document.createElement("span");
-
-      if (part.removed) {
-        // Texto que existia em v1 mas NÃO existe em v2 = REMOVIDO
-        span.className = "diff-inline-removed";
-        span.innerText = part.value;
-        removedCount++;
-      } else if (part.added) {
-        // Texto que NÃO existia em v1 mas existe em v2 = ADICIONADO
-        span.className = "diff-inline-added";
-        span.innerText = part.value;
-        addedCount++;
-      } else {
-        // Texto igual em ambos
-        span.innerText = part.value;
-      }
-
-      rightContainer.appendChild(span);
-    });
-
+    rightContainer.style.cssText = 'padding: 12px; line-height: 1.6;';
+    if (stats.identical) {
+      const note = document.createElement('div');
+      note.className = 'text-success small fw-bold mb-2';
+      note.textContent = '✔ The two texts are identical.';
+      rightContainer.appendChild(note);
+    }
+    rightContainer.appendChild(VD.renderRows(rows, document));
     diffRightPanel.appendChild(rightContainer);
+
+    diffStatusText.innerText = stats.identical
+      ? `Comparing: ${oldVer.displayName} → ${newVer.displayName} — texts are identical`
+      : `Comparing: ${oldVer.displayName} → ${newVer.displayName} — ` +
+        `${stats.added} paragraph(s) added, ${stats.removed} removed, ${stats.changed} edited`;
 
     // ========================================
     // BOTÕES DE AÇÃO - COM NOMES DINÂMICOS
@@ -8528,7 +8570,7 @@ document.addEventListener("DOMContentLoaded", () => {
               // Tenta encontrar o ponto de inserção
               if (contextBefore) {
                 // Pega os últimos N caracteres do contexto para localização mais precisa
-                const searchContext = contextBefore.slice(-30);
+                const searchContext = contextBefore.replace(/\s+/g, '').slice(-30);
 
                 // Encontra a posição no HTML (ignora tags)
                 // Cria regex que ignora tags HTML entre os caracteres
@@ -10673,6 +10715,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const temp = document.createElement("div");
     temp.innerHTML = htmlContent;
 
+    // 0. REMOVE O QUE NÃO É TEXTO DO ROTEIRO. Um <style> aqui valeria para o app inteiro
+    // (ex.: backups antigos traziam "* {margin:0}" e "body {padding:40px}") e o CSS
+    // apareceria como texto no editor.
+    temp
+      .querySelectorAll("style, script, title, meta, link, base, head")
+      .forEach((el) => el.remove());
+
     // 1. REMOVE TAGS ANTIGAS (<font>, <b>, <i>, <u>)
     const oldTags = temp.querySelectorAll("font, b, i, u, strong, em");
     oldTags.forEach((tag) => {
@@ -11282,12 +11331,48 @@ document.addEventListener("DOMContentLoaded", () => {
   // a cada 5 minutos em Documentos/Promptiq_Backups
 
   /**
+   * Converte o HTML do editor em texto puro, uma linha por parágrafo.
+   * Não usa innerText: com o editor oculto (modo operação) ele devolve o texto sem nenhuma
+   * quebra entre parágrafos, e o backup ficava com o roteiro inteiro numa linha só.
+   */
+  function htmlToPlainText(html) {
+    const BLOCK = new Set([
+      "P", "DIV", "H1", "H2", "H3", "H4", "H5", "H6", "LI", "UL", "OL",
+      "BLOCKQUOTE", "PRE", "TABLE", "TR", "SECTION", "ARTICLE", "HR",
+    ]);
+    const root = document.createElement("div");
+    root.innerHTML = html;
+    let out = "";
+
+    const walk = (node) => {
+      if (node.nodeType === 3) {
+        out += node.data;
+        return;
+      }
+      if (node.nodeType !== 1) return;
+      const tag = node.tagName;
+      if (tag === "STYLE" || tag === "SCRIPT") return;
+      if (tag === "BR") {
+        out += "\n";
+        return;
+      }
+      const isBlock = BLOCK.has(tag);
+      if (isBlock && out && !out.endsWith("\n")) out += "\n";
+      node.childNodes.forEach(walk);
+      if (isBlock && !out.endsWith("\n")) out += "\n";
+    };
+
+    root.childNodes.forEach(walk);
+    return out.replace(/\u00a0/g, " ").replace(/\n+$/, "");
+  }
+
+  /**
    * prepareBackupData
    * ------------------
    * Prepara os dados para o Shadow Backup.
    * Gera duas versões do conteúdo:
-   * - plainText: Texto puro (innerText) para recuperação rápida
-   * - htmlContent: HTML completo com estilos para visualização fiel
+   * - plainText: texto puro, uma linha por parágrafo (para recuperação rápida)
+   * - htmlContent: HTML do editor (o mesmo conteúdo que um .ptq normal guarda)
    * 
    * @returns {Object|null} Objeto com { plainText, htmlContent, timestamp } ou null se não houver conteúdo
    */
@@ -11295,65 +11380,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const editor = getActiveTextEditorArea();
     if (!editor) return null;
 
-    // 1. Captura o texto puro (sem formatação)
-    const plainText = editor.innerText || '';
+    // 1. HTML do editor (sem marcações de busca/leitura)
+    const htmlContent = (getCleanContent(editor) || editor.innerHTML).trim();
+
+    // 2. Texto puro com as quebras de parágrafo
+    const plainText = htmlToPlainText(htmlContent);
 
     // Se não há conteúdo, não faz backup
     if (!plainText.trim()) return null;
 
-    // 2. Captura o HTML interno (com formatação)
-    const htmlInner = getCleanContent(editor) || editor.innerHTML;
-
-    // 3. Obtém estilos do editor para replicar no arquivo HTML
-    const computedStyle = window.getComputedStyle(editor);
-    const backgroundColor = computedStyle.backgroundColor || '#FFFFFF';
-    const fontColor = computedStyle.color || '#000000';
-    const fontFamily = computedStyle.fontFamily || 'Arial, sans-serif';
-    const fontSize = computedStyle.fontSize || '12pt';
-    const lineHeight = computedStyle.lineHeight || '1.5';
-
-    // 4. Monta o HTML completo com DOCTYPE e estilos
-    const timestamp = new Date().toISOString();
-    const htmlContent = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="generator" content="Promptiq Shadow Backup">
-    <meta name="backup-timestamp" content="${timestamp}">
-    <title>Promptiq Backup - ${new Date().toLocaleDateString('pt-BR')}</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            background-color: ${backgroundColor};
-            color: ${fontColor};
-            font-family: ${fontFamily};
-            font-size: ${fontSize};
-            line-height: ${lineHeight};
-            padding: 40px;
-            max-width: 100%;
-            word-wrap: break-word;
-        }
-        p {
-            margin-bottom: 1em;
-        }
-        /* Preserva estilos inline do editor */
-        span[style], font[style], b, i, u, strong, em {
-            /* Mantém estilos originais */
-        }
-    </style>
-</head>
-<body>${htmlInner.trim()}</body>
-</html>`;
-
     return {
       plainText,
       htmlContent,
-      timestamp
+      timestamp: new Date().toISOString(),
     };
   }
 

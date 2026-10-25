@@ -22,7 +22,7 @@ const DEFAULT_PORT = 3002;
 const MAX_PIN_FAILURES = 5;
 const LOCK_MS = 60 * 1000;
 const TEST_TIMEOUT_MS = 5000;
-const ALLOWED_TYPES = new Set(['full', 'doc', 'active', 'pos', 'test']);
+const ALLOWED_TYPES = new Set(['full', 'doc', 'patch', 'active', 'pos', 'scroll', 'test']);
 const HOST_PATTERN = /^[A-Za-z0-9.-]{1,253}$/;
 
 // Placas virtuais (VPN de bancos, VMs, WSL, Docker, Bluetooth...) não servem para o backup conectar.
