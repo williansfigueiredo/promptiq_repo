@@ -11,12 +11,15 @@
 // O fluxo é de mão única: o PRIMARY nunca aceita dados vindos do BACKUP.
 // ============================================================
 
-const { app, ipcMain } = require('electron');
+const { app, ipcMain, shell } = require('electron');
 const http = require('http');
 const os = require('os');
+const path = require('path');
 const crypto = require('crypto');
-const { Server } = require('socket.io');
-const { io: ioClient } = require('socket.io-client');
+// socket.io só é carregado quando o Backup Sync é ligado (não pesa na abertura do app)
+const getSocketServer = () => require('socket.io').Server;
+const getSocketClient = () => require('socket.io-client').io;
+const { createCopyStore } = require('./backup-copy-store');
 
 const DEFAULT_PORT = 3002;
 const MAX_PIN_FAILURES = 5;
@@ -176,7 +179,7 @@ function initBackupSyncHandlers() {
         res.end();
       });
 
-      io = new Server(httpServer, {
+      io = new (getSocketServer())(httpServer, {
         perMessageDeflate: { threshold: 1024 },
         maxHttpBufferSize: 50 * 1024 * 1024,
         pingInterval: 3000,
@@ -300,7 +303,7 @@ function initBackupSyncHandlers() {
     role = 'backup';
     publishStatus({ state: 'connecting', host, port, clients: 0, error: '' });
 
-    client = ioClient(`http://${host}:${port}`, {
+    client = getSocketClient()(`http://${host}:${port}`, {
       auth: { pin: givenPin },
       transports: ['websocket'],
       reconnection: true,
@@ -382,6 +385,32 @@ function initBackupSyncHandlers() {
   });
 
   ipcMain.handle('backup-status', async () => status);
+
+  // Cópia em arquivo dos documentos recebidos (só o BACKUP grava; ver backup-copy-store.js)
+  let copyStore = null;
+  const getCopyStore = () => {
+    if (!copyStore) {
+      copyStore = createCopyStore({ baseDir: path.join(app.getPath('documents'), 'Promptiq_Backups', 'Sync') });
+    }
+    return copyStore;
+  };
+  const saveCopies = (payload) => {
+    try {
+      return getCopyStore().save(payload);
+    } catch (err) {
+      return { ok: false, dir: '', saved: 0, unchanged: 0, skipped: 0, errors: [{ key: '', error: err.message }] };
+    }
+  };
+  ipcMain.handle('backup-save-copies', async (event, payload) => saveCopies(payload));
+  // Versão síncrona: usada ao fechar a janela, quando não dá para esperar uma resposta assíncrona
+  ipcMain.on('backup-save-copies-sync', (event, payload) => { event.returnValue = saveCopies(payload); });
+  ipcMain.handle('backup-copies-info', async () => ({ dir: getCopyStore().baseDir }));
+  ipcMain.handle('backup-open-copies-folder', async () => {
+    const dir = getCopyStore().baseDir;
+    require('fs').mkdirSync(dir, { recursive: true });
+    const error = await shell.openPath(dir);
+    return { ok: !error, dir, error };
+  });
 
   app.on('before-quit', stopAll);
 }

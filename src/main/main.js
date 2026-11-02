@@ -34,17 +34,52 @@ function loadLicenseHandlersModule() {
 // LICENSE: módulo de licenciamento por hardware fingerprint (machine-bound)
 const { initLicenseHandlers, LicenseGate } = loadLicenseHandlersModule();
 initLicenseHandlers();
-const { autoUpdater } = require('electron-updater');
-const log = require('electron-log');
+
+// ============================================================
+// CARREGAMENTO SOB DEMANDA (startup mais rápido)
+// ============================================================
+// electron-updater, electron-log, mammoth, pdf-parse (+canvas), word-extractor, express e socket.io
+// somam ~1,5 s de require e não são necessários para abrir a janela. Carregam na 1ª vez que são
+// usados, depois do splash/janela principal. Os pontos de uso continuam os mesmos (log.info,
+// autoUpdater.on, etc.): abaixo ficam apenas proxies finos.
+const lazyModule = (load) => {
+  let cached;
+  return () => (cached === undefined ? (cached = load()) : cached);
+};
+
+const getLogModule = lazyModule(() => {
+  const electronLog = require('electron-log');
+  electronLog.transports.file.level = 'info';
+  electronLog.transports.file.maxSize = 5 * 1024 * 1024; // 5MB máximo
+  return electronLog;
+});
+const log = {
+  info: (...args) => getLogModule().info(...args),
+  warn: (...args) => getLogModule().warn(...args),
+  error: (...args) => getLogModule().error(...args),
+};
 
 // ============================================================
 // AUTO-UPDATER: Sistema de Atualização Automática
 // ============================================================
-log.transports.file.level = 'info';
-log.transports.file.maxSize = 5 * 1024 * 1024; // 5MB máximo
-autoUpdater.logger = log;
-autoUpdater.autoDownload = true;
-autoUpdater.autoInstallOnAppQuit = true;
+const getAutoUpdaterModule = lazyModule(() => {
+  const { autoUpdater: updater } = require('electron-updater');
+  updater.logger = getLogModule();
+  updater.autoDownload = true;
+  updater.autoInstallOnAppQuit = true;
+  return updater;
+});
+const autoUpdater = new Proxy({}, {
+  get(_target, prop) {
+    const updater = getAutoUpdaterModule();
+    const value = updater[prop];
+    return typeof value === 'function' ? value.bind(updater) : value;
+  },
+  set(_target, prop, value) {
+    getAutoUpdaterModule()[prop] = value;
+    return true;
+  },
+});
 
 // ============================================================
 // AUTO-UPDATER: Função para sanitizar mensagens de erro
@@ -83,19 +118,19 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding');
 // OPCIONAL: Descomente para desativar GPU Process (~50-100MB economia)
 // app.disableHardwareAcceleration();
 
-// Bibliotecas para leitura de diferentes formatos de arquivo
-const mammoth = require('mammoth');       // Leitura de arquivos .docx
-const { PDFParse } = require('pdf-parse');    // Leitura de arquivos .pdf (v2.x)
-const WordExtractor = require("word-extractor"); // Leitura de arquivos .doc
+// Bibliotecas para leitura de diferentes formatos de arquivo (carregadas só ao abrir esse tipo de arquivo)
+const getMammoth = lazyModule(() => require('mammoth'));            // .docx
+const getPdfParse = lazyModule(() => require('pdf-parse').PDFParse); // .pdf (v2.x)
+const getWordExtractor = lazyModule(() => require('word-extractor')); // .doc
 
 
 // ============================================================
 // SEÇÃO 2: DEPENDÊNCIAS DO SERVIDOR REMOTO (WI-FI)
 // ============================================================
-// Express e Socket.io para edição colaborativa via rede local
-const express = require('express');
+// Express e Socket.io para edição colaborativa via rede local (carregados ao ligar o servidor)
+const getExpress = lazyModule(() => require('express'));
 const http = require('http');
-const socketIo = require('socket.io');
+const getSocketIo = lazyModule(() => require('socket.io'));
 
 // ============================================================
 // SEÇÃO 3: PERSISTÊNCIA DE CONFIGURAÇÕES DO USUÁRIO
@@ -196,6 +231,7 @@ const MODEL_SERVER_PORT = 8321;
 function startModelServer() {
   if (modelServer) return;  // Já iniciado
 
+  const express = getExpress();
   const modelApp = express();
   const modelPath = path.join(__dirname, '../../public/model');
 
@@ -588,7 +624,9 @@ if (!gotTheLock) {
   // Inicia a aplicação quando o Electron estiver pronto
   app.whenReady().then(() => {
     createSplashWindow();
-    initAutoUpdater();
+    // A checagem de updates não precisa competir com a abertura do app: começa depois que a
+    // janela principal já está de pé (carregar o electron-updater leva ~300 ms).
+    setTimeout(initAutoUpdater, 6000);
   });
 
   // macOS: Evento quando arquivo é aberto via Finder
@@ -856,18 +894,19 @@ async function readFileContent(filePath) {
     if (extension === '.docx') {
       try {
         const buffer = await fsPromises.readFile(filePath);
-        const result = await mammoth.convertToHtml({ buffer: buffer });
+        const result = await getMammoth().convertToHtml({ buffer: buffer });
         return result.value;
       } catch (docxError) {
         console.error('Erro ao ler DOCX:', docxError.message);
         throw new Error('Não foi possível ler o arquivo .docx. Verifique se não está aberto no Word.');
       }
     }
-    if (extension === '.doc') return (await new WordExtractor().extract(filePath)).getBody();
+    if (extension === '.doc') return (await new (getWordExtractor())().extract(filePath)).getBody();
 
     // OTIMIZAÇÃO: Leitura assíncrona de PDF
     if (extension === '.pdf') {
       const buffer = await fsPromises.readFile(filePath);
+      const PDFParse = getPdfParse();
       const pdfParser = new PDFParse({ data: buffer });
       const result = await pdfParser.getText();
       await pdfParser.destroy();
@@ -1621,11 +1660,12 @@ ipcMain.handle('toggle-server', async (event, mode) => {
       // --- FIM DA VERIFICAÇÃO DE REDE ---
 
       try {
+        const express = getExpress();
         remoteApp = express();
         remoteServer = http.createServer(remoteApp);
         // Compressão do WebSocket: o texto vai inteiro a cada tecla (HTML muito repetitivo,
         // ~59 KB → ~9 KB). Só comprime mensagens grandes para não gastar CPU à toa.
-        remoteIo = socketIo(remoteServer, { perMessageDeflate: { threshold: 1024 } });
+        remoteIo = getSocketIo()(remoteServer, { perMessageDeflate: { threshold: 1024 } });
 
         currentSessionID = Math.floor(100000 + Math.random() * 900000).toString();
         remoteApp.get('/', (req, res) => {
@@ -2009,13 +2049,10 @@ ipcMain.on('show-standby-projection', (event, standbyData) => {
 // Sincroniza posição de scroll, conteúdo e marcador entre janelas
 // (a projeção recebe os quadros próprios acima; não precisa destes canais)
 
-// Sincronia de posição do scroll (60 FPS - Alta Performance)
+// Sincronia de posição do scroll: o progresso de leitura vai aos roteiristas. (Nenhuma janela
+// recebia o canal 'update-scroll' — a projeção usa seus próprios quadros —, então ele não é mais
+// repassado a 20 mensagens/s para todas as janelas.)
 ipcMain.on('sync-scroll-position', (event, position) => {
-  BrowserWindow.getAllWindows().forEach(win => {
-    if (!win.isDestroyed() && !isProjectionWindow(win)) {
-      win.webContents.send('update-scroll', position);
-    }
-  });
   if (position && position.readProgress) {
     applyReadProgressFromPayload(position.readProgress);
   }

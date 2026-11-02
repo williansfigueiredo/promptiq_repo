@@ -2248,8 +2248,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         textEl.style.transform = `translate3d(0, ${-this.decimalScroll}px, 0)`;
-
-        if (typeof updateReadProgress === "function") updateReadProgress(true, true);
+        // O progresso de leitura é enviado no limitador abaixo (readProgressMs): fazê-lo a cada
+        // quadro mandava ~60 mensagens/s ao roteirista e recalculava tudo em cada um.
       }
 
       if (now - this.lastScrollIpcTime >= this.scrollIpcMs && container && textEl) {
@@ -4352,6 +4352,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const allElements = editor.querySelectorAll("*");
         allElements.forEach((el) => {
           if (!existingElements.has(el)) {
+            // Texto colado herda o tamanho/fonte do editor (como o digitado): tira font-size,
+            // font-family, line-height etc. que vieram no HTML copiado (Word, sites, outro documento).
+            try {
+              if (window.PromptiqPaste) window.PromptiqPaste.cleanPastedElement(el);
+            } catch (pasteErr) {
+              console.warn("[Paste] Falha ao limpar elemento colado:", pasteErr);
+            }
             // Elemento novo (colado) - remove apenas background e margens
             // MANTÉM a cor do texto intacta!
             el.style.backgroundColor = "transparent";
@@ -6229,7 +6236,6 @@ document.addEventListener("DOMContentLoaded", () => {
         _promptSigs = null;
         _lastPrompterHtml = "";
         _lastRemoteHtml = "";
-        ipcRenderer.send("update-prompter-content", "");
       }
       return;
     }
@@ -6268,7 +6274,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (typeof ScrollEngine !== "undefined") ScrollEngine.invalidateMetrics();
 
-    ipcRenderer.send("update-prompter-content", finalContent);
+    // (O HTML inteiro do prompter não é mais enviado ao main a cada sincronização: nenhuma janela
+    // recebia esse canal desde que a projeção passou a espelhar o prompter do operador.)
     if (!skipRemoteBroadcast) {
       ipcRenderer.send("send-text-to-remote", getRemoteSyncContent());
     }
@@ -6841,6 +6848,75 @@ document.addEventListener("DOMContentLoaded", () => {
   let _cachedTotalBlocks = 0;
 
   /**
+   * Geometria dos blocos do prompter (altura acumulada de cada um).
+   * Antes, a cada quadro da rolagem o app remontava a lista de blocos e lia offsetHeight de todos
+   * (milhares de leituras por quadro num roteiro grande). A geometria só muda se o conteúdo ou o
+   * tamanho do prompter mudar: um MutationObserver (conteúdo) e um ResizeObserver (tamanho)
+   * invalidam o cache; scrollHeight/largura/quantidade de blocos são conferidos como garantia.
+   */
+  const _prompterGeo = {
+    textEl: null, blocks: null, ends: null, scrollH: -1, clientW: -1,
+    dirty: true, mutObserver: null, resizeObserver: null,
+  };
+
+  function invalidatePrompterGeometry() {
+    _prompterGeo.dirty = true;
+  }
+
+  function watchPrompterGeometry(textEl) {
+    if (_prompterGeo.mutObserver) _prompterGeo.mutObserver.disconnect();
+    if (_prompterGeo.resizeObserver) _prompterGeo.resizeObserver.disconnect();
+    _prompterGeo.mutObserver = new MutationObserver((records) => {
+      // O próprio textEl muda style.transform a cada quadro: isso não altera a geometria
+      for (const record of records) {
+        if (record.type === "attributes" && record.target === textEl) continue;
+        _prompterGeo.dirty = true;
+        return;
+      }
+    });
+    _prompterGeo.mutObserver.observe(textEl, {
+      childList: true, characterData: true, subtree: true,
+      attributes: true, attributeFilter: ["style", "class"],
+    });
+    if (typeof ResizeObserver === "function") {
+      _prompterGeo.resizeObserver = new ResizeObserver(() => { _prompterGeo.dirty = true; });
+      _prompterGeo.resizeObserver.observe(textEl);
+      const container = textEl.parentElement;
+      if (container) _prompterGeo.resizeObserver.observe(container);
+    }
+  }
+
+  function getPrompterGeometry(textEl) {
+    const g = _prompterGeo;
+    if (g.textEl !== textEl) {
+      g.textEl = textEl;
+      g.dirty = true;
+      watchPrompterGeometry(textEl);
+    }
+    const scrollH = textEl.scrollHeight;
+    const clientW = textEl.clientWidth;
+    if (!g.dirty && g.blocks && scrollH === g.scrollH && clientW === g.clientW &&
+      textEl.children.length === g.childCount) {
+      return g;
+    }
+
+    const blocks = getBlockElements(textEl);
+    const ends = new Array(blocks.length);
+    let sum = 0;
+    for (let i = 0; i < blocks.length; i++) {
+      sum += blocks[i].offsetHeight;
+      ends[i] = sum;
+    }
+    g.blocks = blocks;
+    g.ends = ends;
+    g.scrollH = scrollH;
+    g.clientW = clientW;
+    g.childCount = textEl.children.length;
+    g.dirty = false;
+    return g;
+  }
+
+  /**
    * Calcula payload de progresso de leitura a partir do scroll atual do Operator.
    */
   function computeReadProgressPayload() {
@@ -6852,17 +6928,17 @@ document.addEventListener("DOMContentLoaded", () => {
     // Nesse caso NÃO recalcular — retorna null para manter o último estado válido.
     if (container && container.offsetHeight === 0) return null;
 
-    const prompterBlocks = getBlockElements(textEl);
-    if (prompterBlocks.length === 0) return null;
+    const geo = getPrompterGeometry(textEl);
+    const total = geo.blocks.length;
+    if (total === 0) return null;
 
-    const blockHeightSum = prompterBlocks.reduce((sum, block) => sum + block.offsetHeight, 0);
+    const blockHeightSum = geo.ends[total - 1];
     const rawContentH = Math.max(textEl.scrollHeight || 0, blockHeightSum);
     if (rawContentH <= 10) return null;
     const contentHeightPx = rawContentH;
     _cachedContentHeightPx = rawContentH;
 
-    const total = prompterBlocks.length;
-    if (total > 0) _cachedTotalBlocks = total;
+    _cachedTotalBlocks = total;
 
     const readLinePx = computeReadLinePx(textEl);
 
@@ -6880,14 +6956,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const readLinePxReal = scrollPos > 1 ? (scrollPos + cueOffset) : 0;
 
     if (readLinePxReal > 1) {
-      let accumulated = 0;
-      prompterBlocks.forEach((block, i) => {
-        accumulated += block.offsetHeight;
-        if (accumulated <= readLinePxReal + 1) {
-          maxReadIdx = i;
-          readCount = i + 1;
-        }
-      });
+      // Último bloco cuja altura acumulada cabe acima da seta (busca binária: ends é crescente)
+      const limit = readLinePxReal + 1;
+      let lo = 0;
+      let hi = total;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (geo.ends[mid] <= limit) lo = mid + 1; else hi = mid;
+      }
+      maxReadIdx = lo - 1;
+      readCount = lo;
     }
 
     const scrollRatio = contentHeightPx > 0 && readLinePxReal > 0
@@ -8995,7 +9073,9 @@ document.addEventListener("DOMContentLoaded", () => {
     markEditorPatchDirty();
     if (e.target.getAttribute("contenteditable") !== "true") return;
 
-    scheduleRemoteTextBroadcast(editor.innerHTML);
+    // O parâmetro só é usado como "o editor tem conteúdo?": não precisa serializar o editor inteiro
+    // (centenas de KB em roteiros grandes) a cada tecla. O texto enviado sai de getRemoteSyncContent().
+    scheduleRemoteTextBroadcast(editor.firstChild ? "1" : "");
   });
 
   // 2. SERVIDOR PEDE O TEXTO (Quando o roteirista conecta)
@@ -11234,28 +11314,36 @@ document.addEventListener("DOMContentLoaded", () => {
     ]);
     const root = document.createElement("div");
     root.innerHTML = html;
-    let out = "";
+    // Acumula em lista e só guarda o último caractere: consultar o fim de uma string que cresce
+    // a cada parágrafo (endsWith) tornava isto quadrático (~750 ms com 3000 parágrafos).
+    const parts = [];
+    let last = ""; // último caractere escrito ("" = nada ainda)
+    const emit = (s) => {
+      if (!s) return;
+      parts.push(s);
+      last = s[s.length - 1];
+    };
 
     const walk = (node) => {
       if (node.nodeType === 3) {
-        out += node.data;
+        emit(node.data);
         return;
       }
       if (node.nodeType !== 1) return;
       const tag = node.tagName;
       if (tag === "STYLE" || tag === "SCRIPT") return;
       if (tag === "BR") {
-        out += "\n";
+        emit("\n");
         return;
       }
       const isBlock = BLOCK.has(tag);
-      if (isBlock && out && !out.endsWith("\n")) out += "\n";
+      if (isBlock && last && last !== "\n") emit("\n");
       node.childNodes.forEach(walk);
-      if (isBlock && !out.endsWith("\n")) out += "\n";
+      if (isBlock && last !== "\n") emit("\n");
     };
 
     root.childNodes.forEach(walk);
-    return out.replace(/\u00a0/g, " ").replace(/\n+$/, "");
+    return parts.join("").replace(/\u00a0/g, " ").replace(/\n+$/, "");
   }
 
   /**
@@ -11294,7 +11382,15 @@ document.addEventListener("DOMContentLoaded", () => {
    * Executa o backup silenciosamente.
    * Não exibe mensagens ao usuário para não interromper o trabalho.
    */
+  let _shadowBackupDeferrals = 0;
   function executeShadowBackup() {
+    // Não engasga a rolagem ao vivo: se o prompter está rodando, tenta de novo em 5 s (por até 1 min)
+    if (ScrollEngine.isRunning && _shadowBackupDeferrals < 12) {
+      _shadowBackupDeferrals++;
+      setTimeout(executeShadowBackup, 5000);
+      return;
+    }
+    _shadowBackupDeferrals = 0;
     try {
       const backupData = prepareBackupData();
 

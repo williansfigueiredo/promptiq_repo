@@ -662,18 +662,21 @@
       switch (message.type) {
         case 'full':
           applyFull(bridge, message);
+          scheduleCopySave(800);
           break;
         case 'doc': {
           const entry = upsertDoc(bridge, message);
           if (entry) {
             if (message.activeKey) activateKey(bridge, message.activeKey);
             bridge.syncPrompter();
+            scheduleCopySave(800);
           }
           break;
         }
         case 'patch':
           applyPatch(bridge, message);
           state.lastActivityAt = Date.now();
+          scheduleCopySave();
           return;
         case 'active':
           activateKey(bridge, message.key);
@@ -699,6 +702,112 @@
     }
   }
 
+  // ============================================================
+  // BACKUP — cópia local em arquivo
+  // ============================================================
+  // Cada documento recebido também é gravado em disco neste PC (ver backup-copy-store.js), para que
+  // uma falha/fechamento do app aqui não perca o roteiro. O que for EDITADO neste PC vai para uma
+  // cópia separada ("Edited on backup") e nunca é sobrescrito pelo espelho.
+  const COPY_DEBOUNCE_MS = 3000;
+  const COPY_MAX_WAIT_MS = 10000;
+  const copies = { timer: null, firstAt: 0, lastSavedAt: 0, error: '', dir: '', editSession: '', notice: '', noticeAt: 0 };
+
+  function collectCopyDocs(bridge) {
+    const names = new Map(bridge.listDocuments().map((d) => [d.id, d.name]));
+    const docs = [];
+    mirror.forEach((entry, key) => {
+      if (!bridge.hasDocument(entry.localId)) return;
+      const editor = bridge.getEditor(entry.localId);
+      if (!editor) return;
+      const html = (bridge.getCleanHtml(editor) || editor.innerHTML || '').trim();
+      docs.push({ key, entry, name: names.get(entry.localId) || 'Untitled', html });
+    });
+    return docs;
+  }
+
+  function noteCopyResult(result, docs, markField) {
+    if (!result) return;
+    if (result.dir) copies.dir = result.dir;
+    const failed = new Set((result.errors || []).map((e) => e.key));
+    docs.forEach((d) => { if (!failed.has(d.key)) d.entry[markField] = d.html; });
+    if (result.errors && result.errors.length) {
+      copies.error = result.errors[0].error || 'Could not write the local copy.';
+    } else {
+      copies.error = '';
+      if (result.saved) copies.lastSavedAt = Date.now();
+    }
+  }
+
+  // Espelho (texto do PRIMARY) -> <Nome>.ptq. A coleta é síncrona: roda antes de qualquer mudança de estado.
+  async function saveMirrorCopies() {
+    const bridge = getBridge();
+    if (!bridge || state.role !== 'backup' || state.editing) return null;
+    const docs = collectCopyDocs(bridge).filter((d) => d.entry.savedHtml !== d.html);
+    if (!docs.length) return null;
+    const result = await ipcRenderer.invoke('backup-save-copies', {
+      kind: 'mirror',
+      docs: docs.map(({ key, name, html }) => ({ key, name, html }))
+    });
+    noteCopyResult(result, docs, 'savedHtml');
+    return result;
+  }
+
+  // Texto editado NESTE PC (com o espelho pausado) -> pasta "Edited on backup"
+  async function saveEditedCopies() {
+    const bridge = getBridge();
+    if (!bridge || state.role !== 'backup' || !copies.editSession) return null;
+    const docs = collectCopyDocs(bridge).filter((d) => d.html !== d.entry.baseHtml && d.html !== d.entry.editedHtml);
+    if (!docs.length) return null;
+    const result = await ipcRenderer.invoke('backup-save-copies', {
+      kind: 'edited',
+      session: copies.editSession,
+      docs: docs.map(({ key, name, html }) => ({ key, name, html }))
+    });
+    noteCopyResult(result, docs, 'editedHtml');
+    return result;
+  }
+
+  function flushCopiesNow() {
+    clearTimeout(copies.timer);
+    copies.timer = null;
+    return (state.editing ? saveEditedCopies() : saveMirrorCopies()).catch((err) => {
+      copies.error = err.message;
+      return null;
+    });
+  }
+
+  function scheduleCopySave(delay = COPY_DEBOUNCE_MS) {
+    if (state.role !== 'backup') return;
+    const now = Date.now();
+    if (!copies.timer) copies.firstAt = now;
+    clearTimeout(copies.timer);
+    const wait = Math.max(0, Math.min(delay, copies.firstAt + COPY_MAX_WAIT_MS - now));
+    copies.timer = setTimeout(() => {
+      copies.timer = null;
+      flushCopiesNow();
+    }, wait);
+  }
+
+  // Ao fechar a janela não dá para esperar resposta assíncrona: grava de forma síncrona.
+  function flushCopiesOnClose() {
+    const bridge = getBridge();
+    if (!bridge || state.role !== 'backup') return;
+    try {
+      const all = collectCopyDocs(bridge);
+      const edited = state.editing;
+      const docs = edited
+        ? all.filter((d) => d.html !== d.entry.baseHtml && d.html !== d.entry.editedHtml)
+        : all.filter((d) => d.entry.savedHtml !== d.html);
+      if (!docs.length) return;
+      const result = ipcRenderer.sendSync('backup-save-copies-sync', {
+        kind: edited ? 'edited' : 'mirror',
+        session: copies.editSession,
+        docs: docs.map(({ key, name, html }) => ({ key, name, html }))
+      });
+      noteCopyResult(result, docs, edited ? 'editedHtml' : 'savedHtml');
+    } catch (_) { /* fechando: nada a fazer */ }
+  }
+
   function unlockMirrors() {
     const bridge = getBridge();
     releaseMirroredScroll();
@@ -714,28 +823,65 @@
     state.editing = false;
   }
 
-  // Libera a edição local pausando o espelhamento. Ao retomar, o texto do PRIMARY volta a valer.
-  function toggleEditing() {
+  // Libera a edição local pausando o espelhamento. Ao retomar, o que foi editado aqui é salvo numa
+  // cópia separada ANTES de o texto do PRIMARY voltar a valer.
+  async function toggleEditing() {
     const bridge = getBridge();
     if (!bridge || state.role !== 'backup') return;
 
     if (!state.editing) {
+      // Grava o espelho como está agora (coleta síncrona) e fixa a base para detectar o que for editado
+      const flush = flushCopiesNow();
+      collectCopyDocs(bridge).forEach((d) => { d.entry.baseHtml = d.html; d.entry.editedHtml = null; });
+      copies.editSession = new Date().toISOString();
       state.editing = true;
       releaseMirroredScroll();
       mirror.forEach((entry) => {
         if (bridge.hasDocument(entry.localId)) bridge.setMirrorMode(entry.localId, false);
       });
-    } else {
-      const ok = window.confirm(
-        'Resume mirroring?\n\nAnything you changed on this PC will be replaced by the primary\'s text.'
-      );
-      if (!ok) return;
-      state.editing = false;
-      mirror.forEach((entry) => {
-        if (bridge.hasDocument(entry.localId)) bridge.setMirrorMode(entry.localId, true);
-      });
-      ipcRenderer.send('backup-request-resync');
+      render(true);
+      await flush;
+      return;
     }
+
+    const changed = collectCopyDocs(bridge).filter((d) => d.html !== d.entry.baseHtml);
+    const where = copies.dir ? `\n\n${copies.dir}\\Edited on backup` : '';
+    const ok = window.confirm(changed.length
+      ? `Resume mirroring?\n\nYour changes on this PC (${changed.length} document${changed.length > 1 ? 's' : ''}) will be saved as a separate copy first:${where}\n\nThen the primary's text is shown again.`
+      : 'Resume mirroring?\n\nYou made no changes on this PC. The primary\'s text will be shown again.');
+    if (!ok) return;
+
+    if (changed.length) {
+      clearTimeout(copies.timer);
+      copies.timer = null;
+      let result = null;
+      let failure = '';
+      try {
+        result = await saveEditedCopies();
+        // null = tudo já estava salvo (ex.: gravação feita ao digitar): não é erro
+        if (result && !result.ok) failure = (result.errors && result.errors[0] && result.errors[0].error) || 'unknown error';
+      } catch (err) {
+        failure = err.message;
+      }
+      if (failure && !window.confirm(`Could not save a copy of your changes (${failure}).\n\nResume mirroring anyway and lose them?`)) {
+        render(true);
+        return;
+      }
+      if (!failure) {
+        copies.notice = `Your changes were saved as a copy in ${copies.dir}\\Edited on backup`;
+        copies.noticeAt = Date.now();
+      }
+    }
+
+    // O espelho recebido durante a edição não foi aplicado: o PRIMARY manda tudo de novo
+    state.editing = false;
+    copies.editSession = '';
+    mirror.forEach((entry) => {
+      entry.baseHtml = null;
+      entry.editedHtml = null;
+      if (bridge.hasDocument(entry.localId)) bridge.setMirrorMode(entry.localId, true);
+    });
+    ipcRenderer.send('backup-request-resync');
     render(true);
   }
 
@@ -925,6 +1071,8 @@
 
   async function stopRole() {
     stopPrimaryWatch();
+    // Antes de soltar os documentos, garante a cópia em arquivo do que está na tela
+    if (state.role === 'backup') await flushCopiesNow();
     await ipcRenderer.invoke('backup-stop');
     if (state.role === 'backup') unlockMirrors();
     state.role = 'off';
@@ -967,6 +1115,7 @@
   function formatAge(ts) {
     if (!ts) return 'no updates yet';
     const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    if (s >= 120) return `${Math.round(s / 60)} min ago`;
     return s < 2 ? 'just now' : `${s}s ago`;
   }
 
@@ -1030,14 +1179,26 @@
     $('backup-takeover-btn').classList.toggle('d-none', !backupOn);
     $('backup-ping-btn').classList.toggle('d-none', !backupOn);
     $('backup-edit-toggle').classList.toggle('d-none', !backupOn);
+    $('backup-open-copies-btn').classList.toggle('d-none', !backupOn);
     $('backup-edit-toggle').innerHTML = state.editing
       ? '<i class="bi bi-lock me-1"></i> Resume mirroring'
       : '<i class="bi bi-unlock me-1"></i> Unlock editing';
     $('backup-backup-info').classList.toggle('d-none', !backupOn);
     if (backupOn) {
       $('backup-backup-info').textContent = state.editing
-        ? 'Mirroring is paused. Changes made here stay only on this PC and are replaced when you resume.'
+        ? 'Mirroring is paused. Your changes are kept as a separate copy on this PC; when you resume, the primary\'s text is shown again.'
         : `Documents are read-only while mirroring · last update ${formatAge(state.lastActivityAt)}`;
+    }
+    const copyInfo = $('backup-copy-info');
+    copyInfo.classList.toggle('d-none', !backupOn);
+    if (backupOn) {
+      const notice = copies.notice && Date.now() - copies.noticeAt < 20000 ? `${copies.notice}. ` : '';
+      let line;
+      if (copies.error) line = `⚠ Local copy failed: ${copies.error}`;
+      else if (copies.lastSavedAt) line = `Local copy saved on this PC ${formatAge(copies.lastSavedAt)}`;
+      else line = 'Local copy: waiting for the first document';
+      copyInfo.textContent = notice + line;
+      copyInfo.className = `small mt-1 ${copies.error ? 'text-danger' : 'text-muted'}`;
     }
 
     const error = $('backup-error');
@@ -1076,7 +1237,20 @@
       (state.role === 'backup' ? stopRole() : startBackup()).catch(console.error);
     });
     $('backup-takeover-btn').addEventListener('click', () => takeOver().catch(console.error));
-    $('backup-edit-toggle').addEventListener('click', toggleEditing);
+    $('backup-edit-toggle').addEventListener('click', () => toggleEditing().catch(console.error));
+    $('backup-open-copies-btn').addEventListener('click', () => {
+      ipcRenderer.invoke('backup-open-copies-folder').then((r) => {
+        if (r && !r.ok) { copies.error = r.error || 'Could not open the folder.'; render(true); }
+      }).catch(console.error);
+    });
+    ipcRenderer.invoke('backup-copies-info').then((info) => { if (info && info.dir) copies.dir = info.dir; }).catch(() => { });
+
+    // Com o espelho pausado, cada edição feita aqui vira cópia em arquivo (após uma pausa na digitação)
+    document.addEventListener('input', (event) => {
+      if (state.role === 'backup' && state.editing && event.target && event.target.closest &&
+        event.target.closest('.text-editor-area')) scheduleCopySave();
+    }, true);
+    window.addEventListener('beforeunload', flushCopiesOnClose);
     $('backup-test-btn').addEventListener('click', () => runPrimaryTest().catch(console.error));
     $('backup-ping-btn').addEventListener('click', () => runBackupPing().catch(console.error));
     $('backup-copy-pin').addEventListener('click', () => copyWithFeedback($('backup-copy-pin'), state.pin));
@@ -1096,7 +1270,10 @@
       // O main encerrou o papel (ex.: janela fechada).
       if (status.role === 'off' && state.role !== 'off') {
         stopPrimaryWatch();
-        if (state.role === 'backup') unlockMirrors();
+        if (state.role === 'backup') {
+          flushCopiesNow(); // a coleta é síncrona: roda antes de os documentos serem soltos
+          unlockMirrors();
+        }
         state.role = 'off';
       }
       render();

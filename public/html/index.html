@@ -695,8 +695,10 @@
                             <button id="backup-takeover-btn" class="btn btn-sm btn-warning d-none"><i class="bi bi-arrow-repeat me-1"></i> Take over as primary</button>
                             <button id="backup-edit-toggle" class="btn btn-sm btn-outline-secondary d-none"><i class="bi bi-unlock me-1"></i> Unlock editing</button>
                             <button id="backup-ping-btn" class="btn btn-sm btn-outline-secondary d-none"><i class="bi bi-activity me-1"></i> Test connection</button>
+                            <button id="backup-open-copies-btn" class="btn btn-sm btn-outline-secondary d-none" title="Open the folder where this PC keeps its own copy of the documents"><i class="bi bi-folder2-open me-1"></i> Open copies folder</button>
                         </div>
                         <div id="backup-backup-info" class="small text-muted mt-2 d-none"></div>
+                        <div id="backup-copy-info" class="small text-muted mt-1 d-none"></div>
                     </div>
 
                     <div id="backup-test-result" class="d-none"></div>
@@ -921,6 +923,7 @@
 <script src="../../src/renderer/modules/tab-navigation.js"></script>
 <script src="../../src/renderer/lib/diff.min.js"></script>
 <script src="../../src/renderer/modules/version-diff.js"></script>
+<script src="../../src/renderer/modules/paste-sanitizer.js"></script>
 <script src="../../src/renderer/modules/keyboard-handler.js"></script>
 <script src="../../src/renderer/modules/backup-sync.js"></script>
 <script src="../../src/renderer/modules/projection-mirror.js"></script>

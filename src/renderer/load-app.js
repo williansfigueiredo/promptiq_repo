@@ -22,6 +22,7 @@ if (fs.existsSync(bytecodePath)) {
   loadScript('../../src/renderer/modules/tab-navigation.js');
   loadScript('../../src/renderer/modules/keyboard-handler.js');
   loadScript('../../src/renderer/modules/version-diff.js');
+  loadScript('../../src/renderer/modules/paste-sanitizer.js');
   loadScript('../../src/renderer/modules/backup-sync.js');
   loadScript('../../src/renderer/modules/projection-mirror.js');
   loadScript('../../src/renderer/app.js');
