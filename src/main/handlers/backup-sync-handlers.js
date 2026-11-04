@@ -1,14 +1,17 @@
 // ============================================================
 // backup-sync-handlers.js
 // ============================================================
-// DESCRIÇÃO: Espelhamento PRIMARY → BACKUP entre dois PromptIQ.
+// DESCRIÇÃO: Espelhamento PRIMARY ⇄ BACKUP entre dois PromptIQ.
 // FUNÇÃO: Canal totalmente separado do servidor do roteirista (porta 3001 /
 //         remote.html). Só o operador do software usa este canal:
 //   - PRIMARY: abre um servidor Socket.IO (porta 3002) protegido por PIN e
 //              repassa aos backups tudo o que o renderer enviar.
 //   - BACKUP : conecta no PRIMARY por IP + PIN e entrega ao renderer cada
 //              atualização recebida (somente leitura até "assumir").
-// O fluxo é de mão única: o PRIMARY nunca aceita dados vindos do BACKUP.
+// O fluxo normal é do PRIMARY para o BACKUP. A única coisa que o BACKUP pode enviar ao PRIMARY
+// é uma edição de TEXTO (patch por parágrafo), e só quando o usuário libera a edição no backup
+// ("duas vias"). O PRIMARY valida (texto-base idêntico, formato, tamanho, taxa), aplica ou recusa,
+// e pode desligar o recebimento. Estilo, documentos e rolagem nunca são aceitos do backup.
 // ============================================================
 
 const { app, ipcMain, shell } = require('electron');
@@ -26,6 +29,9 @@ const MAX_PIN_FAILURES = 5;
 const LOCK_MS = 60 * 1000;
 const TEST_TIMEOUT_MS = 5000;
 const ALLOWED_TYPES = new Set(['full', 'doc', 'patch', 'active', 'pos', 'scroll', 'test']);
+// O que o BACKUP pode enviar ao PRIMARY (edição de texto, quando o usuário libera a edição no backup)
+const UPSTREAM_TYPES = new Set(['patch']);
+const MAX_EDITS_PER_SECOND = 40;
 const HOST_PATTERN = /^[A-Za-z0-9.-]{1,253}$/;
 
 // Placas virtuais (VPN de bancos, VMs, WSL, Docker, Bluetooth...) não servem para o backup conectar.
@@ -204,9 +210,22 @@ function initBackupSyncHandlers() {
         publishStatus({ state: 'listening', clients: connectedClients });
         sendToRenderer('backup:request-full');
 
-        // O backup só pode pedir reenvio, responder a testes e checar a conexão;
-        // nunca escreve conteúdo no PRIMARY.
+        // O backup pode pedir reenvio, responder a testes, checar a conexão e (só com a edição
+        // liberada no backup) enviar edições de texto. O PRIMARY valida e decide se aplica.
         socket.on('resync', () => sendToRenderer('backup:request-full'));
+
+        let editWindowStart = 0;
+        let editCount = 0;
+        socket.on('edit', (message) => {
+          if (!message || typeof message !== 'object' || !UPSTREAM_TYPES.has(message.type)) return;
+          const now = Date.now();
+          if (now - editWindowStart >= 1000) {
+            editWindowStart = now;
+            editCount = 0;
+          }
+          if (++editCount > MAX_EDITS_PER_SECOND) return;
+          sendToRenderer('backup:incoming-edit', { socketId: socket.id, message });
+        });
 
         socket.on('ping-test', (ack) => {
           if (typeof ack === 'function') ack();
@@ -248,12 +267,25 @@ function initBackupSyncHandlers() {
     }
   });
 
-  // Renderer do PRIMARY → todos os backups conectados
-  ipcMain.on('backup-push', (event, message) => {
+  // Renderer do PRIMARY → todos os backups conectados (ou todos menos o que originou a edição)
+  ipcMain.on('backup-push', (event, message, exceptSocketId) => {
     if (role !== 'primary' || !io || event.sender !== hostContents) return;
     if (!message || typeof message !== 'object' || message.type === 'test' || !ALLOWED_TYPES.has(message.type)) return;
 
-    io.emit('sync', message);
+    if (typeof exceptSocketId === 'string' && exceptSocketId) io.except(exceptSocketId).emit('sync', message);
+    else io.emit('sync', message);
+  });
+
+  // PRIMARY recusou uma edição vinda de um backup (conflito, edição desligada, dados inválidos)
+  ipcMain.on('backup-reject-edit', (event, info) => {
+    if (role !== 'primary' || !io || event.sender !== hostContents || !info) return;
+    const target = io.sockets.sockets.get(String(info.socketId || ''));
+    if (target) {
+      target.emit('edit-rejected', {
+        key: String(info.key || '').slice(0, 40),
+        reason: String(info.reason || 'conflict').slice(0, 20)
+      });
+    }
   });
 
   // Teste de comunicação (PRIMARY): envia uma sonda pelo mesmo caminho do conteúdo e espera
@@ -320,6 +352,14 @@ function initBackupSyncHandlers() {
       }
     });
 
+    // O PRIMARY não aplicou uma edição enviada por este backup
+    client.on('edit-rejected', (info) => {
+      sendToRenderer('backup:edit-rejected', {
+        key: String((info && info.key) || '').slice(0, 40),
+        reason: String((info && info.reason) || 'conflict').slice(0, 20)
+      });
+    });
+
     client.on('disconnect', (reason) => {
       publishStatus({ state: 'reconnecting', error: reason });
       // Se o PRIMARY encerrou o servidor, o Socket.IO não religa sozinho.
@@ -350,6 +390,17 @@ function initBackupSyncHandlers() {
     if (role === 'backup' && client && client.connected && event.sender === hostContents) {
       client.emit('resync');
     }
+  });
+
+  // BACKUP envia uma edição de texto ao PRIMARY (só com a edição liberada e o envio ligado)
+  ipcMain.on('backup-send-edit', (event, message) => {
+    if (role !== 'backup' || !client || event.sender !== hostContents) return;
+    if (!message || typeof message !== 'object' || !UPSTREAM_TYPES.has(message.type)) return;
+    if (!client.connected) {
+      sendToRenderer('backup:edit-rejected', { key: String(message.key || '').slice(0, 40), reason: 'offline' });
+      return;
+    }
+    client.emit('edit', message);
   });
 
   // BACKUP responde à sonda do PRIMARY (o renderer já comparou o conteúdo)

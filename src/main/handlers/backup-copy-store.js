@@ -149,6 +149,16 @@ function createCopyStore(options) {
     return 'saved';
   }
 
+  function pruneEdited(dir) {
+    const files = fs.readdirSync(dir)
+      .filter((f) => f.endsWith('.ptq'))
+      .map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs }))
+      .sort((a, b) => b.t - a.t);
+    files.slice(MAX_EDITED_FILES).forEach(({ f }) => {
+      try { fs.unlinkSync(path.join(dir, f)); } catch (_) { /* ignora */ }
+    });
+  }
+
   function saveEditedDoc(doc, session) {
     const name = assignName(doc.key, doc.name);
     const dir = path.join(baseDir, 'Edited on backup');
@@ -160,19 +170,27 @@ function createCopyStore(options) {
     fs.mkdirSync(dir, { recursive: true });
     writeAtomic(file, serialize(doc.html, name, now()));
     written.set(cacheKey, { file, last: doc.html, snapshotAt: 0 });
+    pruneEdited(dir);
+    return 'saved';
+  }
 
-    const files = fs.readdirSync(dir)
-      .filter((f) => f.endsWith('.ptq'))
-      .map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs }))
-      .sort((a, b) => b.t - a.t);
-    files.slice(MAX_EDITED_FILES).forEach(({ f }) => {
-      try { fs.unlinkSync(path.join(dir, f)); } catch (_) { /* ignora */ }
-    });
+  // Cópia de um texto que está prestes a ser substituído pelo do PRIMARY (edição que perdeu uma
+  // disputa). Arquivo próprio, nunca sobrescrito por gravações posteriores.
+  function saveConflictDoc(doc) {
+    const name = assignName(doc.key, doc.name);
+    const dir = path.join(baseDir, 'Edited on backup');
+    const stamp = localStamp(now(), true);
+    let file = path.join(dir, `${name} (conflict ${stamp}).ptq`);
+    for (let i = 2; fs.existsSync(file); i++) file = path.join(dir, `${name} (conflict ${stamp}-${i}).ptq`);
+
+    fs.mkdirSync(dir, { recursive: true });
+    writeAtomic(file, serialize(doc.html, name, now()));
+    pruneEdited(dir);
     return 'saved';
   }
 
   /**
-   * @param {{kind:'mirror'|'edited', session?:string, docs:Array<{key,name,html}>}} payload
+   * @param {{kind:'mirror'|'edited', unique?:boolean, session?:string, docs:Array<{key,name,html}>}} payload
    * @returns {{ok:boolean, dir:string, saved:number, unchanged:number, skipped:number, errors:Array<{key,error}>}}
    */
   function save(payload) {
@@ -180,6 +198,7 @@ function createCopyStore(options) {
     const result = { ok: true, dir: baseDir, saved: 0, unchanged: 0, skipped: 0, errors: [], ms: 0 };
     const docs = payload && Array.isArray(payload.docs) ? payload.docs : [];
     const edited = payload && payload.kind === 'edited';
+    const unique = edited && payload.unique === true;
     const session = payload && typeof payload.session === 'string' ? payload.session : null;
 
     docs.forEach((doc) => {
@@ -188,7 +207,7 @@ function createCopyStore(options) {
         return;
       }
       try {
-        const outcome = edited ? saveEditedDoc(doc, session) : saveMirrorDoc(doc);
+        const outcome = unique ? saveConflictDoc(doc) : edited ? saveEditedDoc(doc, session) : saveMirrorDoc(doc);
         if (outcome === 'saved') result.saved++;
         else result.unchanged++;
       } catch (err) {

@@ -1,13 +1,16 @@
 // ============================================================
 // backup-sync.js
 // ============================================================
-// DESCRIÇÃO: Espelhamento PRIMARY → BACKUP (somente operador).
+// DESCRIÇÃO: Espelhamento PRIMARY ⇄ BACKUP (somente operador).
 // FUNÇÃO:
 //   PRIMARY: observa o editor (digitação local, edições do roteirista, troca/
 //            abertura/fechamento de documentos, estilo e ponto de leitura) e
-//            envia cada mudança ao main (canal separado, porta 3002).
+//            envia cada mudança ao main (canal separado, porta 3002). Também recebe, valida e
+//            aplica as edições de texto que um backup enviar (duas vias).
 //   BACKUP : recebe as atualizações, aplica nos documentos espelhados
 //            (somente leitura) e mantém o prompter no mesmo ponto.
+//            "Unlock editing" libera a edição; com "duas vias" o que se edita aqui também vai ao
+//            PRIMARY (em conflito o PRIMARY vence e o texto do backup fica guardado em arquivo).
 //            "Take over" destrava os documentos e vira o operador principal.
 // Independente do servidor do roteirista (remote.html / porta 3001).
 // ============================================================
@@ -28,6 +31,8 @@
   const MAX_HTML_LENGTH = 20 * 1024 * 1024;
   const STORAGE_HOST = 'promptiq.backup.host';
   const STORAGE_PORT = 'promptiq.backup.port';
+  const STORAGE_ACCEPT_EDITS = 'promptiq.backup.acceptEdits';
+  const STORAGE_TWO_WAY = 'promptiq.backup.twoWay';
 
   const state = {
     role: 'off',        // 'off' | 'primary' | 'backup'
@@ -38,8 +43,20 @@
     port: DEFAULT_PORT,
     pin: '',
     editing: false,     // BACKUP com o espelhamento pausado para permitir edição local
+    // Duas vias: o PRIMARY aceita edições vindas do backup; o BACKUP envia as suas (com a edição liberada)
+    acceptEdits: localStorage.getItem(STORAGE_ACCEPT_EDITS) !== '0',
+    twoWay: localStorage.getItem(STORAGE_TWO_WAY) !== '0',
+    editBlocked: false, // o PRIMARY recusou receber edições: as do backup ficam só neste PC
+    editsAccepted: 0,   // PRIMARY: edições de backup aplicadas
+    editsRejected: 0,   // PRIMARY: edições de backup recusadas (conflito etc.)
+    lastEditAt: 0,      // PRIMARY: última edição de backup aplicada
     lastActivityAt: 0
   };
+
+  // BACKUP com a edição liberada e o envio de edições ao PRIMARY ligado e aceito
+  const twoWayActive = () => state.role === 'backup' && state.editing && state.twoWay && !state.editBlocked;
+  // Há alguém para receber o que este PC observa no editor?
+  const canSend = () => (state.role === 'primary' && state.clients > 0) || twoWayActive();
 
   const getBridge = () => window.PromptiqBackupBridge || null;
   const $ = (id) => document.getElementById(id);
@@ -71,7 +88,7 @@
     const bridge = getBridge();
     const activeId = bridge ? bridge.getActiveId() : null;
     const editor = activeId == null ? null : bridge.getEditor(activeId);
-    if (!editor || state.clients === 0) {
+    if (!editor || !canSend()) {
       needsFullScan = true;
       return;
     }
@@ -139,22 +156,37 @@
     return bridge.getCleanHtml(box); // mesma limpeza usada em todo o app (sem marcações de busca/leitura)
   }
 
+  // Impressão digital (FNV-1a) do texto exato do documento. Os patches carregam a do texto-base: só
+  // são aplicados se o texto de quem recebe for idêntico. A contagem de parágrafos + tamanho do
+  // texto sozinhos podem coincidir por acaso quando os dois lados editam (ex.: trocar uma palavra
+  // por outra do mesmo tamanho).
+  function hashText(text) {
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
   // "pure": todo nível superior é um elemento (o caso normal: <p>/<div>). Só assim o índice da
   // unidade é o índice do nó, o que permite comparar apenas os parágrafos alterados.
   function makeBaseline(editor, style) {
     const { groups, sigs } = topLevelUnits(editor);
+    const text = editor.textContent || '';
     return {
       sigs,
-      textLen: (editor.textContent || '').length,
+      textLen: text.length,
+      textHash: hashText(text),
       styleHash: styleHashOf(style),
       pure: groups.every((g) => g.length === 1 && g[0].nodeType === 1)
     };
   }
 
-  function pushToBackups(message) {
+  function pushToBackups(message, exceptSocketId) {
     message.seq = ++seq;
     message.ts = Date.now();
-    ipcRenderer.send('backup-push', message);
+    ipcRenderer.send('backup-push', message, exceptSocketId || '');
     state.lastActivityAt = Date.now();
   }
 
@@ -193,6 +225,7 @@
       activeKey: String(id),
       baseCount: base.sigs.length,
       baseLen: base.textLen,
+      baseHash: base.textHash,
       start: change.start,
       remove: change.remove,
       count: change.count,
@@ -232,7 +265,9 @@
       style
     });
     changed.forEach((sig, index) => { base.sigs[index] = sig; });
-    base.textLen = (editor.textContent || '').length;
+    const text = editor.textContent || '';
+    base.textLen = text.length;
+    base.textHash = hashText(text);
     return patch;
   }
 
@@ -276,6 +311,10 @@
 
   function collectAndSend() {
     sendTimer = null;
+    if (state.role === 'backup') {
+      collectAndSendEdit();
+      return;
+    }
     const bridge = getBridge();
     if (!bridge || state.role !== 'primary' || state.clients === 0) return;
 
@@ -306,7 +345,7 @@
   }
 
   function scheduleSend() {
-    if (sendTimer || state.role !== 'primary' || state.clients === 0) return;
+    if (sendTimer || !canSend()) return;
     sendTimer = setTimeout(collectAndSend, SEND_THROTTLE_MS);
   }
 
@@ -349,7 +388,7 @@
     });
   }
 
-  function startPrimaryWatch() {
+  function startPrimaryWatch(withScroll = true) {
     stopPrimaryWatch();
     const container = $('document-content-container');
     const tabs = $('document-tabs-bar');
@@ -360,7 +399,7 @@
     const options = { childList: true, characterData: true, subtree: true, attributes: true };
     if (container) observer.observe(container, options);
     if (tabs) observer.observe(tabs, { childList: true, characterData: true, subtree: true });
-    scrollTimer = setInterval(pollScroll, SCROLL_POLL_MS);
+    if (withScroll) scrollTimer = setInterval(pollScroll, SCROLL_POLL_MS);
   }
 
   function stopPrimaryWatch() {
@@ -373,6 +412,162 @@
     clearInterval(scrollTimer);
     scrollTimer = null;
     baselines.clear();
+  }
+
+  // ============================================================
+  // PRIMARY — edições vindas do backup (duas vias)
+  // ============================================================
+  // O backup (com a edição liberada) envia as alterações de texto como patches por parágrafo. O
+  // PRIMARY só aplica se a base do patch for exatamente o texto que ele tem agora (nada de
+  // "última escrita vence" às cegas): em caso de conflito o texto do PRIMARY prevalece e o backup
+  // guarda o que digitou como cópia. Estilo (fonte, tamanho) nunca é aceito do backup.
+  let editSyncTimer = null;
+
+  function scheduleEditSync(bridge, docId) {
+    clearTimeout(editSyncTimer);
+    editSyncTimer = setTimeout(() => {
+      editSyncTimer = null;
+      if (state.role === 'primary' && bridge.getActiveId() === docId) bridge.syncPrompter(true);
+    }, PROMPTER_SYNC_MS);
+  }
+
+  function handleIncomingEdit(info) {
+    const bridge = getBridge();
+    if (!bridge || state.role !== 'primary' || !info || !info.message) return;
+    const socketId = String(info.socketId || '');
+    const message = info.message;
+
+    const reject = (reason, resync = true) => {
+      state.editsRejected += 1;
+      ipcRenderer.send('backup-reject-edit', { socketId, key: message.key, reason });
+      // O backup volta ao texto do PRIMARY (o que ele digitou fica guardado como cópia)
+      if (resync) pushFull();
+    };
+
+    if (!state.acceptEdits) return reject('disabled', false);
+
+    const whole = (v) => Number.isInteger(v) && v >= 0;
+    if (message.type !== 'patch' || typeof message.key !== 'string' || typeof message.html !== 'string' ||
+      message.html.length > MAX_HTML_LENGTH ||
+      !whole(message.baseCount) || !whole(message.baseLen) || !whole(message.start) ||
+      !whole(message.remove) || !whole(message.count)) {
+      return reject('invalid');
+    }
+
+    const doc = bridge.listDocuments().find((d) => String(d.id) === message.key);
+    if (!doc) return reject('missing');
+
+    // O que este PC ainda não mandou aos backups sai ANTES: a edição recebida é aplicada sobre o
+    // estado que os backups já conhecem.
+    if (sendTimer) {
+      clearTimeout(sendTimer);
+      collectAndSend();
+    }
+
+    // O texto-base do backup precisa ser exatamente o que este PC tem agora
+    const current = bridge.getEditor(doc.id);
+    if (typeof message.baseHash !== 'number' || !current || hashText(current.textContent || '') !== message.baseHash) {
+      return reject('conflict');
+    }
+
+    const applied = bridge.patchEditorNodes(doc.id, {
+      baseCount: message.baseCount,
+      baseLen: message.baseLen,
+      start: message.start,
+      remove: message.remove,
+      count: message.count,
+      nodes: Array.from(sanitizeFragment(message.html).content.childNodes)
+    });
+    if (!applied) return reject('conflict');
+
+    // A edição já é conhecida por todos os backups (o que a enviou a tem; os demais recebem o
+    // repasse abaixo): é a nova linha de base e não gera um segundo envio.
+    const editor = bridge.getEditor(doc.id);
+    const style = readStyle(editor);
+    baselines.set(doc.id, makeBaseline(editor, style));
+    needsFullScan = true;
+
+    bridge.markModified(doc.id);
+    state.editsAccepted += 1;
+    state.lastEditAt = Date.now();
+    scheduleEditSync(bridge, doc.id);
+
+    const activeId = bridge.getActiveId();
+    pushToBackups({
+      type: 'patch',
+      key: message.key,
+      name: doc.name,
+      activeKey: activeId == null ? '' : String(activeId),
+      baseCount: message.baseCount,
+      baseLen: message.baseLen,
+      baseHash: message.baseHash,
+      start: message.start,
+      remove: message.remove,
+      count: message.count,
+      html: message.html,
+      style
+    }, socketId);
+  }
+
+  // ============================================================
+  // BACKUP — envio das edições ao PRIMARY (duas vias)
+  // ============================================================
+  const editedLocalIds = new Set(); // documentos em que o usuário digitou desde o último envio
+
+  function keyOfLocalDoc(localId) {
+    for (const [key, entry] of mirror) {
+      if (entry.localId === localId) return key;
+    }
+    return null;
+  }
+
+  // Linha de base = o texto que o PRIMARY tem. Só as diferenças em relação a ela viajam.
+  function rebaselineMirrorDoc(bridge, localId) {
+    const editor = bridge.getEditor(localId);
+    if (editor) baselines.set(localId, makeBaseline(editor, readStyle(editor)));
+  }
+
+  function rebaselineAllMirrors(bridge) {
+    mirror.forEach((entry) => {
+      if (bridge.hasDocument(entry.localId)) rebaselineMirrorDoc(bridge, entry.localId);
+    });
+    needsFullScan = true;
+  }
+
+  function collectAndSendEdit() {
+    sendTimer = null;
+    const bridge = getBridge();
+    if (!bridge || !twoWayActive()) return;
+
+    const ids = new Set(editedLocalIds);
+    editedLocalIds.clear();
+    const activeId = bridge.getActiveId();
+    if (activeId != null) ids.add(activeId);
+    const names = new Map(bridge.listDocuments().map((d) => [d.id, d.name]));
+
+    ids.forEach((localId) => {
+      const key = keyOfLocalDoc(localId);
+      if (!key || !bridge.hasDocument(localId)) return;
+      const patch = buildPatch(bridge, localId, names.get(localId) || '');
+      if (patch === undefined) {
+        rebaselineMirrorDoc(bridge, localId); // sem linha de base (documento novo): começa daqui
+        return;
+      }
+      if (!patch) return;
+      patch.key = key;
+      patch.activeKey = key;
+      ipcRenderer.send('backup-send-edit', patch);
+      state.lastActivityAt = Date.now();
+    });
+    resetDirtyTracking();
+  }
+
+  // Envia já o que estiver pendente (antes de aplicar algo do PRIMARY, de retomar o espelho...)
+  function flushPendingEdits() {
+    if (!twoWayActive()) return;
+    clearTimeout(sendTimer);
+    sendTimer = null;
+    collectAndSendEdit();
   }
 
   // ============================================================
@@ -430,16 +625,23 @@
       const created = bridge.createDocument(html, name);
       entry = { localId: created.id, hash: null, style };
       mirror.set(doc.key, entry);
-      bridge.setMirrorMode(created.id, true);
+      bridge.setMirrorMode(created.id, !state.editing); // com a edição liberada, o novo documento também é editável
     } else if (doc.name) {
       bridge.renameDocument(entry.localId, name);
     }
     entry.style = style;
 
     // Em reenvios completos (conexão/divergência) reaplica sempre: o cache de hash não enxerga
-    // alterações feitas no editor do backup depois da última aplicação.
+    // alterações feitas no editor do backup depois da última aplicação. Editando, só se o texto
+    // daqui realmente difere (reaplicar derrubaria o cursor e o desfazer sem necessidade).
     if (force || entry.hash !== hash) {
-      bridge.applyContent(entry.localId, html, style);
+      const editorNow = state.editing ? bridge.getEditor(entry.localId) : null;
+      const same = editorNow && (bridge.getCleanHtml(editorNow) || '').trim() === html.trim();
+      if (same) {
+        bridge.applyContent(entry.localId, null, style);
+      } else {
+        bridge.applyContent(entry.localId, html, style);
+      }
       entry.hash = hash;
     }
     return entry;
@@ -462,9 +664,12 @@
 
     activateKey(bridge, message.activeKey);
     bridge.syncPrompter();
+    if (twoWayActive()) rebaselineAllMirrors(bridge);
   }
 
   function activateKey(bridge, key) {
+    // Editando, quem escolhe o documento da tela é o usuário (o do PRIMARY não "puxa" a aba)
+    if (state.editing) return;
     const entry = mirror.get(key);
     if (!entry || !bridge.hasDocument(entry.localId)) return;
     bridge.activateDocument(entry.localId);
@@ -602,6 +807,14 @@
       return;
     }
 
+    // O texto-base do PRIMARY precisa ser idêntico ao daqui (contagem + tamanho podem coincidir
+    // por acaso quando os dois lados editam)
+    const current = bridge.getEditor(entry.localId);
+    if (typeof message.baseHash === 'number' && current && hashText(current.textContent || '') !== message.baseHash) {
+      requestResync();
+      return;
+    }
+
     const ok = bridge.patchEditorNodes(entry.localId, {
       baseCount: message.baseCount,
       baseLen: message.baseLen,
@@ -622,6 +835,7 @@
     }
     if (message.name) bridge.renameDocument(entry.localId, sanitizeName(message.name));
     entry.hash = null; // o conteúdo mudou: o cache do último "doc" completo não vale mais
+    if (twoWayActive()) rebaselineMirrorDoc(bridge, entry.localId); // o que veio do PRIMARY não é "edição minha"
     if (message.activeKey && activeMirrorKey(bridge) !== message.activeKey) activateKey(bridge, message.activeKey);
     schedulePrompterSync(message.baseLen);
   }
@@ -648,15 +862,22 @@
     prompterSyncTimer = setTimeout(() => {
       prompterSyncTimer = null;
       const bridge = getBridge();
-      if (bridge && state.role === 'backup' && !state.editing) bridge.syncPrompter();
+      if (bridge && state.role === 'backup' && !(state.editing && !twoWayActive())) bridge.syncPrompter();
     }, delay);
   }
 
   function handleIncoming(message) {
     const bridge = getBridge();
     if (!bridge || state.role !== 'backup' || !message) return;
-    // Com a edição local liberada, nada do PRIMARY sobrescreve o texto (exceto o teste).
-    if (state.editing && message.type !== 'test') return;
+    // Edição liberada SEM duas vias: nada do PRIMARY sobrescreve o texto daqui (exceto o teste).
+    if (state.editing && !twoWayActive() && message.type !== 'test') return;
+
+    // Duas vias: o que foi digitado aqui e ainda não saiu vai ANTES de qualquer mudança vinda do
+    // PRIMARY; num reenvio completo, uma cópia do que há aqui é guardada antes de ele valer.
+    if (twoWayActive() && (message.type === 'full' || message.type === 'doc' || message.type === 'patch')) {
+      flushPendingEdits();
+      if (message.type === 'full') saveConflictCopies(bridge, message);
+    }
 
     try {
       switch (message.type) {
@@ -669,6 +890,7 @@
           if (entry) {
             if (message.activeKey) activateKey(bridge, message.activeKey);
             bridge.syncPrompter();
+            if (twoWayActive()) rebaselineMirrorDoc(bridge, entry.localId);
             scheduleCopySave(800);
           }
           break;
@@ -739,9 +961,10 @@
   }
 
   // Espelho (texto do PRIMARY) -> <Nome>.ptq. A coleta é síncrona: roda antes de qualquer mudança de estado.
+  // Em duas vias o texto daqui é o texto compartilhado, então o espelho em disco segue em dia.
   async function saveMirrorCopies() {
     const bridge = getBridge();
-    if (!bridge || state.role !== 'backup' || state.editing) return null;
+    if (!bridge || state.role !== 'backup' || (state.editing && !twoWayActive())) return null;
     const docs = collectCopyDocs(bridge).filter((d) => d.entry.savedHtml !== d.html);
     if (!docs.length) return null;
     const result = await ipcRenderer.invoke('backup-save-copies', {
@@ -770,10 +993,37 @@
   function flushCopiesNow() {
     clearTimeout(copies.timer);
     copies.timer = null;
-    return (state.editing ? saveEditedCopies() : saveMirrorCopies()).catch((err) => {
+    const localOnly = state.editing && !twoWayActive(); // edição só neste PC: vai para "Edited on backup"
+    return (localOnly ? saveEditedCopies() : saveMirrorCopies()).catch((err) => {
       copies.error = err.message;
       return null;
     });
+  }
+
+  // O texto deste backup está prestes a ser substituído pelo do PRIMARY e é diferente dele (uma
+  // edição que perdeu a disputa, ou texto que ficou para trás): guarda uma cópia em arquivo próprio,
+  // que nenhuma gravação posterior sobrescreve.
+  const conflictSaved = new Map(); // key -> último html guardado como cópia de conflito
+  function saveConflictCopies(bridge, message) {
+    if (!Array.isArray(message.docs)) return;
+    const names = new Map(bridge.listDocuments().map((d) => [d.id, d.name]));
+    const docs = [];
+    message.docs.forEach((incoming) => {
+      const entry = mirror.get(incoming && incoming.key);
+      if (!entry || !bridge.hasDocument(entry.localId) || typeof incoming.html !== 'string') return;
+      const editor = bridge.getEditor(entry.localId);
+      if (!editor) return;
+      const mine = (bridge.getCleanHtml(editor) || '').trim();
+      if (!mine || mine === sanitizeHtml(incoming.html).trim()) return;
+      if (conflictSaved.get(incoming.key) === mine) return;
+      conflictSaved.set(incoming.key, mine);
+      docs.push({ key: incoming.key, name: names.get(entry.localId) || 'Untitled', html: mine });
+    });
+    if (!docs.length) return;
+    ipcRenderer.invoke('backup-save-copies', { kind: 'edited', unique: true, docs }).then((result) => {
+      if (result && result.dir) copies.dir = result.dir;
+      if (result && result.errors && result.errors.length) copies.error = result.errors[0].error || 'Could not write the copy.';
+    }).catch(() => { });
   }
 
   function scheduleCopySave(delay = COPY_DEBOUNCE_MS) {
@@ -794,7 +1044,7 @@
     if (!bridge || state.role !== 'backup') return;
     try {
       const all = collectCopyDocs(bridge);
-      const edited = state.editing;
+      const edited = state.editing && !twoWayActive();
       const docs = edited
         ? all.filter((d) => d.html !== d.entry.baseHtml && d.html !== d.entry.editedHtml)
         : all.filter((d) => d.entry.savedHtml !== d.html);
@@ -821,10 +1071,13 @@
     mirror.clear();
     lastScroll = null;
     state.editing = false;
+    state.editBlocked = false;
+    editedLocalIds.clear();
   }
 
-  // Libera a edição local pausando o espelhamento. Ao retomar, o que foi editado aqui é salvo numa
-  // cópia separada ANTES de o texto do PRIMARY voltar a valer.
+  // Libera a edição local pausando o espelhamento. Com "duas vias", o que for editado aqui também é
+  // aplicado no PRIMARY (e o que o PRIMARY mudar continua chegando). Ao retomar, o que foi editado
+  // é salvo numa cópia separada ANTES de o texto do PRIMARY voltar a valer.
   async function toggleEditing() {
     const bridge = getBridge();
     if (!bridge || state.role !== 'backup') return;
@@ -835,23 +1088,39 @@
       collectCopyDocs(bridge).forEach((d) => { d.entry.baseHtml = d.html; d.entry.editedHtml = null; });
       copies.editSession = new Date().toISOString();
       state.editing = true;
+      state.editBlocked = false;
       releaseMirroredScroll();
       mirror.forEach((entry) => {
         if (bridge.hasDocument(entry.localId)) bridge.setMirrorMode(entry.localId, false);
       });
+      if (state.twoWay) {
+        // A base é o texto do PRIMARY neste instante (o espelho estava em dia)
+        startPrimaryWatch(false);
+        rebaselineAllMirrors(bridge);
+      }
       render(true);
       await flush;
       return;
     }
 
+    const sentToPrimary = twoWayActive();
     const changed = collectCopyDocs(bridge).filter((d) => d.html !== d.entry.baseHtml);
     const where = copies.dir ? `\n\n${copies.dir}\\Edited on backup` : '';
-    const ok = window.confirm(changed.length
-      ? `Resume mirroring?\n\nYour changes on this PC (${changed.length} document${changed.length > 1 ? 's' : ''}) will be saved as a separate copy first:${where}\n\nThen the primary's text is shown again.`
-      : 'Resume mirroring?\n\nYou made no changes on this PC. The primary\'s text will be shown again.');
+    let question;
+    if (!changed.length) {
+      question = 'Resume mirroring?\n\nYou made no changes on this PC. The primary\'s text will be shown again.';
+    } else if (sentToPrimary) {
+      question = `Resume mirroring?\n\nYour changes (${changed.length} document${changed.length > 1 ? 's' : ''}) were sent to the primary, so they stay in its text. If any edit lost a simultaneous-edit dispute, a copy of it is already saved here:${where}\n\nThen the primary's text is shown again.`;
+    } else {
+      question = `Resume mirroring?\n\nYour changes on this PC (${changed.length} document${changed.length > 1 ? 's' : ''}) will be saved as a separate copy first:${where}\n\nThen the primary's text is shown again.`;
+    }
+    const ok = window.confirm(question);
     if (!ok) return;
 
-    if (changed.length) {
+    // Edição ainda pendente segue para o PRIMARY antes de o espelho voltar (mesma ordem no canal)
+    flushPendingEdits();
+
+    if (changed.length && !sentToPrimary) {
       clearTimeout(copies.timer);
       copies.timer = null;
       let result = null;
@@ -871,10 +1140,16 @@
         copies.notice = `Your changes were saved as a copy in ${copies.dir}\\Edited on backup`;
         copies.noticeAt = Date.now();
       }
+    } else if (sentToPrimary && changed.length) {
+      copies.notice = 'Your changes were sent to the primary';
+      copies.noticeAt = Date.now();
     }
 
-    // O espelho recebido durante a edição não foi aplicado: o PRIMARY manda tudo de novo
+    stopPrimaryWatch();
+    editedLocalIds.clear();
+    // O PRIMARY manda tudo de novo (já com as edições que ele aceitou)
     state.editing = false;
+    state.editBlocked = false;
     copies.editSession = '';
     mirror.forEach((entry) => {
       entry.baseHtml = null;
@@ -882,6 +1157,29 @@
       if (bridge.hasDocument(entry.localId)) bridge.setMirrorMode(entry.localId, true);
     });
     ipcRenderer.send('backup-request-resync');
+    render(true);
+  }
+
+  // O PRIMARY não aplicou uma edição enviada por este backup
+  function handleEditRejected(info) {
+    if (state.role !== 'backup' || !state.editing) return;
+    const reason = String((info && info.reason) || 'conflict');
+    const where = copies.dir ? `${copies.dir}\\Edited on backup` : 'the "Edited on backup" folder';
+
+    if (reason === 'disabled' || reason === 'offline') {
+      // Daqui em diante as edições ficam só neste PC (guardadas como cópia) até retomar o espelho
+      state.editBlocked = true;
+      stopPrimaryWatch();
+      saveEditedCopies().catch(() => { });
+      copies.notice = reason === 'disabled'
+        ? `The primary is not accepting edits, so your changes stay on this PC (copy in ${where})`
+        : `Not connected to the primary, so your changes stay on this PC (copy in ${where})`;
+    } else {
+      // Conflito: o texto do PRIMARY prevalece. A cópia do que foi digitado aqui é gravada quando
+      // o texto do PRIMARY chega (saveConflictCopies), antes de ele valer.
+      copies.notice = `Your last edit conflicted with a change on the primary. The primary's version is shown; yours is saved in ${where}`;
+    }
+    copies.noticeAt = Date.now();
     render(true);
   }
 
@@ -1100,7 +1398,11 @@
         : { text: 'Waiting for backup', cls: 'warning' };
     }
     if (state.role === 'backup') {
-      if (state.editing) return { text: 'Editing — mirroring paused', cls: 'warning' };
+      if (state.editing) {
+        return twoWayActive()
+          ? { text: 'Editing — two-way', cls: 'primary' }
+          : { text: 'Editing — mirroring paused', cls: 'warning' };
+      }
       switch (state.link) {
         case 'connected': return { text: 'Live · mirroring', cls: 'success' };
         case 'connecting': return { text: 'Connecting…', cls: 'warning' };
@@ -1167,6 +1469,18 @@
       $('backup-primary-pin').textContent = state.pin;
       $('backup-primary-clients').textContent =
         `${state.clients} connected · last update sent ${formatAge(state.lastActivityAt)}`;
+      $('backup-accept-edits').checked = state.acceptEdits;
+      let editLine;
+      if (!state.acceptEdits) {
+        editLine = 'Edits from the backup are blocked: this PC\'s text can only change here.';
+      } else if (!state.editsAccepted && !state.editsRejected) {
+        editLine = 'No edits received from a backup yet.';
+      } else {
+        editLine = `Edits from the backup: ${state.editsAccepted} applied` +
+          (state.editsRejected ? `, ${state.editsRejected} refused (conflict or blocked)` : '') +
+          (state.lastEditAt ? ` · last ${formatAge(state.lastEditAt)}` : '');
+      }
+      $('backup-primary-edit-info').textContent = editLine;
     }
 
     // BACKUP
@@ -1180,14 +1494,27 @@
     $('backup-ping-btn').classList.toggle('d-none', !backupOn);
     $('backup-edit-toggle').classList.toggle('d-none', !backupOn);
     $('backup-open-copies-btn').classList.toggle('d-none', !backupOn);
+    $('backup-two-way-row').classList.toggle('d-none', !backupOn);
+    $('backup-two-way').checked = state.twoWay;
+    $('backup-two-way').disabled = state.editing; // vale a partir do "Unlock editing"
     $('backup-edit-toggle').innerHTML = state.editing
       ? '<i class="bi bi-lock me-1"></i> Resume mirroring'
       : '<i class="bi bi-unlock me-1"></i> Unlock editing';
     $('backup-backup-info').classList.toggle('d-none', !backupOn);
     if (backupOn) {
-      $('backup-backup-info').textContent = state.editing
-        ? 'Mirroring is paused. Your changes are kept as a separate copy on this PC; when you resume, the primary\'s text is shown again.'
-        : `Documents are read-only while mirroring · last update ${formatAge(state.lastActivityAt)}`;
+      let info;
+      if (!state.editing) {
+        info = state.twoWay
+          ? `Documents are read-only while mirroring · last update ${formatAge(state.lastActivityAt)}. After "Unlock editing", your edits are also applied on the primary.`
+          : `Documents are read-only while mirroring · last update ${formatAge(state.lastActivityAt)}`;
+      } else if (twoWayActive()) {
+        info = 'Two-way editing: your changes are applied on the primary too, and its changes keep arriving here. If both edit the same text at once, the primary\'s version wins and yours is kept as a copy.';
+      } else if (state.editBlocked) {
+        info = 'Your changes are staying on this PC (the primary is not accepting edits or is offline). They are saved as a copy; when you resume, the primary\'s text is shown again.';
+      } else {
+        info = 'Mirroring is paused. Your changes are kept as a separate copy on this PC; when you resume, the primary\'s text is shown again.';
+      }
+      $('backup-backup-info').textContent = info;
     }
     const copyInfo = $('backup-copy-info');
     copyInfo.classList.toggle('d-none', !backupOn);
@@ -1248,9 +1575,29 @@
     // Com o espelho pausado, cada edição feita aqui vira cópia em arquivo (após uma pausa na digitação)
     document.addEventListener('input', (event) => {
       if (state.role === 'backup' && state.editing && event.target && event.target.closest &&
-        event.target.closest('.text-editor-area')) scheduleCopySave();
+        event.target.closest('.text-editor-area')) {
+        scheduleCopySave();
+        // Duas vias: guarda em qual documento se digitou (pode não ser o da aba ativa no envio)
+        const holder = event.target.closest('.editor-container');
+        const localId = holder && /^doc-(\d+)$/.test(holder.id) ? Number(holder.id.slice(4)) : null;
+        if (localId != null && twoWayActive()) editedLocalIds.add(localId);
+      }
     }, true);
     window.addEventListener('beforeunload', flushCopiesOnClose);
+
+    // Duas vias: opções de cada papel (valem a partir da próxima edição)
+    $('backup-accept-edits').checked = state.acceptEdits;
+    $('backup-accept-edits').addEventListener('change', (event) => {
+      state.acceptEdits = event.target.checked;
+      localStorage.setItem(STORAGE_ACCEPT_EDITS, state.acceptEdits ? '1' : '0');
+      render(true);
+    });
+    $('backup-two-way').checked = state.twoWay;
+    $('backup-two-way').addEventListener('change', (event) => {
+      state.twoWay = event.target.checked;
+      localStorage.setItem(STORAGE_TWO_WAY, state.twoWay ? '1' : '0');
+      render(true);
+    });
     $('backup-test-btn').addEventListener('click', () => runPrimaryTest().catch(console.error));
     $('backup-ping-btn').addEventListener('click', () => runBackupPing().catch(console.error));
     $('backup-copy-pin').addEventListener('click', () => copyWithFeedback($('backup-copy-pin'), state.pin));
@@ -1283,6 +1630,17 @@
       if (state.role === 'primary') pushFull();
     });
     ipcRenderer.on('backup:incoming', (_event, message) => handleIncoming(message));
+    // Duas vias: edição de texto que um backup enviou a este PRIMARY / recusa do PRIMARY ao backup
+    ipcRenderer.on('backup:incoming-edit', (_event, info) => {
+      try {
+        handleIncomingEdit(info);
+      } catch (err) {
+        console.warn('[BackupSync] Falha ao aplicar edição do backup', err);
+        ipcRenderer.send('backup-reject-edit', { socketId: info && info.socketId, key: info && info.message && info.message.key, reason: 'invalid' });
+        pushFull();
+      }
+    });
+    ipcRenderer.on('backup:edit-rejected', (_event, info) => handleEditRejected(info));
 
     // Ao voltar para a aba/modo Operator no BACKUP, reaplica a última rolagem recebida.
     const operatorTab = $('operator-tab');

@@ -4665,15 +4665,70 @@ document.addEventListener("DOMContentLoaded", () => {
       if (units.length !== patch.baseCount || end > units.length) return false;
       if ((editor.textContent || "").length !== patch.baseLen) return false;
 
+      // Cursor dentro do trecho que vai ser trocado: guarda parágrafo (relativo) e posição no
+      // texto para devolvê-lo ao mesmo ponto, em vez de o cursor "sumir" enquanto se digita.
+      let caret = null;
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount && editor.contains(sel.anchorNode) && editor !== sel.anchorNode) {
+        for (let i = patch.start; i < end; i++) {
+          const unit = units[i];
+          const holder = unit.find((n) => n === sel.anchorNode || n.contains(sel.anchorNode));
+          if (!holder) continue;
+          let offset = 0;
+          const walker = document.createTreeWalker(holder, NodeFilter.SHOW_TEXT);
+          let t;
+          while ((t = walker.nextNode())) {
+            if (t === sel.anchorNode) { offset += sel.anchorOffset; break; }
+            offset += t.data.length;
+          }
+          caret = { rel: i - patch.start, offset };
+          break;
+        }
+      }
+
       const reference = end < units.length ? units[end][0] : null;
-      for (let i = patch.start; i < end; i++) units[i].forEach((n) => editor.removeChild(n));
+      const removed = [];
+      for (let i = patch.start; i < end; i++) {
+        units[i].forEach((n) => { removed.push(n); editor.removeChild(n); });
+      }
       patch.nodes.forEach((n) => editor.insertBefore(n, reference));
+
+      if (unitsOf().length !== patch.count) {
+        // Resultado incoerente: devolve o editor exatamente como estava
+        patch.nodes.forEach((n) => { if (n.parentNode === editor) editor.removeChild(n); });
+        removed.forEach((n) => editor.insertBefore(n, reference));
+        return false;
+      }
 
       // O cache do patch de remoto não enxerga esta alteração: força a próxima aplicação completa.
       const patchState = _editorPatchState.get(editor);
       if (patchState) patchState.dirty = true;
-      return unitsOf().length === patch.count;
+
+      if (caret) {
+        const target = patch.nodes[Math.min(caret.rel, patch.nodes.length - 1)];
+        if (target) {
+          const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
+          let left = caret.offset;
+          let node = target.nodeType === 3 ? target : walker.nextNode();
+          let last = node;
+          while (node) {
+            last = node;
+            if (left <= node.data.length) break;
+            left -= node.data.length;
+            node = target.nodeType === 3 ? null : walker.nextNode();
+          }
+          const range = document.createRange();
+          if (last) range.setStart(last, Math.min(left, last.data.length));
+          else range.setStart(target, 0);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }
+      return true;
     },
+    // Marca o documento como alterado (aba/título), como ao digitar nele.
+    markModified: (id) => markDocumentAsUnsaved(id),
     // Rolagem em que a âncora ficaria sob a seta (sem aplicar). Null se o prompter está oculto.
     anchorScrollTarget: (anchor) => {
       const control = document.getElementById("prompterText-control");

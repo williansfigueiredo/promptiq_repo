@@ -673,6 +673,11 @@
                                 <button class="btn btn-sm btn-outline-secondary" id="backup-copy-pin" title="Copy PIN"><i class="bi bi-clipboard"></i></button>
                             </div>
                             <div id="backup-primary-clients" class="small text-muted"></div>
+                            <div class="form-check form-switch mt-2" title="When on, text edited on a backup PC (with its editing unlocked) is applied here. Turn it off to lock this PC's text during a live show.">
+                                <input class="form-check-input" type="checkbox" role="switch" id="backup-accept-edits" checked>
+                                <label class="form-check-label small" for="backup-accept-edits">Accept text edits made on the backup</label>
+                            </div>
+                            <div id="backup-primary-edit-info" class="small text-muted"></div>
                             <button class="btn btn-sm btn-outline-primary mt-2" id="backup-test-btn"><i class="bi bi-activity me-1"></i> Test connection</button>
                         </div>
                     </div>
@@ -698,6 +703,10 @@
                             <button id="backup-open-copies-btn" class="btn btn-sm btn-outline-secondary d-none" title="Open the folder where this PC keeps its own copy of the documents"><i class="bi bi-folder2-open me-1"></i> Open copies folder</button>
                         </div>
                         <div id="backup-backup-info" class="small text-muted mt-2 d-none"></div>
+                        <div class="form-check form-switch mt-2 d-none" id="backup-two-way-row" title="When on, text you edit here (after Unlock editing) is also applied on the primary PC.">
+                            <input class="form-check-input" type="checkbox" role="switch" id="backup-two-way" checked>
+                            <label class="form-check-label small" for="backup-two-way">Send my edits to the primary (two-way)</label>
+                        </div>
                         <div id="backup-copy-info" class="small text-muted mt-1 d-none"></div>
                     </div>
 
