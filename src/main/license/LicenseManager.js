@@ -13,10 +13,15 @@
 // BYTENODE: módulo CommonJS clássico, sem mágica.
 // ============================================================
 
-const { generateFingerprint, generateLegacyFingerprint } = require('./HardwareScanner');
+const { generateFingerprint, generateFingerprintCandidates, generateLegacyFingerprint } = require('./HardwareScanner');
 const {
   saveLicense,
   loadLicense,
+  saveBackup,
+  loadBackup,
+  saveSealed,
+  loadSealed,
+  licenseFilesExist,
   deleteLicense
 } = require('./LicenseStorage');
 const { activateOnline } = require('./LicenseClient');
@@ -35,52 +40,92 @@ const DEV_LOCAL_LICENSE_KEY = 'DEV-LOCAL-PROMPTIQ';
  * VALIDAÇÃO OFFLINE — chamada na inicialização do app.
  *
  * Fluxo:
- *   1. Gera o fingerprint da máquina ATUAL.
- *   2. Tenta ler/decifrar a licença local com esse fingerprint.
- *      Se a máquina mudou, a decifragem falha → null.
- *   3. Por segurança extra, ainda compara o fingerprint GRAVADO
- *      dentro da licença com o ATUAL (defesa em profundidade).
+ *   1. Coleta o fingerprint da máquina e suas variações tolerantes a
+ *      falhas transitórias de leitura de hardware.
+ *   2. Tenta decifrar license.dat com cada uma; se falhar, usa license.bak
+ *      (cifrada só com o MachineGuid).
+ *   3. Se ainda falhar e existir licença gravada, repete até 3x antes de
+ *      pedir ativação. Nenhum arquivo de licença é apagado automaticamente.
  *
  * @returns {Promise<{valid: boolean, reason?: string, license?: Object}>}
  */
 async function checkLocalLicense() {
-  const currentFingerprint = await generateFingerprint();
+  // Caminho rápido: selo DPAPI já validado antes — não lê hardware nem decifra nada.
+  const sealed = loadSealed();
+  if (sealed) return { valid: true, license: sealed };
 
-  // 1) Tenta o fingerprint NOVO (algoritmo v2 — estável)
-  let license = loadLicense(currentFingerprint);
+  // Só vale a pena insistir se já existe licença gravada (evita atrasar a 1ª ativação).
+  const attempts = licenseFilesExist() ? 3 : 1;
 
-  if (license && license.fingerprint === currentFingerprint) {
-    return { valid: true, license };
+  for (let i = 0; i < attempts; i++) {
+    // Falhas transitórias de leitura do hardware (sistema sob carga) passam
+    // sozinhas: espera um pouco e coleta de novo antes de pedir ativação.
+    if (i > 0) await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    const scan = await generateFingerprintCandidates();
+    const found = openStoredLicense(scan);
+    if (found) {
+      healStoredLicense(found, scan);
+      return { valid: true, license: found.license };
+    }
+
+    // MIGRAÇÃO automática: license.dat gravado pelo algoritmo v1
+    // (board+cpu+disk+mac) é aberto com o fingerprint legacy e regravado no v2.
+    try {
+      const legacyFingerprint = i === 0 ? await generateLegacyFingerprint() : null;
+      if (legacyFingerprint && !scan.candidates.includes(legacyFingerprint)) {
+        const legacyLicense = loadLicense(legacyFingerprint);
+        if (legacyLicense) {
+          console.log('[License] Migrando licença para algoritmo de fingerprint v2…');
+          const migrated = {
+            ...legacyLicense,
+            fingerprint: scan.primary,
+            meta: {
+              ...(legacyLicense.meta || {}),
+              migratedFromLegacy: true,
+              migratedAt: new Date().toISOString()
+            }
+          };
+          saveLicense(migrated, scan.primary, scan.anchor);
+          return { valid: true, license: migrated };
+        }
+      }
+    } catch (err) {
+      console.warn('[License] Falha ao tentar migração legacy:', err && err.message);
+    }
   }
 
-  // 2) MIGRAÇÃO automática: se o license.dat foi gravado por uma versão
-  //    anterior (algoritmo v1: board+cpu+disk+mac), tenta abrir com o
-  //    fingerprint legacy. Se conseguir, re-grava com o fingerprint novo
-  //    e atualiza o campo interno — tudo transparente.
+  return { valid: false, reason: 'no-license-or-fingerprint-mismatch' };
+}
+
+/** Abre license.dat com qualquer fingerprint candidato; senão tenta license.bak. */
+function openStoredLicense(scan) {
+  for (const fp of scan.candidates) {
+    const license = loadLicense(fp);
+    if (license) return { license, fromBackup: false };
+  }
+  if (scan.anchor) {
+    const license = loadBackup(scan.anchor);
+    if (license) {
+      console.warn('[License] license.dat não abriu — usando cópia de segurança (license.bak).');
+      return { license, fromBackup: true };
+    }
+  }
+  return null;
+}
+
+/** Mantém license.dat e license.bak sempre presentes, sem nunca apagar nada. */
+function healStoredLicense(found, scan) {
   try {
-    const legacyFingerprint = await generateLegacyFingerprint();
-    if (legacyFingerprint !== currentFingerprint) {
-      const legacyLicense = loadLicense(legacyFingerprint);
-      if (legacyLicense) {
-        console.log('[License] Migrando licença para algoritmo de fingerprint v2…');
-        const migrated = {
-          ...legacyLicense,
-          fingerprint: currentFingerprint,
-          meta: {
-            ...(legacyLicense.meta || {}),
-            migratedFromLegacy: true,
-            migratedAt: new Date().toISOString()
-          }
-        };
-        saveLicense(migrated, currentFingerprint);
-        return { valid: true, license: migrated };
-      }
+    saveSealed(found.license);
+    if (found.fromBackup) {
+      saveLicense(found.license, scan.primary, scan.anchor);
+    } else if (scan.anchor && !loadBackup(scan.anchor)) {
+      saveBackup(found.license, scan.anchor);
     }
   } catch (err) {
-    console.warn('[License] Falha ao tentar migração legacy:', err && err.message);
+    console.warn('[License] Falha ao restaurar arquivos de licença:', err && err.message);
   }
-
-  return { valid: false, reason: license ? 'fingerprint-mismatch' : 'no-license-or-fingerprint-mismatch' };
 }
 
 /**
@@ -119,7 +164,7 @@ async function activate(licenseKey) {
       serverToken: null,
       meta: { devLocalActivation: true }
     };
-    saveLicense(license, fingerprint);
+    saveLicense(license, fingerprint, (await generateFingerprintCandidates()).anchor);
     console.log('[License] DEV: licença local gravada com chave', DEV_LOCAL_LICENSE_KEY);
     return { ok: true, license };
   }
@@ -132,7 +177,7 @@ async function activate(licenseKey) {
   }
 
   // Grava o arquivo cifrado usando o fingerprint atual como chave AES
-  saveLicense(result.license, fingerprint);
+  saveLicense(result.license, fingerprint, (await generateFingerprintCandidates()).anchor);
   return { ok: true, license: result.license };
 }
 

@@ -36,16 +36,27 @@ const { execSync } = require('child_process');
 function readWindowsMachineGuid() {
   try {
     // reg.exe sai sempre 0 se a chave existir. Usa /v MachineGuid /t REG_SZ.
-    const out = execSync(
-      'reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid',
-      { encoding: 'utf-8', windowsHide: true, timeout: 4000 }
-    );
-    // Linha relevante: "    MachineGuid    REG_SZ    xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-    const match = out.match(/MachineGuid\s+REG_SZ\s+([\w-]+)/i);
-    if (match && match[1]) return match[1].trim();
+    const sysRoot = process.env.SystemRoot || 'C:\\Windows';
+    const regExe = `${sysRoot}\\System32\\reg.exe`;
+    // Até 3 tentativas com timeout generoso: sob carga alta o reg.exe pode demorar.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const out = execSync(
+          `"${regExe}" query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid`,
+          { encoding: 'utf-8', windowsHide: true, timeout: 15000 }
+        );
+        // Linha relevante: "    MachineGuid    REG_SZ    xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+        const match = out.match(/MachineGuid\s+REG_SZ\s+([\w-]+)/i);
+        if (match && match[1]) return match[1].trim();
+      } catch (_) { /* tenta novamente */ }
+    }
   } catch (_) { /* ignora — cai no fallback */ }
   return null;
 }
+
+const PLACEHOLDER_WIN_GUID = 'NO-WIN-GUID';
+const PLACEHOLDER_BOARD = 'NO-BOARD-SERIAL';
+const PLACEHOLDER_CPU = '--';
 
 // ------------------------------------------------------------
 // Coleta enxuta dos componentes ESTÁVEIS (novo algoritmo)
@@ -56,12 +67,16 @@ async function collectStableIds() {
 
   return {
     // Componente principal — só muda se o Windows for reinstalado
-    winGuid: readWindowsMachineGuid() || 'NO-WIN-GUID',
+    winGuid: readWindowsMachineGuid() || PLACEHOLDER_WIN_GUID,
     // Serial da placa-mãe — estável durante a vida útil da máquina
-    board: String(baseboard.serial || baseboard.assetTag || 'NO-BOARD-SERIAL'),
+    board: String(baseboard.serial || baseboard.assetTag || PLACEHOLDER_BOARD),
     // Identificação da CPU (marca/modelo/family) — estável
     cpu: String(cpu.serial || `${cpu.manufacturer || ''}-${cpu.brand || ''}-${cpu.family || ''}`)
   };
+}
+
+function buildFingerprint(winGuid, board, cpu) {
+  return crypto.createHash('sha256').update(`v2::${winGuid}::${board}::${cpu}`).digest('hex');
 }
 
 // ------------------------------------------------------------
@@ -69,8 +84,43 @@ async function collectStableIds() {
 // ------------------------------------------------------------
 async function generateFingerprint() {
   const ids = await collectStableIds();
-  const concatenated = `v2::${ids.winGuid}::${ids.board}::${ids.cpu}`;
-  return crypto.createHash('sha256').update(concatenated).digest('hex');
+  return buildFingerprint(ids.winGuid, ids.board, ids.cpu);
+}
+
+// ------------------------------------------------------------
+// CANDIDATOS DE FINGERPRINT (tolerância a falhas transitórias)
+// ------------------------------------------------------------
+// Se o Windows estiver sob carga, reg.exe / systeminformation podem falhar
+// numa execução e devolver valores "placeholder" (NO-BOARD-SERIAL, '--'...).
+// Para a licença já gravada não ser perdida, devolvemos o fingerprint
+// principal primeiro e depois todas as combinações com placeholders.
+// Também devolvemos `anchor`: chave derivada SÓ do MachineGuid (null se
+// o MachineGuid não pôde ser lido), usada na cópia de segurança da licença.
+async function generateFingerprintCandidates() {
+  const ids = await collectStableIds();
+  const unique = (arr) => Array.from(new Set(arr));
+  const wins = unique([ids.winGuid, PLACEHOLDER_WIN_GUID]);
+  const boards = unique([ids.board, PLACEHOLDER_BOARD]);
+  const cpus = unique([ids.cpu, PLACEHOLDER_CPU]);
+
+  const candidates = [];
+  for (const w of wins) {
+    for (const b of boards) {
+      for (const c of cpus) {
+        candidates.push(buildFingerprint(w, b, c));
+      }
+    }
+  }
+
+  const anchor = ids.winGuid !== PLACEHOLDER_WIN_GUID
+    ? crypto.createHash('sha256').update(`anchor::${ids.winGuid}`).digest('hex')
+    : null;
+
+  return {
+    primary: candidates[0],
+    candidates: unique(candidates),
+    anchor
+  };
 }
 
 // ------------------------------------------------------------
@@ -124,6 +174,7 @@ async function generateFingerprintDebug() {
 
 module.exports = {
   generateFingerprint,
+  generateFingerprintCandidates,
   generateLegacyFingerprint,
   generateFingerprintDebug
 };

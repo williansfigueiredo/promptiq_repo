@@ -20,7 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { app } = require('electron');
+const { app, safeStorage } = require('electron');
 const { LICENSE_FILE_NAME } = require('./license.config');
 
 const ALGO = 'aes-256-gcm';
@@ -56,6 +56,14 @@ function getLicenseFilePath() {
   return path.join(app.getPath('userData'), LICENSE_FILE_NAME);
 }
 
+function getBackupFilePath() {
+  return path.join(app.getPath('userData'), 'license.bak');
+}
+
+function getSealedFilePath() {
+  return path.join(app.getPath('userData'), 'license.sec');
+}
+
 /**
  * saveLicense (PÚBLICO)
  * ----------------------
@@ -67,7 +75,7 @@ function getLicenseFilePath() {
  * @param {Object} licenseObj - { key, fingerprint, customer, activatedAt, ... }
  * @param {string} fingerprint - hash atual da máquina (usado para derivar a chave AES)
  */
-function saveLicense(licenseObj, fingerprint) {
+function encryptLicense(licenseObj, fingerprint) {
   const key = deriveKey(fingerprint);
   const iv = crypto.randomBytes(IV_LENGTH);          // IV novo a cada gravação
   const cipher = crypto.createCipheriv(ALGO, key, iv);
@@ -76,8 +84,63 @@ function saveLicense(licenseObj, fingerprint) {
   const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   const authTag = cipher.getAuthTag();
 
-  const payload = Buffer.concat([iv, authTag, encrypted]);
-  fs.writeFileSync(getLicenseFilePath(), payload);
+  return Buffer.concat([iv, authTag, encrypted]);
+}
+
+// Grava em arquivo temporário e renomeia: um crash/queda de energia no meio
+// da escrita nunca deixa o arquivo de licença truncado.
+function writeFileAtomic(filePath, payload) {
+  const tmpPath = `${filePath}.tmp`;
+  fs.writeFileSync(tmpPath, payload);
+  fs.renameSync(tmpPath, filePath);
+}
+
+function saveLicense(licenseObj, fingerprint, anchor) {
+  writeFileAtomic(getLicenseFilePath(), encryptLicense(licenseObj, fingerprint));
+  if (anchor) saveBackup(licenseObj, anchor);
+  saveSealed(licenseObj);
+}
+
+/**
+ * saveSealed / loadSealed (PÚBLICO)
+ * ----------------------------------
+ * Selo (license.sec) cifrado pelo DPAPI do Windows via safeStorage: só abre
+ * nesta máquina/usuário do Windows e NÃO depende de ler o hardware. Permite
+ * abrir o app sem recalcular o fingerprint a cada inicialização.
+ */
+function saveSealed(licenseObj) {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return;
+    writeFileAtomic(getSealedFilePath(), safeStorage.encryptString(JSON.stringify(licenseObj)));
+  } catch (_) { /* selo é best-effort */ }
+}
+
+function loadSealed() {
+  try {
+    const filePath = getSealedFilePath();
+    if (!fs.existsSync(filePath) || !safeStorage.isEncryptionAvailable()) return null;
+    const license = JSON.parse(safeStorage.decryptString(fs.readFileSync(filePath)));
+    return license && license.key ? license : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * saveBackup / loadBackup (PÚBLICO)
+ * ----------------------------------
+ * Cópia de segurança (license.bak) cifrada com chave derivada apenas do
+ * MachineGuid do Windows. Usada se o fingerprint completo não puder ser
+ * reproduzido (ex.: falha transitória ao ler placa-mãe/CPU).
+ */
+function saveBackup(licenseObj, anchor) {
+  try {
+    writeFileAtomic(getBackupFilePath(), encryptLicense(licenseObj, anchor));
+  } catch (_) { /* backup é best-effort */ }
+}
+
+function loadBackup(anchor) {
+  return decryptFile(getBackupFilePath(), anchor);
 }
 
 /**
@@ -95,7 +158,14 @@ function saveLicense(licenseObj, fingerprint) {
  * @returns {Object|null} objeto de licença ou null se inválido
  */
 function loadLicense(fingerprint) {
-  const filePath = getLicenseFilePath();
+  return decryptFile(getLicenseFilePath(), fingerprint);
+}
+
+function licenseFilesExist() {
+  return fs.existsSync(getLicenseFilePath()) || fs.existsSync(getBackupFilePath());
+}
+
+function decryptFile(filePath, fingerprint) {
   if (!fs.existsSync(filePath)) return null;
 
   try {
@@ -126,15 +196,21 @@ function loadLicense(fingerprint) {
  * Remove o arquivo de licença (usado por "desativar" / suporte).
  */
 function deleteLicense() {
-  const filePath = getLicenseFilePath();
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
+  for (const filePath of [getLicenseFilePath(), getBackupFilePath(), getSealedFilePath()]) {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
   }
 }
 
 module.exports = {
   saveLicense,
   loadLicense,
+  saveBackup,
+  loadBackup,
+  saveSealed,
+  loadSealed,
+  licenseFilesExist,
   deleteLicense,
   getLicenseFilePath
 };
