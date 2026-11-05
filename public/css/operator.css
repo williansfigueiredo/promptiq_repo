@@ -1216,3 +1216,197 @@ body.dark-mode #operator-toolbar button.btn-warning i {
     padding-left: 16px !important;
   }
 }
+
+
+/* ==========================================================================
+   BARRAS AGRUPADAS DO OPERADOR
+   Linha de cima: ícones em "pílulas". Linha de baixo: grupos com título
+   (Text / Color / Style / Paragraph / Tools). Em janelas menores os títulos
+   somem e os controles encolhem para a barra continuar em UMA linha.
+   ========================================================================== */
+#operator-toolbar {
+  gap: 10px !important;
+}
+
+#operator-toolbar .tb-pill {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: #f4f6fa;
+  border: 1px solid #e3e7ee;
+  border-radius: 9px;
+}
+
+#operator-toolbar .tb-pill .btn-tool {
+  width: 34px;
+  height: 30px;
+  padding: 0 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+#operator-edit-panel #toolbar-content {
+  align-items: flex-end !important;
+  gap: 8px 10px !important;
+  padding: 8px 14px 10px !important;
+}
+
+.tb-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tb-cap {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  line-height: 1;
+  padding-left: 6px;
+  text-transform: uppercase;
+  color: #8a94a3;
+}
+
+.tb-body {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: #ffffff;
+  border: 1px solid #e3e7ee;
+  border-radius: 9px;
+}
+
+#operator-edit-panel #toolbar-content .tb-body .form-select,
+#operator-edit-panel #toolbar-content .tb-body input[type="number"],
+#operator-edit-panel #toolbar-content .tb-body .btn,
+#operator-edit-panel #toolbar-content .tb-body .btn-mode {
+  height: 30px !important;
+  font-size: 13px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+#operator-edit-panel #toolbar-content .tb-body .form-select {
+  margin-left: 0;
+  margin-right: 0;
+  max-width: none;
+}
+
+#font-family-select { width: 150px; }
+#line-spacing-toolbar { width: 112px; }
+#prompter-margin-select { width: 118px; }
+
+/* Tamanho da fonte: lista + campo numérico colados num só bloco */
+.tb-size {
+  display: flex;
+}
+
+#operator-edit-panel #toolbar-content .tb-size #font-size-toolbar-fix {
+  width: 62px;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+#operator-edit-panel #toolbar-content .tb-size #font-size-custom {
+  width: 54px;
+  text-align: center;
+  padding-left: 4px;
+  padding-right: 4px;
+  border-left: 0 !important;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+#operator-edit-panel #toolbar-content .tb-body .color-btn {
+  width: 24px;
+  height: 24px;
+}
+
+#operator-edit-panel #toolbar-content .tb-body .mode-switch-group {
+  gap: 2px;
+  margin-right: 6px;
+}
+
+#operator-edit-panel #toolbar-content .tb-body .btn-group > .btn {
+  width: 34px;
+  justify-content: center;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+#operator-edit-panel #toolbar-content .tb-body .btn-group > .btn-group > .btn {
+  width: 44px;
+}
+
+#operator-edit-panel #toolbar-content .tb-body #clean-script-btn {
+  width: auto;
+  gap: 6px;
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+
+/* Tema escuro */
+[data-theme="dark"] #operator-toolbar .tb-pill,
+body.dark-mode #operator-toolbar .tb-pill {
+  background: #1d212b;
+  border-color: #2c3240;
+}
+
+[data-theme="dark"] .tb-body,
+body.dark-mode .tb-body {
+  background: #20242d;
+  border-color: #2c3240;
+}
+
+[data-theme="dark"] .tb-cap,
+body.dark-mode .tb-cap {
+  color: #7c8596;
+}
+
+/* Janelas menores: sem títulos e controles mais estreitos, para manter uma só linha */
+@media screen and (max-width: 1500px) {
+  .tb-cap { display: none; }
+
+  #operator-edit-panel #toolbar-content {
+    gap: 6px 8px !important;
+    padding: 6px 10px !important;
+  }
+
+  .tb-body { gap: 4px; padding: 3px 5px; }
+
+  #font-family-select { width: 122px; }
+  #line-spacing-toolbar { width: 102px; }
+  #prompter-margin-select { width: 122px; }
+
+  #operator-edit-panel #toolbar-content .tb-size #font-size-toolbar-fix { width: 58px; }
+  #operator-edit-panel #toolbar-content .tb-size #font-size-custom { width: 46px; }
+
+  #operator-edit-panel #toolbar-content .tb-body .btn-group > .btn { width: 30px; }
+  #operator-edit-panel #toolbar-content .tb-body .btn-group > .btn-group > .btn { width: 40px; }
+  #operator-edit-panel #toolbar-content .tb-body .color-btn { width: 22px; height: 22px; }
+  #operator-edit-panel #toolbar-content .tb-body .mode-switch-group { margin-right: 2px; }
+  #operator-edit-panel #toolbar-content .tb-body #clean-script-btn {
+    padding-left: 9px !important;
+    padding-right: 9px !important;
+  }
+}
+
+@media screen and (max-width: 1320px) {
+  #font-family-select { width: 108px; }
+  #line-spacing-toolbar { width: 98px; }
+  #prompter-margin-select { width: 120px; }
+
+  #operator-edit-panel #toolbar-content .tb-body .btn-group > .btn { width: 28px; }
+  #operator-edit-panel #toolbar-content .tb-body .btn-group > .btn-group > .btn { width: 36px; }
+  #operator-edit-panel #toolbar-content .tb-body .btn-mode { width: 27px; }
+  #operator-edit-panel #toolbar-content .tb-body .color-btn { width: 20px; height: 20px; }
+  #operator-edit-panel #toolbar-content .tb-body #clean-script-btn { font-size: 12px !important; }
+}

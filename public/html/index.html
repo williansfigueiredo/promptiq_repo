@@ -231,20 +231,23 @@
         <div class="tab-pane fade" id="operator-tab-pane" role="tabpanel">
              <div class="d-flex flex-column h-100" id="operator-workspace">
                  <div id="operator-toolbar" class="d-flex align-items-center gap-2 flex-shrink-0">
-                    <button class="btn btn-tool" title="Edit script / Hide editor (Esc)" id="op-btn-toggle-edit-panel"><i class="bi bi-pencil-square"></i></button>
-                    <div class="tool-separator"></div>
-                    <button class="btn btn-tool" title="Invert Colors" id="op-btn-invert"><i class="bi bi-palette-fill"></i></button>
-                    <div class="tool-separator"></div>
-                
-                    <button class="btn btn-tool" title="Mirror Horizontal" id="op-btn-mirror-h"><i class="bi bi-arrow-left-right"></i></button>
-                    <button class="btn btn-tool" title="Mirror Vertical" id="op-btn-mirror-v"><i class="bi bi-arrow-down-up"></i></button>
-                    <button class="btn btn-tool" title="Select Margin Width" id="op-btn-margin"><i class="bi bi-aspect-ratio"></i></button>
-                    <button class="btn btn-tool" title="Toggle Fullscreen" id="op-btn-fullscreen"><i class="bi bi-display"></i></button>
-                    <div class="tool-separator"></div>
-                    <button class="btn btn-tool" title="Reset Scroll" id="op-btn-reset"><i class="bi bi-arrow-counterclockwise"></i></button>
-                    <button class="btn btn-tool" title="Loop" id="op-btn-loop"><i class="bi bi-repeat"></i></button>
-                    <div class="tool-separator"></div>
-                    <button class="btn btn-tool" title="Settings" id="op-btn-settings"><i class="bi bi-sliders"></i></button>
+                    <div class="tb-pill">
+                        <button class="btn btn-tool" title="Edit script / Hide editor (Esc)" id="op-btn-toggle-edit-panel"><i class="bi bi-pencil-square"></i></button>
+                    </div>
+                    <div class="tb-pill">
+                        <button class="btn btn-tool" title="Invert Colors" id="op-btn-invert"><i class="bi bi-circle-half"></i></button>
+                        <button class="btn btn-tool" title="Mirror Horizontal" id="op-btn-mirror-h"><i class="bi bi-arrow-left-right"></i></button>
+                        <button class="btn btn-tool" title="Mirror Vertical" id="op-btn-mirror-v"><i class="bi bi-arrow-down-up"></i></button>
+                        <button class="btn btn-tool" title="Select Margin Width" id="op-btn-margin"><i class="bi bi-aspect-ratio"></i></button>
+                        <button class="btn btn-tool" title="Toggle Fullscreen" id="op-btn-fullscreen"><i class="bi bi-fullscreen"></i></button>
+                    </div>
+                    <div class="tb-pill">
+                        <button class="btn btn-tool" title="Reset Scroll" id="op-btn-reset"><i class="bi bi-arrow-counterclockwise"></i></button>
+                        <button class="btn btn-tool" title="Loop" id="op-btn-loop"><i class="bi bi-repeat"></i></button>
+                    </div>
+                    <div class="tb-pill">
+                        <button class="btn btn-tool" title="Settings" id="op-btn-settings"><i class="bi bi-sliders"></i></button>
+                    </div>
                     <div class="ms-auto d-flex gap-1 align-items-center"></div>
 <!-- Voice Tracking (Vosk) desativado por enquanto: botão oculto e módulo/modelo não são carregados. -->
 <button id="btn-voice-tracking" class="btn btn-sm btn-light border d-none" disabled title="Voice Tracking (disabled)">
@@ -259,8 +262,10 @@
                  <div id="operator-edit-panel" class="operator-edit-panel collapsed">
                     <div id="toolbar-content" class="p-2 border-bottom d-flex align-items-center gap-2 flex-wrap bg-light">
                         
-                        <div class="d-flex gap-1">
-                            <select id="font-family-select" class="form-select form-select-sm font-select-width" title="Fonte">
+                        <div class="tb-group">
+                        <div class="tb-cap">Text</div>
+                        <div class="tb-body">
+                            <select id="font-family-select" class="form-select form-select-sm font-select-width" title="Font">
                             <option value="Arial" style="font-family: Arial;">Arial</option>
                             <option value="Verdana" style="font-family: Verdana;">Verdana</option>
                             <option value="Times New Roman" style="font-family: 'Times New Roman';">Times New Roman</option>
@@ -270,7 +275,8 @@
                             <option value="Tahoma" style="font-family: Tahoma;">Tahoma</option>
                             <option value="OpenDyslexic" style="font-family: 'OpenDyslexic';">OpenDyslexic</option>
                             </select>
-                            <select id="font-size-toolbar-fix" class="form-select form-select-sm ms-2" style="width: 70px;">
+                            <div class="tb-size">
+                            <select id="font-size-toolbar-fix" class="form-select form-select-sm" title="Font size">
                             <option value="12">12</option>
                             <option value="14">14</option>
                             <option value="18">18</option>
@@ -280,8 +286,9 @@
                             <option value="48">48</option>
                             <option value="60">60</option>
                             </select>
-                            <input type="number" id="font-size-custom" placeholder="Ou digite aqui..." min="8" max="100">
-                            <select id="line-spacing-toolbar" class="form-select form-select-sm ms-2" style="width: 120px;" title="Line spacing (espaçamento entre linhas)">
+                            <input type="number" id="font-size-custom" placeholder="pt" title="Custom size (pt)" min="8" max="100">
+                            </div>
+                            <select id="line-spacing-toolbar" class="form-select form-select-sm" title="Line spacing">
                                 <option value="1.0">Line 1.0x</option>
                                 <option value="1.2">Line 1.2x</option>
                                 <option value="1.4">Line 1.4x</option>
@@ -292,7 +299,7 @@
                                 <option value="2">Line 2.0x</option>
                                 <option value="2.5">Line 2.5x</option>
                             </select>
-                            <select id="prompter-margin-select" class="form-select form-select-sm ms-2" style="width: 130px;" title="Prompter margins (margens laterais)">
+                            <select id="prompter-margin-select" class="form-select form-select-sm" title="Prompter margins">
                                 <option value="0">Margin 0</option>
                                 <option value="20">Margin 20</option>
                                 <option value="40">Margin 40</option>
@@ -301,10 +308,11 @@
                                 <option value="300">Margin 300</option>
                             </select>
                         </div>
+                        </div>
 
-                        <div class="vr mx-1"></div>
-
-                        <div class="d-flex align-items-center gap-2 mx-2 p-1">
+                        <div class="tb-group">
+                        <div class="tb-cap">Color</div>
+                        <div class="tb-body">
                             <div id="color-mode-switch" class="mode-switch-group">
                                 <button type="button" class="btn btn-sm btn-mode active" data-mode="foreground" title="Font Color">
                                     <i class="bi bi-type"></i>
@@ -325,11 +333,13 @@
                             <button class="color-btn swatch-pink" data-color="#FF69B4" title="Pink"></button>
                             <button class="color-btn swatch-cyan" data-color="#00FFFF" title="Cyan"></button>
                         </div>
+                        </div>
 
                         <div id="custom-color-palette" class="palette-popup" style="display: none;"></div>
 
-                        <div class="vr mx-1"></div>
-
+                        <div class="tb-group">
+                        <div class="tb-cap">Style</div>
+                        <div class="tb-body">
                         <div class="btn-group" role="group">
                             <button id="bold-btn" class="btn btn-sm btn-light border" title="Bold (Ctrl+B)"><i class="bi bi-type-bold"></i></button>
                             <button id="italic-btn" class="btn btn-sm btn-light border" title="Italic (Ctrl+I)"><i class="bi bi-type-italic"></i></button>
@@ -346,29 +356,35 @@
                                 </ul>
                             </div>
                         </div>
+                        </div>
+                        </div>
 
-                        <div class="vr mx-1"></div>
-
+                        <div class="tb-group">
+                        <div class="tb-cap">Paragraph</div>
+                        <div class="tb-body">
                         <div class="btn-group" role="group">
                             <button id="align-left-btn" class="btn btn-sm btn-light border" title="Align Left"><i class="bi bi-text-left"></i></button>
                             <button id="align-center-btn" class="btn btn-sm btn-light border" title="Align Center"><i class="bi bi-text-center"></i></button>
                             <button id="align-right-btn" class="btn btn-sm btn-light border" title="Align Right"><i class="bi bi-text-right"></i></button>
                             <button id="align-justify-btn" class="btn btn-sm btn-light border" title="Justify"><i class="bi bi-justify"></i></button>
                         </div>
+                        </div>
+                        </div>
 
-                        <div class="vr mx-1"></div>
-
+                        <div class="tb-group">
+                        <div class="tb-cap">Tools</div>
+                        <div class="tb-body">
                         <div class="btn-group" role="group">
                             <button id="bookmark-btn" class="btn btn-sm btn-light border" title="Bookmark"><i class="bi bi-bookmark-fill"></i></button>
                             <button id="timeline-btn" class="btn btn-sm btn-light border text-primary" title="History / Timeline"><i class="bi bi-clock-history"></i></button>
                         </div>
 
-                        <div class="vr mx-1"></div>
-
                         <div class="btn-group" role="group">
                             <button id="clean-script-btn" class="btn btn-sm btn-light border text-warning" title="Script Cleanup - Removes technical markers (LED, SOUND, LIGHT, ONLINE, timestamps) and keeps only MC speech lines">
                                 <i class="bi bi-scissors"></i> Script Cleanup
                             </button>
+                        </div>
+                        </div>
                         </div>
                     </div>
                     
