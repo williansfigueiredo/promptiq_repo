@@ -14,7 +14,7 @@
 // e pode desligar o recebimento. Estilo, documentos e rolagem nunca são aceitos do backup.
 // ============================================================
 
-const { app, ipcMain, shell } = require('electron');
+const { app, ipcMain, shell, dialog, BrowserWindow } = require('electron');
 const http = require('http');
 const os = require('os');
 const path = require('path');
@@ -436,6 +436,34 @@ function initBackupSyncHandlers() {
   });
 
   ipcMain.handle('backup-status', async () => status);
+
+  // Confirmação do BACKUP (retomar o espelhamento). Não usa window.confirm: no Electron/Windows o
+  // confirm() nativo do renderer deixa o editor sem foco de teclado (o cursor some e não dá para
+  // digitar até a janela ser reativada). Depois do diálogo o foco volta explicitamente à janela.
+  ipcMain.handle('backup-confirm', async (event, options) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const opts = options || {};
+    let confirmed = false;
+    try {
+      const { response } = await dialog.showMessageBox(win || undefined, {
+        type: 'question',
+        title: 'Promptiq',
+        message: String(opts.message || '').slice(0, 2000),
+        buttons: [String(opts.yes || 'OK'), 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true
+      });
+      confirmed = response === 0;
+    } finally {
+      if (win && !win.isDestroyed()) {
+        win.blur();
+        win.focus();
+        win.webContents.focus();
+      }
+    }
+    return confirmed;
+  });
 
   // Cópia em arquivo dos documentos recebidos (só o BACKUP grava; ver backup-copy-store.js)
   let copyStore = null;

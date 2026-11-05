@@ -1078,7 +1078,32 @@
   // Libera a edição local pausando o espelhamento. Com "duas vias", o que for editado aqui também é
   // aplicado no PRIMARY (e o que o PRIMARY mudar continua chegando). Ao retomar, o que foi editado
   // é salvo numa cópia separada ANTES de o texto do PRIMARY voltar a valer.
+  // Confirmação via processo principal (ver 'backup-confirm'): window.confirm() tira o foco de
+  // teclado do editor no Electron/Windows. Com a edição ainda liberada, o foco volta ao editor.
+  async function askConfirm(message, yes) {
+    let ok = false;
+    try {
+      ok = await ipcRenderer.invoke('backup-confirm', { message, yes });
+    } catch (_) { /* sem resposta = não confirma */ }
+    const bridge = getBridge();
+    const activeId = bridge && bridge.getActiveId();
+    const editor = activeId != null && bridge.getEditor(activeId);
+    if (state.editing && editor && editor.isContentEditable) editor.focus();
+    return ok;
+  }
+
+  let toggling = false;
   async function toggleEditing() {
+    if (toggling) return;
+    toggling = true;
+    try {
+      await toggleEditingInner();
+    } finally {
+      toggling = false;
+    }
+  }
+
+  async function toggleEditingInner() {
     const bridge = getBridge();
     if (!bridge || state.role !== 'backup') return;
 
@@ -1114,7 +1139,7 @@
     } else {
       question = `Resume mirroring?\n\nYour changes on this PC (${changed.length} document${changed.length > 1 ? 's' : ''}) will be saved as a separate copy first:${where}\n\nThen the primary's text is shown again.`;
     }
-    const ok = window.confirm(question);
+    const ok = await askConfirm(question, 'Resume mirroring');
     if (!ok) return;
 
     // Edição ainda pendente segue para o PRIMARY antes de o espelho voltar (mesma ordem no canal)
@@ -1132,7 +1157,7 @@
       } catch (err) {
         failure = err.message;
       }
-      if (failure && !window.confirm(`Could not save a copy of your changes (${failure}).\n\nResume mirroring anyway and lose them?`)) {
+      if (failure && !(await askConfirm(`Could not save a copy of your changes (${failure}).\n\nResume mirroring anyway and lose them?`, 'Resume anyway'))) {
         render(true);
         return;
       }
