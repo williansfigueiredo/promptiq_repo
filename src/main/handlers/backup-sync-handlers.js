@@ -23,6 +23,10 @@ const crypto = require('crypto');
 const getSocketServer = () => require('socket.io').Server;
 const getSocketClient = () => require('socket.io-client').io;
 const { createCopyStore } = require('./backup-copy-store');
+// O módulo do cabo (Ethernet) só é carregado quando esse modo é usado: o app não paga nada por ele
+// enquanto o Backup Sync está desligado ou em Wi-Fi/LAN.
+let ethernetModule = null;
+const getEthernetModule = () => ethernetModule || (ethernetModule = require('./backup-ethernet'));
 
 const DEFAULT_PORT = 3002;
 const MAX_PIN_FAILURES = 5;
@@ -76,6 +80,12 @@ function initBackupSyncHandlers() {
   let client = null;
   let reconnectTimer = null;
 
+  // Cabo de rede (Ethernet): preparação/descoberta em andamento e resposta de descoberta do PRIMARY
+  const getEthernet = () => ethernetLink || (ethernetLink = getEthernetModule().createEthernetLink({ isPackaged: app.isPackaged }));
+  let ethernetLink = null;
+  let prepToken = null;
+  let responder = null;
+
   // Testes de comunicação em andamento (PRIMARY): id -> { expected, results, resolve, timer }
   const pendingTests = new Map();
 
@@ -90,6 +100,18 @@ function initBackupSyncHandlers() {
   function publishStatus(patch = {}) {
     status = { ...status, role, ...patch };
     sendToRenderer('backup:status', status);
+  }
+
+  // Andamento da preparação do cabo (cabo, endereço, permissão, busca do primary...)
+  function publishProgress(progress) {
+    sendToRenderer('backup:progress', progress);
+  }
+
+  // Cada preparação tem o seu "token": stopAll/nova preparação o cancelam.
+  function newPrepToken() {
+    if (prepToken) prepToken.cancelled = true;
+    prepToken = { cancelled: false };
+    return prepToken;
   }
 
   function pinMatches(given) {
@@ -127,6 +149,14 @@ function initBackupSyncHandlers() {
   }
 
   function stopAll() {
+    if (prepToken) {
+      prepToken.cancelled = true;
+      prepToken = null;
+    }
+    if (responder) {
+      responder.stop();
+      responder = null;
+    }
     Array.from(pendingTests.keys()).forEach((id) => finishTest(id, 'Sharing was stopped.'));
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
@@ -171,10 +201,28 @@ function initBackupSyncHandlers() {
       ? requestedPort
       : DEFAULT_PORT;
 
-    const addresses = listLocalAddresses();
-    if (!addresses.length) {
-      stopAll();
-      return { ok: false, error: 'No active Wi-Fi or Ethernet network detected.' };
+    const useEthernet = !!(options && options.transport === 'ethernet');
+    const token = newPrepToken();
+    let addresses;
+    let link = null;
+    let warning = '';
+
+    if (useEthernet) {
+      const prepared = await getEthernet().prepareLink({ role: 'primary', tcpPort: port, token, onProgress: publishProgress });
+      if (token.cancelled) return { ok: false, cancelled: true };
+      if (!prepared.ok) {
+        stopAll();
+        return { ok: false, error: prepared.error };
+      }
+      link = prepared.link;
+      warning = prepared.warning || '';
+      addresses = link.addresses.map((a) => ({ name: link.adapter, ip: a.ip }));
+    } else {
+      addresses = listLocalAddresses();
+      if (!addresses.length) {
+        stopAll();
+        return { ok: false, error: 'No active Wi-Fi or Ethernet network detected.' };
+      }
     }
 
     pin = String(crypto.randomInt(100000, 1000000));
@@ -255,9 +303,17 @@ function initBackupSyncHandlers() {
         httpServer.listen(port, '0.0.0.0', resolve);
       });
 
+      // Cabo: o PRIMARY passa a responder à busca do backup (UDP). Só responde a quem está na
+      // sub-rede do cabo e nunca revela o PIN.
+      if (useEthernet) {
+        responder = await getEthernet().startResponder({ tcpPort: port, getAddresses: () => link.addresses });
+      }
+      if (token.cancelled) return { ok: false, cancelled: true };
+      prepToken = null;
+
       role = 'primary';
       publishStatus({ state: 'listening', clients: 0, port, error: '' });
-      return { ok: true, addresses, port, pin };
+      return { ok: true, addresses, port, pin, link, warning };
     } catch (err) {
       const message = err && err.code === 'EADDRINUSE'
         ? `Port ${port} is already in use.`
@@ -332,6 +388,47 @@ function initBackupSyncHandlers() {
     if (!/^\d{6}$/.test(givenPin)) return { ok: false, error: 'The PIN has 6 digits.' };
 
     bindHost(event.sender);
+    return startClient(host, port, givenPin);
+  });
+
+  // BACKUP por cabo: prepara a placa, descobre o PRIMARY sozinho e só então usa o mesmo
+  // caminho de conexão da rede comum (mesmo Socket.IO, mesmo PIN, mesma sincronização).
+  ipcMain.handle('backup-ethernet-connect', async (event, options) => {
+    stopAll();
+
+    const givenPin = String((options && options.pin) || '').trim();
+    if (!/^\d{6}$/.test(givenPin)) return { ok: false, error: 'The PIN has 6 digits.' };
+
+    bindHost(event.sender);
+    const token = newPrepToken();
+
+    const prepared = await getEthernet().prepareLink({ role: 'backup', tcpPort: DEFAULT_PORT, token, onProgress: publishProgress });
+    if (token.cancelled) return { ok: false, cancelled: true };
+    if (!prepared.ok) {
+      stopAll();
+      return { ok: false, error: prepared.error };
+    }
+
+    const found = await getEthernet().findPrimary({
+      link: prepared.link,
+      adapterIndex: prepared.adapterIndex,
+      tcpPort: DEFAULT_PORT,
+      token,
+      onProgress: publishProgress
+    });
+    if (token.cancelled) return { ok: false, cancelled: true };
+    if (!found.ok) {
+      stopAll();
+      return { ok: false, error: found.error };
+    }
+
+    prepToken = null;
+    const link = { ...prepared.link, peer: found.peer };
+    publishProgress({ text: `Found ${found.peer.name} (${found.peer.ip}). Connecting…`, step: 'found', link });
+    return { ...startClient(found.peer.ip, found.peer.port, givenPin), link, warning: prepared.warning || '' };
+  });
+
+  function startClient(host, port, givenPin) {
     role = 'backup';
     publishStatus({ state: 'connecting', host, port, clients: 0, error: '' });
 
@@ -383,7 +480,7 @@ function initBackupSyncHandlers() {
     });
 
     return { ok: true };
-  });
+  }
 
   // BACKUP pede um novo envio completo ao PRIMARY (ex.: ao detectar divergência)
   ipcMain.on('backup-request-resync', (event) => {

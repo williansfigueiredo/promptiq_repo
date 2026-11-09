@@ -32,6 +32,8 @@
 /* Estilos do Operador/Prompter */
 @import url('./bootstrap.min.css');
 @import url('./bootstrap-icons.css');
+@import url('./backup-sync.css');
+/* Janela do Backup Sync (depois do Bootstrap, para sobrepor) */
 @import url('./fonts/universal-fonts.css');
 
 

@@ -33,10 +33,18 @@
   const STORAGE_PORT = 'promptiq.backup.port';
   const STORAGE_ACCEPT_EDITS = 'promptiq.backup.acceptEdits';
   const STORAGE_TWO_WAY = 'promptiq.backup.twoWay';
+  const STORAGE_TRANSPORT = 'promptiq.backup.transport';
 
   const state = {
     role: 'off',        // 'off' | 'primary' | 'backup'
     link: 'off',        // estado reportado pelo main
+    // Como os PCs se ligam: 'network' (Wi-Fi/LAN, digitando o IP) ou 'ethernet' (cabo direto, automático)
+    transport: localStorage.getItem(STORAGE_TRANSPORT) === 'ethernet' ? 'ethernet' : 'network',
+    preparing: false,   // cabo: detectando placa/endereço/permissão ou procurando o primary
+    progress: '',       // texto do andamento da preparação
+    step: 0,            // cabo: etapa atual do passo-a-passo (0 = cabo, 1 = endereço, ...)
+    ethLink: null,      // cabo: { adapter, ip, speed, peer? }
+    ethWarning: '',     // cabo: aviso (ex.: permissão de administrador recusada)
     clients: 0,
     error: '',
     addresses: [],
@@ -1297,11 +1305,19 @@
   // Papéis (start / stop)
   // ============================================================
   async function startPrimary() {
-    const result = await ipcRenderer.invoke('backup-start-primary', {
-      port: Number(($('backup-primary-port') || {}).value) || DEFAULT_PORT
-    });
+    const ethernet = state.transport === 'ethernet';
+    if (ethernet) beginPreparing('Checking the network cable…');
+    let result;
+    try {
+      result = await ipcRenderer.invoke('backup-start-primary', {
+        port: Number(($('backup-primary-port') || {}).value) || DEFAULT_PORT,
+        transport: state.transport
+      });
+    } finally {
+      endPreparing();
+    }
     if (!result.ok) {
-      state.error = result.error;
+      if (!result.cancelled) state.error = result.error;
       render(true);
       return;
     }
@@ -1311,10 +1327,31 @@
     state.pin = result.pin;
     state.link = 'listening';
     state.error = '';
+    state.ethLink = result.link || null;
+    state.ethWarning = result.warning || '';
     startPrimaryWatch();
     render(true);
     // Um backup pode ter conectado antes de este retorno chegar.
     if (state.clients > 0) pushFull();
+  }
+
+  // Cabo: o main manda o andamento (cabo, endereço, permissão, busca do primary...)
+  function beginPreparing(text) {
+    state.preparing = true;
+    state.progress = text;
+    state.step = 0;
+    state.ethWarning = '';
+    state.ethLink = null;
+    render(true);
+  }
+
+  function endPreparing() {
+    state.preparing = false;
+    state.progress = '';
+  }
+
+  function cancelPreparing() {
+    ipcRenderer.invoke('backup-stop').catch(() => { });
   }
 
   // Copia pelo clipboard do Electron (não depende de foco/permissão do navegador) e confirma no botão.
@@ -1346,15 +1383,18 @@
       const address = `${a.ip}:${state.port}`;
 
       const row = document.createElement('div');
-      row.className = 'd-flex align-items-center gap-2 mb-1';
+      row.className = 'bsync-addr-row';
 
       const label = document.createElement('span');
-      label.className = 'fw-bold font-monospace';
-      label.textContent = `${a.name}: ${address}`;
+      label.className = 'bsync-addr';
+      const name = document.createElement('small');
+      name.textContent = a.name;
+      label.append(name, address);
+      label.title = `${a.name}: ${address}`;
 
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'btn btn-sm btn-outline-secondary';
+      button.className = 'btn btn-outline-secondary';
       button.title = `Copy ${address}`;
       button.innerHTML = '<i class="bi bi-clipboard"></i>';
       button.addEventListener('click', () => copyWithFeedback(button, address));
@@ -1364,7 +1404,33 @@
     });
   }
 
+  // Passo-a-passo da preparação do cabo (só reconstrói quando muda)
+  let lastStepsKey = '';
+  function renderSteps(asPrimary) {
+    const labels = asPrimary ? ['Cable', 'Address', 'Ready'] : ['Cable', 'Address', 'Find primary', 'Connect'];
+    const key = `${labels.length}|${state.step}`;
+    if (key === lastStepsKey) return;
+    lastStepsKey = key;
+
+    const list = $('backup-eth-steps');
+    list.replaceChildren();
+    labels.forEach((text, index) => {
+      const item = document.createElement('li');
+      item.className = index < state.step ? 'done' : (index === state.step ? 'active' : '');
+      const dot = document.createElement('span');
+      dot.className = 'bsync-dot';
+      if (index < state.step) dot.innerHTML = '<i class="bi bi-check-lg"></i>';
+      else dot.textContent = String(index + 1);
+      item.append(dot, text);
+      list.appendChild(item);
+    });
+  }
+
   async function startBackup() {
+    if (state.transport === 'ethernet') {
+      await startBackupByCable();
+      return;
+    }
     let host = ($('backup-host').value || '').trim();
     let port = Number($('backup-port').value) || DEFAULT_PORT;
     const pin = ($('backup-pin').value || '').trim();
@@ -1392,6 +1458,34 @@
     render(true);
   }
 
+  // Cabo: só o PIN é digitado. O main prepara a placa, acha o primary e conecta.
+  async function startBackupByCable() {
+    const pin = ($('backup-pin').value || '').trim();
+    if (!/^\d{6}$/.test(pin)) {
+      state.error = 'The PIN has 6 digits.';
+      render(true);
+      return;
+    }
+    beginPreparing('Checking the network cable…');
+    let result;
+    try {
+      result = await ipcRenderer.invoke('backup-ethernet-connect', { pin });
+    } finally {
+      endPreparing();
+    }
+    if (!result.ok) {
+      if (!result.cancelled) state.error = result.error;
+      render(true);
+      return;
+    }
+    state.role = 'backup';
+    state.link = 'connecting';
+    state.error = '';
+    state.ethLink = result.link || null;
+    state.ethWarning = result.warning || '';
+    render(true);
+  }
+
   async function stopRole() {
     stopPrimaryWatch();
     // Antes de soltar os documentos, garante a cópia em arquivo do que está na tela
@@ -1403,6 +1497,8 @@
     state.clients = 0;
     state.pin = '';
     state.error = '';
+    state.ethLink = null;
+    state.ethWarning = '';
     render(true);
   }
 
@@ -1470,9 +1566,30 @@
     const statusText = $('backup-status-text');
     statusText.textContent = active ? `${state.role.toUpperCase()} — ${label.text}` : 'OFF';
     $('backup-status-dot').className = `bi bi-circle-fill text-${label.cls}`;
+    $('backup-status-pill').dataset.state = label.cls;
+    if (state.preparing) {
+      statusText.textContent = 'Preparing cable';
+      $('backup-status-dot').className = 'bi bi-circle-fill text-warning';
+      $('backup-status-pill').dataset.state = 'warning';
+    }
 
-    $('backup-role-primary').disabled = active;
-    $('backup-role-backup').disabled = active;
+    const busy = active || state.preparing;
+    $('backup-role-primary').disabled = busy;
+    $('backup-role-backup').disabled = busy;
+    $('backup-transport-network').disabled = busy;
+    $('backup-transport-ethernet').disabled = busy;
+    const cable = state.transport === 'ethernet';
+    const asPrimaryNow = active ? state.role === 'primary' : $('backup-role-primary').checked;
+    $('backup-transport-network').checked = !cable;
+    $('backup-transport-ethernet').checked = cable;
+    $('backup-eth-note').classList.toggle('d-none', !cable || state.preparing || active);
+    $('backup-eth-progress').classList.toggle('d-none', !state.preparing);
+    $('backup-eth-progress-text').textContent = state.progress;
+    if (state.preparing) renderSteps(asPrimaryNow);
+    $('backup-eth-warning').textContent = state.ethWarning;
+    $('backup-eth-warning').classList.toggle('d-none', !state.ethWarning);
+    document.querySelectorAll('.backup-manual-only').forEach((el) => el.classList.toggle('d-none', cable));
+    $('backup-pin').placeholder = cable ? '6-digit PIN shown on the primary' : '6-digit PIN';
     const asPrimary = active ? state.role === 'primary' : $('backup-role-primary').checked;
     if (active) {
       $('backup-role-primary').checked = state.role === 'primary';
@@ -1484,12 +1601,23 @@
     // PRIMARY
     const primaryOn = state.role === 'primary';
     $('backup-primary-info').classList.toggle('d-none', !primaryOn);
-    $('backup-primary-port').disabled = primaryOn;
-    $('backup-primary-toggle').innerHTML = primaryOn
-      ? '<i class="bi bi-stop-circle me-1"></i> Stop sharing'
-      : '<i class="bi bi-broadcast me-1"></i> Start sharing';
-    $('backup-primary-toggle').className = `btn btn-sm ${primaryOn ? 'btn-danger' : 'btn-primary'}`;
+    $('backup-primary-port').disabled = primaryOn || state.preparing;
+    $('backup-primary-adv').classList.toggle('d-none', primaryOn);
+    $('backup-primary-toggle').innerHTML = state.preparing
+      ? '<i class="bi bi-x-circle me-1"></i> Cancel'
+      : (primaryOn
+        ? '<i class="bi bi-stop-circle me-1"></i> Stop sharing'
+        : '<i class="bi bi-broadcast me-1"></i> Start sharing');
+    $('backup-primary-toggle').className = `btn btn-sm ${primaryOn ? 'btn-danger' : (state.preparing ? 'btn-outline-danger' : 'btn-primary')}`;
     if (primaryOn) {
+      $('backup-primary-address-label').textContent = cable
+        ? 'Address (only needed if the cable search fails)'
+        : 'Address (type it on the backup PC)';
+      const cableInfo = $('backup-primary-eth-link');
+      cableInfo.classList.toggle('d-none', !(cable && state.ethLink));
+      if (cable && state.ethLink) {
+        cableInfo.textContent = `Cable: ${state.ethLink.adapter}${state.ethLink.speed ? ` · ${state.ethLink.speed}` : ''}`;
+      }
       renderAddresses();
       $('backup-primary-pin').textContent = state.pin;
       $('backup-primary-clients').textContent =
@@ -1510,11 +1638,14 @@
 
     // BACKUP
     const backupOn = state.role === 'backup';
-    ['backup-host', 'backup-port', 'backup-pin'].forEach((id) => { $(id).disabled = backupOn; });
-    $('backup-connect-toggle').innerHTML = backupOn
-      ? '<i class="bi bi-plug me-1"></i> Disconnect'
-      : '<i class="bi bi-plug-fill me-1"></i> Connect';
-    $('backup-connect-toggle').className = `btn btn-sm ${backupOn ? 'btn-outline-danger' : 'btn-primary'}`;
+    ['backup-host', 'backup-port', 'backup-pin'].forEach((id) => { $(id).disabled = backupOn || state.preparing; });
+    $('backup-connect-fields').classList.toggle('d-none', backupOn);
+    $('backup-connect-toggle').innerHTML = state.preparing
+      ? '<i class="bi bi-x-circle me-1"></i> Cancel'
+      : (backupOn
+        ? '<i class="bi bi-plug me-1"></i> Disconnect'
+        : '<i class="bi bi-plug-fill me-1"></i> Connect');
+    $('backup-connect-toggle').className = `btn btn-sm ${state.preparing || backupOn ? 'btn-outline-danger' : 'btn-primary'}`;
     $('backup-takeover-btn').classList.toggle('d-none', !backupOn);
     $('backup-ping-btn').classList.toggle('d-none', !backupOn);
     $('backup-edit-toggle').classList.toggle('d-none', !backupOn);
@@ -1526,6 +1657,13 @@
       ? '<i class="bi bi-lock me-1"></i> Resume mirroring'
       : '<i class="bi bi-unlock me-1"></i> Unlock editing';
     $('backup-backup-info').classList.toggle('d-none', !backupOn);
+    const backupCable = $('backup-eth-link');
+    backupCable.classList.toggle('d-none', !(backupOn && cable && state.ethLink));
+    if (backupOn && cable && state.ethLink) {
+      const peer = state.ethLink.peer;
+      backupCable.textContent = `Cable: ${state.ethLink.adapter} (${state.ethLink.ip})` +
+        (peer ? ` → ${peer.name} (${peer.ip})` : '');
+    }
     if (backupOn) {
       let info;
       if (!state.editing) {
@@ -1550,7 +1688,7 @@
       else if (copies.lastSavedAt) line = `Local copy saved on this PC ${formatAge(copies.lastSavedAt)}`;
       else line = 'Local copy: waiting for the first document';
       copyInfo.textContent = notice + line;
-      copyInfo.className = `small mt-1 ${copies.error ? 'text-danger' : 'text-muted'}`;
+      copyInfo.className = `bsync-muted${copies.error ? ' is-error' : ''}`;
     }
 
     const error = $('backup-error');
@@ -1580,12 +1718,20 @@
     if (badge) badge.addEventListener('click', openModal);
 
     ['backup-role-primary', 'backup-role-backup'].forEach((id) => $(id).addEventListener('change', () => render(true)));
+    ['backup-transport-network', 'backup-transport-ethernet'].forEach((id) => $(id).addEventListener('change', () => {
+      state.transport = $('backup-transport-ethernet').checked ? 'ethernet' : 'network';
+      localStorage.setItem(STORAGE_TRANSPORT, state.transport);
+      state.error = '';
+      render(true);
+    }));
     $('backup-primary-toggle').addEventListener('click', () => {
       state.error = '';
+      if (state.preparing) { cancelPreparing(); return; }
       (state.role === 'primary' ? stopRole() : startPrimary()).catch(console.error);
     });
     $('backup-connect-toggle').addEventListener('click', () => {
       state.error = '';
+      if (state.preparing) { cancelPreparing(); return; }
       (state.role === 'backup' ? stopRole() : startBackup()).catch(console.error);
     });
     $('backup-takeover-btn').addEventListener('click', () => takeOver().catch(console.error));
@@ -1648,6 +1794,16 @@
         }
         state.role = 'off';
       }
+      render();
+    });
+
+    ipcRenderer.on('backup:progress', (_event, progress) => {
+      if (!progress || !state.preparing) return;
+      state.progress = String(progress.text || '');
+      // A permissão de administrador só aparece depois de o cabo ser detectado
+      const stepOf = { detect: 0, cable: 0, address: 1, admin: 1, search: 2, found: 3 }[progress.step];
+      if (stepOf !== undefined) state.step = Math.max(state.step, stepOf);
+      if (progress.link) state.ethLink = progress.link;
       render();
     });
 

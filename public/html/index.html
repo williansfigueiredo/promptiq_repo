@@ -653,81 +653,110 @@
     </div>
 
     <div class="modal fade" id="backupSyncModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content shadow-lg border-0">
-                <div class="modal-header border-bottom-0 pb-0">
-                    <h5 class="modal-title fw-bold"><i class="bi bi-hdd-network me-2"></i>Backup Sync</h5>
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable bsync-dialog">
+            <div class="modal-content bsync border-0 shadow-lg">
+                <div class="modal-header bsync-header">
+                    <div class="bsync-heading">
+                        <span class="bsync-logo"><i class="bi bi-hdd-network"></i></span>
+                        <div>
+                            <h5 class="modal-title">Backup Sync</h5>
+                            <div class="bsync-sub">Mirror this script on a second PC</div>
+                        </div>
+                    </div>
+                    <span class="bsync-pill" id="backup-status-pill" data-state="danger" title="Backup Sync status">
+                        <i class="bi bi-circle-fill text-danger" id="backup-status-dot"></i><span id="backup-status-text">OFF</span>
+                    </span>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
 
-                <div class="modal-body p-4">
-                    <div class="alert alert-light border d-flex align-items-center justify-content-between mb-3 shadow-sm">
-                        <span class="text-muted fw-500">Status: <strong class="text-dark" id="backup-status-text">OFF</strong></span>
-                        <i class="bi bi-circle-fill text-danger" id="backup-status-dot" style="font-size: 12px;"></i>
-                    </div>
-
-                    <div class="btn-group w-100 mb-3" role="group" aria-label="Backup Sync role">
-                        <input type="radio" class="btn-check" name="backup-role" id="backup-role-primary" autocomplete="off" checked>
-                        <label class="btn btn-outline-primary btn-sm" for="backup-role-primary"><i class="bi bi-broadcast me-1"></i>This PC is the PRIMARY</label>
-                        <input type="radio" class="btn-check" name="backup-role" id="backup-role-backup" autocomplete="off">
-                        <label class="btn btn-outline-primary btn-sm" for="backup-role-backup"><i class="bi bi-shield-check me-1"></i>This PC is the BACKUP</label>
-                    </div>
-
-                    <div id="backup-primary-panel">
-                        <p class="small text-muted mb-2">Shares every text edit, document, style and reading position with the backup PC. Only the operator can use this channel (separate from the scriptwriter link).</p>
-                        <div class="input-group input-group-sm mb-2">
-                            <span class="input-group-text">Port</span>
-                            <input type="number" id="backup-primary-port" class="form-control" min="1024" max="65535" value="3002">
-                            <button id="backup-primary-toggle" class="btn btn-sm btn-primary"><i class="bi bi-broadcast me-1"></i> Start sharing</button>
+                <div class="modal-body bsync-body">
+                    <div class="bsync-section">
+                        <div class="bsync-label">This PC is the</div>
+                        <div class="bsync-choice" role="group" aria-label="Backup Sync role">
+                            <input type="radio" class="btn-check" name="backup-role" id="backup-role-primary" autocomplete="off" checked>
+                            <label class="bsync-opt" for="backup-role-primary"><i class="bi bi-broadcast"></i><span><b>Primary</b><small>Runs the show and shares it</small></span></label>
+                            <input type="radio" class="btn-check" name="backup-role" id="backup-role-backup" autocomplete="off">
+                            <label class="bsync-opt" for="backup-role-backup"><i class="bi bi-shield-check"></i><span><b>Backup</b><small>Mirrors it, ready to take over</small></span></label>
                         </div>
-                        <div id="backup-primary-info" class="d-none p-2 rounded border">
-                            <div class="small text-muted">Address (type it on the backup PC)</div>
-                            <div id="backup-primary-addresses" class="mb-2"></div>
-                            <div class="small text-muted">PIN</div>
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <span id="backup-primary-pin" class="fs-4 fw-bold font-monospace"></span>
-                                <button class="btn btn-sm btn-outline-secondary" id="backup-copy-pin" title="Copy PIN"><i class="bi bi-clipboard"></i></button>
+                    </div>
+
+                    <div class="bsync-section">
+                        <div class="bsync-label">Connect through</div>
+                        <div class="bsync-choice" role="group" aria-label="Backup Sync connection">
+                            <input type="radio" class="btn-check" name="backup-transport" id="backup-transport-network" autocomplete="off" checked>
+                            <label class="bsync-opt" for="backup-transport-network"><i class="bi bi-wifi"></i><span><b>Network</b><small>Wi-Fi or LAN · type the IP</small></span></label>
+                            <input type="radio" class="btn-check" name="backup-transport" id="backup-transport-ethernet" autocomplete="off">
+                            <label class="bsync-opt" for="backup-transport-ethernet"><i class="bi bi-ethernet"></i><span><b>Ethernet cable</b><small>Direct cable · automatic</small></span></label>
+                        </div>
+                        <div id="backup-eth-note" class="bsync-hint d-none"><i class="bi bi-info-circle"></i><span>One network cable between the two PCs is enough: no router, Wi-Fi or internet. Everything is set up automatically; Windows may ask for administrator permission once.</span></div>
+                    </div>
+
+                    <div id="backup-eth-progress" class="bsync-progress d-none">
+                        <ol id="backup-eth-steps" class="bsync-steps"></ol>
+                        <div class="bsync-progress-text"><span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span><span id="backup-eth-progress-text"></span></div>
+                    </div>
+                    <div id="backup-eth-warning" class="bsync-alert bsync-alert-warn d-none"></div>
+
+                    <div id="backup-primary-panel" class="bsync-section">
+                        <p class="bsync-desc">Shares every text edit, document, style and reading position with the backup PC. Only the operator uses this channel (separate from the scriptwriter link).</p>
+                        <div id="backup-primary-info" class="bsync-card d-none">
+                            <div class="bsync-pin-row">
+                                <div>
+                                    <div class="bsync-label">Session PIN</div>
+                                    <div id="backup-primary-pin" class="bsync-pin"></div>
+                                </div>
+                                <button class="btn btn-outline-secondary bsync-icon-btn" id="backup-copy-pin" title="Copy PIN"><i class="bi bi-clipboard"></i></button>
                             </div>
-                            <div id="backup-primary-clients" class="small text-muted"></div>
-                            <div class="form-check form-switch mt-2" title="When on, text edited on a backup PC (with its editing unlocked) is applied here. Turn it off to lock this PC's text during a live show.">
+                            <div id="backup-primary-eth-link" class="bsync-chip d-none"></div>
+                            <div class="bsync-divider"></div>
+                            <div id="backup-primary-address-label" class="bsync-label">Address (type it on the backup PC)</div>
+                            <div id="backup-primary-addresses" class="bsync-addresses"></div>
+                            <div class="bsync-divider"></div>
+                            <div id="backup-primary-clients" class="bsync-clients"></div>
+                            <div class="form-check form-switch bsync-switch" title="When on, text edited on a backup PC (with its editing unlocked) is applied here. Turn it off to lock this PC's text during a live show.">
                                 <input class="form-check-input" type="checkbox" role="switch" id="backup-accept-edits" checked>
-                                <label class="form-check-label small" for="backup-accept-edits">Accept text edits made on the backup</label>
+                                <label class="form-check-label" for="backup-accept-edits">Accept text edits made on the backup</label>
                             </div>
-                            <div id="backup-primary-edit-info" class="small text-muted"></div>
-                            <button class="btn btn-sm btn-outline-primary mt-2" id="backup-test-btn"><i class="bi bi-activity me-1"></i> Test connection</button>
+                            <div id="backup-primary-edit-info" class="bsync-muted"></div>
+                            <button class="btn btn-outline-primary bsync-wide" id="backup-test-btn"><i class="bi bi-activity me-1"></i> Test connection</button>
                         </div>
+                        <button id="backup-primary-toggle" class="btn btn-primary bsync-cta"><i class="bi bi-broadcast me-1"></i> Start sharing</button>
+                        <details class="bsync-adv" id="backup-primary-adv">
+                            <summary>Advanced</summary>
+                            <label class="bsync-adv-row" for="backup-primary-port"><span>Port</span>
+                                <input type="number" id="backup-primary-port" class="form-control form-control-sm" min="1024" max="65535" value="3002">
+                            </label>
+                        </details>
                     </div>
 
-                    <div id="backup-backup-panel" class="d-none">
-                        <p class="small text-muted mb-2">Connect to the PRIMARY PC. Everything it receives and edits will be mirrored here (read-only until you take over).</p>
-                        <div class="row g-2 mb-2">
-                            <div class="col-8">
-                                <input type="text" id="backup-host" class="form-control form-control-sm font-monospace" placeholder="Primary IP (e.g. 192.168.0.10)" autocomplete="off" spellcheck="false">
+                    <div id="backup-backup-panel" class="bsync-section d-none">
+                        <p class="bsync-desc">Connects to the PRIMARY PC and mirrors everything it edits (read-only until you take over).</p>
+                        <div id="backup-connect-fields" class="bsync-fields">
+                            <div class="bsync-host-row backup-manual-only">
+                                <input type="text" id="backup-host" class="form-control font-monospace" placeholder="Primary IP (e.g. 192.168.0.10)" autocomplete="off" spellcheck="false">
+                                <input type="number" id="backup-port" class="form-control" min="1" max="65535" value="3002" placeholder="Port">
                             </div>
-                            <div class="col-4">
-                                <input type="number" id="backup-port" class="form-control form-control-sm" min="1" max="65535" value="3002" placeholder="Port">
-                            </div>
-                            <div class="col-12">
-                                <input type="text" id="backup-pin" class="form-control form-control-sm font-monospace" maxlength="6" inputmode="numeric" placeholder="6-digit PIN" autocomplete="off">
-                            </div>
+                            <label class="bsync-label" for="backup-pin">Session PIN</label>
+                            <input type="text" id="backup-pin" class="form-control bsync-pin-input" maxlength="6" inputmode="numeric" placeholder="6-digit PIN" autocomplete="off">
                         </div>
-                        <div class="d-flex gap-2">
-                            <button id="backup-connect-toggle" class="btn btn-sm btn-primary"><i class="bi bi-plug-fill me-1"></i> Connect</button>
-                            <button id="backup-takeover-btn" class="btn btn-sm btn-warning d-none"><i class="bi bi-arrow-repeat me-1"></i> Take over as primary</button>
-                            <button id="backup-edit-toggle" class="btn btn-sm btn-outline-secondary d-none"><i class="bi bi-unlock me-1"></i> Unlock editing</button>
-                            <button id="backup-ping-btn" class="btn btn-sm btn-outline-secondary d-none"><i class="bi bi-activity me-1"></i> Test connection</button>
-                            <button id="backup-open-copies-btn" class="btn btn-sm btn-outline-secondary d-none" title="Open the folder where this PC keeps its own copy of the documents"><i class="bi bi-folder2-open me-1"></i> Open copies folder</button>
+                        <div class="bsync-actions">
+                            <button id="backup-edit-toggle" class="btn btn-primary bsync-wide d-none"><i class="bi bi-unlock me-1"></i> Unlock editing</button>
+                            <button id="backup-ping-btn" class="btn btn-outline-secondary d-none"><i class="bi bi-activity me-1"></i> Test connection</button>
+                            <button id="backup-open-copies-btn" class="btn btn-outline-secondary d-none" title="Open the folder where this PC keeps its own copy of the documents"><i class="bi bi-folder2-open me-1"></i> Copies folder</button>
+                            <button id="backup-takeover-btn" class="btn btn-warning bsync-wide d-none"><i class="bi bi-arrow-repeat me-1"></i> Take over as primary</button>
                         </div>
-                        <div id="backup-backup-info" class="small text-muted mt-2 d-none"></div>
-                        <div class="form-check form-switch mt-2 d-none" id="backup-two-way-row" title="When on, text you edit here (after Unlock editing) is also applied on the primary PC.">
+                        <div id="backup-backup-info" class="bsync-muted d-none"></div>
+                        <div id="backup-eth-link" class="bsync-chip d-none"></div>
+                        <div class="form-check form-switch bsync-switch d-none" id="backup-two-way-row" title="When on, text you edit here (after Unlock editing) is also applied on the primary PC.">
                             <input class="form-check-input" type="checkbox" role="switch" id="backup-two-way" checked>
-                            <label class="form-check-label small" for="backup-two-way">Send my edits to the primary (two-way)</label>
+                            <label class="form-check-label" for="backup-two-way">Send my edits to the primary (two-way)</label>
                         </div>
-                        <div id="backup-copy-info" class="small text-muted mt-1 d-none"></div>
+                        <div id="backup-copy-info" class="bsync-muted d-none"></div>
+                        <button id="backup-connect-toggle" class="btn btn-primary bsync-cta"><i class="bi bi-plug-fill me-1"></i> Connect</button>
                     </div>
 
                     <div id="backup-test-result" class="d-none"></div>
-                    <div id="backup-error" class="alert alert-danger small mt-3 mb-0 d-none"></div>
+                    <div id="backup-error" class="bsync-alert bsync-alert-error d-none"></div>
                 </div>
             </div>
         </div>

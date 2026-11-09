@@ -1,0 +1,633 @@
+/* ==========================================================================
+   BACKUP SYNC — janela de conexão entre PRIMARY e BACKUP
+   Usa as variáveis de tema (variables.css): acompanha o tema claro e o escuro.
+   ========================================================================== */
+
+.bsync-dialog {
+  --bs-modal-width: 520px;
+}
+
+.bsync {
+  background: var(--background-primary);
+  color: var(--text-primary);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+/* --- Cabeçalho --- */
+.bsync-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.bsync-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.bsync-logo {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  font-size: 1.2rem;
+  color: var(--primary-color);
+  background: var(--primary-light);
+}
+
+.bsync .modal-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.bsync-sub {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.bsync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 230px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-primary);
+  background: var(--background-tertiary);
+}
+
+.bsync-pill > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* O ponto de status é desenhado em CSS (o styles.css pinta qualquer <i> do .modal-header de azul) */
+.bsync-pill::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.bsync-pill > i {
+  display: none;
+}
+
+.bsync .btn-outline-secondary {
+  color: var(--text-primary);
+  border-color: var(--border-color);
+  background: var(--background-primary);
+}
+
+.bsync .btn-outline-secondary:hover,
+.bsync .btn-outline-secondary:focus-visible {
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+  background: var(--primary-light);
+}
+
+.bsync .btn-success {
+  color: #fff;
+}
+
+.bsync .form-check-input:checked {
+  border-color: var(--primary-color);
+  background-color: var(--primary-color);
+}
+
+.bsync-pill[data-state="success"] { color: #157347; background: rgba(25, 135, 84, 0.14); }
+.bsync-pill[data-state="warning"] { color: #8a6500; background: rgba(255, 193, 7, 0.22); }
+.bsync-pill[data-state="danger"] { color: #b02a37; background: rgba(220, 53, 69, 0.12); }
+.bsync-pill[data-state="primary"] { color: var(--primary-color); background: var(--primary-light); }
+
+[data-theme="dark"] .bsync-pill[data-state="success"] { color: #5fd39a; }
+[data-theme="dark"] .bsync-pill[data-state="warning"] { color: #ffd45e; }
+[data-theme="dark"] .bsync-pill[data-state="danger"] { color: #ff8b95; }
+
+[data-theme="dark"] .bsync .btn-close {
+  filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+/* --- Corpo --- */
+.bsync-body {
+  padding: 18px;
+}
+
+.bsync-section {
+  margin-bottom: 16px;
+}
+
+.bsync-label {
+  margin-bottom: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.bsync-desc {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.bsync-muted {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.bsync-muted.is-error {
+  color: #dc3545;
+}
+
+/* --- Cartões de escolha (papel e conexão) --- */
+.bsync-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.bsync-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--background-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.bsync-opt > i {
+  flex: none;
+  font-size: 1.3rem;
+  color: var(--text-tertiary);
+}
+
+.bsync-opt b {
+  display: block;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+
+.bsync-opt small {
+  display: block;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  color: var(--text-secondary);
+}
+
+.bsync-opt:hover {
+  border-color: var(--primary-color);
+}
+
+.btn-check:checked + .bsync-opt {
+  border-color: var(--primary-color);
+  background: var(--primary-light);
+}
+
+.btn-check:checked + .bsync-opt > i {
+  color: var(--primary-color);
+}
+
+.btn-check:focus-visible + .bsync-opt {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.btn-check:disabled + .bsync-opt {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-check:disabled + .bsync-opt:hover {
+  border-color: var(--border-light);
+}
+
+.btn-check:disabled:checked + .bsync-opt {
+  opacity: 0.9;
+}
+
+.btn-check:disabled:checked + .bsync-opt:hover {
+  border-color: var(--primary-color);
+}
+
+.bsync-hint {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  background: var(--background-secondary);
+}
+
+.bsync-hint > i {
+  flex: none;
+  margin-top: 1px;
+  color: var(--primary-color);
+}
+
+.bsync-hint.d-none {
+  display: none !important;
+}
+
+/* --- Andamento da preparação do cabo --- */
+.bsync-progress {
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--background-secondary);
+}
+
+.bsync-steps {
+  display: flex;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.bsync-steps li {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.bsync-steps li::before {
+  content: "";
+  position: absolute;
+  top: 13px;
+  left: -50%;
+  z-index: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--border-color);
+}
+
+.bsync-steps li:first-child::before {
+  display: none;
+}
+
+.bsync-steps li.done::before,
+.bsync-steps li.active::before {
+  background: var(--primary-color);
+}
+
+.bsync-dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--border-color);
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  background: var(--background-primary);
+}
+
+.bsync-steps li.done,
+.bsync-steps li.active {
+  color: var(--text-primary);
+}
+
+.bsync-steps li.done .bsync-dot {
+  border-color: var(--primary-color);
+  color: #fff;
+  background: var(--primary-color);
+}
+
+.bsync-steps li.active .bsync-dot {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  box-shadow: 0 0 0 4px var(--primary-light);
+}
+
+.bsync-progress-text {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+}
+
+.bsync-progress-text .spinner-border {
+  flex: none;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-width: 0.15em;
+  color: var(--primary-color);
+}
+
+/* --- Avisos --- */
+.bsync-alert {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid;
+  border-radius: 10px;
+  font-size: 0.82rem;
+}
+
+.bsync-alert-warn {
+  color: #7a5b00;
+  border-color: rgba(255, 193, 7, 0.45);
+  background: rgba(255, 193, 7, 0.14);
+}
+
+.bsync-alert-error {
+  margin: 14px 0 0;
+  color: #b02a37;
+  border-color: rgba(220, 53, 69, 0.4);
+  background: rgba(220, 53, 69, 0.1);
+}
+
+[data-theme="dark"] .bsync-alert-warn { color: #ffd45e; }
+[data-theme="dark"] .bsync-alert-error { color: #ff8b95; }
+
+/* --- Botões principais --- */
+.bsync-cta,
+#backup-primary-toggle,
+#backup-connect-toggle {
+  width: 100%;
+  margin-top: 14px;
+  padding: 0.6rem 1rem;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+/* Parar/desconectar fica no fim do painel e discreto: só chama atenção quando é a única ação */
+#backup-primary-toggle.btn-danger,
+#backup-connect-toggle.btn-outline-danger {
+  padding: 0.5rem 1rem;
+  font-size: 0.86rem;
+}
+
+.bsync-desc + .bsync-cta,
+.bsync-fields + .bsync-cta,
+.bsync-card.d-none + .bsync-cta {
+  margin-top: 0;
+}
+
+.bsync-wide {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.bsync-icon-btn {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 10px;
+}
+
+/* --- Avançado (porta) --- */
+.bsync-adv {
+  margin-top: 10px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.bsync-adv summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.bsync-adv summary::-webkit-details-marker {
+  display: none;
+}
+
+.bsync-adv summary::before {
+  content: "\25B8";
+  display: inline-block;
+  transition: transform 0.15s;
+}
+
+.bsync-adv[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.bsync-adv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0 0;
+}
+
+.bsync-adv-row input {
+  width: 110px;
+}
+
+/* --- Cartão da sessão (PRIMARY ligado) --- */
+.bsync-card {
+  margin-top: 2px;
+  padding: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  background: var(--background-secondary);
+}
+
+.bsync-pin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bsync-pin {
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 2.1rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.16em;
+  color: var(--text-primary);
+}
+
+.bsync-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: var(--background-tertiary);
+}
+
+.bsync-chip::before {
+  content: "\f6d5";
+  font-family: "bootstrap-icons";
+}
+
+.bsync-chip.d-none {
+  display: none !important;
+}
+
+.bsync-divider {
+  height: 1px;
+  margin: 12px 0;
+  background: var(--border-light);
+}
+
+.bsync-addresses {
+  margin-top: 2px;
+}
+
+.bsync-addr-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--background-primary);
+}
+
+.bsync-addr {
+  min-width: 0;
+  overflow: hidden;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bsync-addr small {
+  margin-right: 6px;
+  font-family: inherit;
+  color: var(--text-tertiary);
+}
+
+.bsync-addr-row .btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.bsync-clients {
+  margin-bottom: 10px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.bsync-switch {
+  margin: 8px 0 2px;
+  font-size: 0.84rem;
+}
+
+.bsync-switch .form-check-label {
+  color: var(--text-primary);
+}
+
+/* --- Campos do BACKUP --- */
+.bsync-fields {
+  margin-bottom: 0;
+}
+
+.bsync-host-row {
+  display: grid;
+  grid-template-columns: 1fr 92px;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.bsync-host-row.d-none {
+  display: none !important;
+}
+
+.bsync .form-control {
+  color: var(--text-primary);
+  border-color: var(--border-color);
+  background: var(--background-primary);
+}
+
+.bsync .form-control:disabled {
+  opacity: 0.6;
+  background: var(--background-secondary);
+}
+
+.bsync-pin-input {
+  padding: 0.55rem;
+  border-radius: 10px;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+  text-align: center;
+  text-indent: 0.4em;
+}
+
+.bsync-pin-input::placeholder {
+  font-size: 0.85rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-indent: 0;
+}
+
+.bsync-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.bsync-actions .btn {
+  padding: 0.5rem;
+  border-radius: 10px;
+  font-size: 0.84rem;
+}
+
+.bsync-actions .bsync-wide {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
+/* Janelas baixas: tudo mais compacto (a janela rola) */
+@media (max-height: 760px) {
+  .bsync-body { padding: 14px; }
+  .bsync-section { margin-bottom: 12px; }
+  .bsync-pin { font-size: 1.7rem; }
+}
